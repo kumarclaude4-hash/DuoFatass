@@ -1,6 +1,18 @@
 const admin = require("firebase-admin");
 const http = require("http");
 const crypto = require("crypto");
+const {
+  HttpError,
+  assertPublicUrl,
+  fingerprint,
+  getClientIp: getTrustedClientIp,
+  readBody: readBoundedBody,
+  requestPath,
+  safeTokenEqual,
+  sameOrigin,
+  timestampToIso,
+  trimMap,
+} = require("./lib/security");
 
 let serviceAccount;
 try {
@@ -466,14 +478,7 @@ function recordAdminAuthFailure(ip) {
   } else {
     rec.count++;
   }
-}
-
-// Constant-time comparison so token-guessing can't be timed byte-by-byte.
-function safeTokenEqual(a, b) {
-  const bufA = Buffer.from(String(a));
-  const bufB = Buffer.from(String(b));
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
+  trimMap(adminIpFails, 10_000);
 }
 
 function validAdminUid(uid) {
@@ -503,6 +508,7 @@ function getCookie(req, name) {
 function createAdminSession() {
   const sessionId = crypto.randomBytes(32).toString("hex");
   adminSessions.set(sessionId, Date.now() + ADMIN_SESSION_TTL_MS);
+  trimMap(adminSessions, 1_000);
   return sessionId;
 }
 
@@ -524,22 +530,34 @@ function hasValidAdminSession(req) {
 function requireAdminAuth(req, res) {
   const ip = getClientIp(req);
   if (adminIpLocked(ip)) {
-    res.writeHead(429, { "Content-Type": "text/plain" });
+    res.writeHead(429, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     res.end("Too many failed attempts — wait 15 min and retry");
     return false;
   }
-  if (!ADMIN_TOKEN) {
-    console.error("admin auth: ADMIN_TOKEN is not configured on the server");
-    res.writeHead(503, { "Content-Type": "text/plain" });
+  if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 32) {
+    console.error("admin auth: ADMIN_TOKEN must be configured with at least 32 characters");
+    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     res.end("Admin panel not configured");
     return false;
   }
-  const supplied = req.headers["x-admin-token"] || "";
-  const tokenValid = supplied && safeTokenEqual(supplied, ADMIN_TOKEN);
+  const supplied = String(req.headers["x-admin-token"] || "");
+  const tokenValid = Boolean(supplied) && safeTokenEqual(supplied, ADMIN_TOKEN);
   if (!tokenValid && !hasValidAdminSession(req)) {
     recordAdminAuthFailure(ip);
-    res.writeHead(401, { "Content-Type": "text/plain" });
-    res.end("Invalid admin token");
+    res.writeHead(401, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.end("Invalid admin credentials");
+    return false;
+  }
+  return true;
+}
+
+function requireAdminMutationAuth(req, res) {
+  if (!requireAdminAuth(req, res)) return false;
+  const supplied = String(req.headers["x-admin-token"] || "");
+  const explicitTokenValid = Boolean(supplied) && safeTokenEqual(supplied, ADMIN_TOKEN);
+  if (!explicitTokenValid && !sameOrigin(req)) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.end("Invalid request origin");
     return false;
   }
   return true;
@@ -555,9 +573,11 @@ process.on("uncaughtException", (err) => {
 });
 
 function getClientIp(req) {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.socket.remoteAddress || "unknown";
+  return getTrustedClientIp(req, process.env.TRUST_PROXY === "true");
+}
+
+function adminActorFingerprint(req) {
+  return `fp:${fingerprint(getClientIp(req), process.env.AUDIT_HASH_SECRET || ADMIN_TOKEN)}`;
 }
 
 function checkIpRateLimit(ip) {
@@ -624,53 +644,33 @@ async function fetchFollowingSafeRedirects(targetUrl, { headers, timeoutMs, maxR
 // JSON payloads; media goes to B2 directly via presigned URLs, never here.
 const MAX_BODY_BYTES = 64 * 1024; // 64 KB
 
-function readBody(req, res) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    let bytes = 0;
-    req.on("data", (chunk) => {
-      bytes += chunk.length;
-      if (bytes > MAX_BODY_BYTES) {
-        res.writeHead(413, { "Content-Type": "text/plain" });
-        res.end("Request body too large");
-        req.destroy();
-        reject(new Error("body_too_large"));
-        return;
-      }
-      body += chunk;
-    });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
-  });
+function sendBodyError(res, error) {
+  if (res.writableEnded) return;
+  const status = error instanceof HttpError ? error.status : 400;
+  const message = error instanceof HttpError ? error.message : "Invalid request body";
+  res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(message);
 }
 
-// Callback-style counterpart to readBody(), for handlers written in the
-// on("data")/on("end") style (several routes below need to run
-// requireAdminAuth or other checks before body parsing, so they never
-// migrated to the Promise-based helper above). Enforces the same
-// MAX_BODY_BYTES cap: the naive `body += chunk` pattern this replaces has
-// no size limit of its own — it only inherited protection from the
-// declared Content-Length pre-check up in the request handler, which a
-// chunked-encoding request (no Content-Length header) bypasses entirely.
-// Calls onComplete(body) only when the body stayed within the limit;
-// otherwise the 413 response is already sent and onComplete is not called.
-function collectBody(req, res, onComplete) {
-  let body = "";
-  let tooLarge = false;
-  req.on("data", (chunk) => {
-    if (tooLarge) return;
-    body += chunk;
-    if (body.length > MAX_BODY_BYTES) {
-      tooLarge = true;
-      res.writeHead(413, { "Content-Type": "text/plain" });
-      res.end("Request body too large");
-      req.destroy();
-    }
-  });
-  req.on("end", () => {
-    if (tooLarge) return;
-    onComplete(body);
-  });
+function readBody(req, res, options = {}) {
+  return readBoundedBody(req, { maxBytes: MAX_BODY_BYTES, ...options })
+    .catch((error) => {
+      sendBodyError(res, error);
+      throw error;
+    });
+}
+
+function collectBody(req, res, onComplete, options = {}) {
+  const path = requestPath(req.url);
+  const inferredContentTypes = path === "/admin/login"
+    ? ["application/x-www-form-urlencoded"]
+    : (path.startsWith("/admin/api/") ? ["application/json"] : undefined);
+  readBoundedBody(req, { maxBytes: MAX_BODY_BYTES, contentTypes: inferredContentTypes, ...options })
+    .then((body) => {
+      if (!res.writableEnded) return onComplete(body);
+      return undefined;
+    })
+    .catch((error) => sendBodyError(res, error));
 }
 
 // ── Admin panel HTML shell ─────────────────────────────────────────────────────
@@ -1220,6 +1220,7 @@ document.getElementById("duressUidInput").addEventListener("keydown", (event) =>
 
 // ── Health + status + mintToken HTTP server ───────────────────────────────────
 http.createServer((req, res) => {
+  const path = requestPath(req.url);
 
   // Reject oversized bodies before any routing (DoS guard).
   // Content-Length may be absent (chunked), so also enforce via readBody().
@@ -1242,13 +1243,13 @@ http.createServer((req, res) => {
   //     transaction.  Mismatch → 403.
   //   • Rate limit: one successful mint per userId per 60 s (in-memory).
   //
-  if (req.method === "POST" && req.url === "/mintToken") {
+  if (req.method === "POST" && path === "/mintToken") {
     collectBody(req, res, async (body) => {
       try {
         // ── IP rate limit (checked before parsing body) ──────────────────────
         const clientIp = getClientIp(req);
         if (!checkIpRateLimit(clientIp)) {
-          console.warn(`mintToken: IP rate limit hit ip=${clientIp}`);
+          console.warn(`mintToken: IP rate limit hit actor=${fingerprint(clientIp, process.env.AUDIT_HASH_SECRET || ADMIN_TOKEN)}`);
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Too many requests from this IP — wait 15 min and retry");
           return;
@@ -1362,7 +1363,7 @@ http.createServer((req, res) => {
   // admin script — never from the app). The client polls GET /waitlistStatus
   // with the token and only proceeds to actual account creation once approved.
   // Restoring an EXISTING account never touches this endpoint.
-  if (req.method === "POST" && req.url === "/requestAccess") {
+  if (req.method === "POST" && path === "/requestAccess") {
     (async () => {
       try {
         const clientIp = getClientIp(req);
@@ -1373,7 +1374,8 @@ http.createServer((req, res) => {
         }
 
         // Drain the (empty) body so the connection closes cleanly.
-        await readBody(req, res).catch(() => "");
+        await readBody(req, res);
+        if (res.writableEnded) return;
 
         const requestId = crypto.randomBytes(16).toString("hex");
         await db.collection("waitlist").doc(requestId).set({
@@ -1385,8 +1387,9 @@ http.createServer((req, res) => {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ requestId }));
       } catch (e) {
+        if (res.writableEnded) return;
         console.error("requestAccess error:", e.message);
-        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
         res.end("Internal server error");
       }
     })();
@@ -1449,7 +1452,7 @@ http.createServer((req, res) => {
   //   • Confirms identities/{userId} exists and its stored uid matches oldUid.
   //   • Rate-limited: one call per userId per 60 s.
   //
-  if (req.method === "POST" && req.url === "/migrateUid") {
+  if (req.method === "POST" && path === "/migrateUid") {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", async () => {
@@ -1630,7 +1633,7 @@ http.createServer((req, res) => {
   //   • Admin SDK bypasses Firestore client rules; the client-side create rule is
   //     set to deny, so only this server path can create chat docs (F6 fix).
   //
-  if (req.method === "POST" && req.url === "/createChat") {
+  if (req.method === "POST" && path === "/createChat") {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", async () => {
@@ -1721,7 +1724,7 @@ http.createServer((req, res) => {
   // Calls Cloudflare's generate-credentials API server-side so that
   // TURN_TOKEN_ID and TURN_API_TOKEN never leave the server.
   //
-  if (req.method === "POST" && req.url === "/turnCredentials") {
+  if (req.method === "POST" && path === "/turnCredentials") {
     req.on("data", () => {}); // drain body (unused)
     req.on("end", async () => {
       try {
@@ -1900,7 +1903,7 @@ http.createServer((req, res) => {
   }
 
   // ── /linkPreview — server-side OG fetch (F12: prevents sender IP leakage) ──
-  if (req.method === "POST" && req.url === "/linkPreview") {
+  if (req.method === "POST" && path === "/linkPreview") {
     collectBody(req, res, async (body) => {
       try {
         const tok = (req.headers["authorization"] || "").replace(/^Bearer\s+/, "").trim();
@@ -1966,7 +1969,7 @@ http.createServer((req, res) => {
   }
 
   // ── /removeGroupMember — admin removes member + revokes key (F3) ─────────
-  if (req.method === "POST" && req.url === "/removeGroupMember") {
+  if (req.method === "POST" && path === "/removeGroupMember") {
     collectBody(req, res, async (body) => {
       try {
         const tok = (req.headers["authorization"] || "").replace(/^Bearer\s+/, "").trim();
@@ -2019,7 +2022,7 @@ http.createServer((req, res) => {
   // to lock any other account. It is single-use — consumed and deleted on the
   // first successful /duress-lock call — so a leaked nonce cannot replay.
   //
-  if (req.method === "POST" && req.url === "/requestLockNonce") {
+  if (req.method === "POST" && path === "/requestLockNonce") {
     req.on("data", () => {}); // body unused
     req.on("end", async () => {
       try {
@@ -2065,7 +2068,7 @@ http.createServer((req, res) => {
     return;
   }
 
-  // ── /duress-lock ──────────────────────────────────────────────────────────
+  // ─��� /duress-lock ──────────────────────────────────────────────────────────
   //
   // Writes accountLock/{uid}.locked = true via the Admin SDK. Called by
   // AccountLockWorker when the synchronous in-app lock write failed (offline
@@ -2077,7 +2080,7 @@ http.createServer((req, res) => {
   // (WORKER_SECRET) is explicitly NOT used here — it would let anyone who
   // reverse-engineered the APK lock arbitrary accounts.
   //
-  if (req.method === "POST" && req.url === "/duress-lock") {
+  if (req.method === "POST" && path === "/duress-lock") {
     collectBody(req, res, async (body) => {
       try {
         let parsed;
@@ -2151,14 +2154,12 @@ http.createServer((req, res) => {
   // Match /admin with or without a query string. Mobile browsers and reverse
   // proxies may append cache-busting parameters (for example /admin?_r=...);
   // comparing req.url to the exact string "/admin" otherwise returns Not found.
-  const requestPath = new URL(req.url, "http://localhost").pathname;
-
   // Native form login: this intentionally does not depend on client-side
   // JavaScript, which can be skipped by mobile browsers when a password is
   // autofilled. A successful token check becomes a short-lived HttpOnly
   // session cookie, so the admin API can authenticate normal same-origin
   // requests without exposing the token to page JavaScript.
-  if (req.method === "POST" && requestPath === "/admin/login") {
+  if (req.method === "POST" && path === "/admin/login") {
     collectBody(req, res, (body) => {
       const params = new URLSearchParams(body);
       const supplied = (params.get("token") || "").trim();
@@ -2168,8 +2169,8 @@ http.createServer((req, res) => {
         res.end();
         return;
       }
-      if (!ADMIN_TOKEN) {
-        console.error("admin login: ADMIN_TOKEN is not configured on the server");
+      if (!ADMIN_TOKEN || ADMIN_TOKEN.length < 32) {
+        console.error("admin login: ADMIN_TOKEN must be configured with at least 32 characters");
         res.writeHead(303, { "Location": "/admin?error=unconfigured", "Cache-Control": "no-store" });
         res.end();
         return;
@@ -2194,7 +2195,7 @@ http.createServer((req, res) => {
   // Explicitly revoke the in-memory session and expire the browser cookie.
   // Keeping this server-side means sign-out works consistently across browsers
   // and does not rely on JavaScript being able to access the HttpOnly cookie.
-  if (req.method === "POST" && requestPath === "/admin/logout") {
+  if (req.method === "POST" && path === "/admin/logout") {
     const sessionId = getCookie(req, "duoshield_admin_session");
     if (sessionId) adminSessions.delete(sessionId);
     res.writeHead(303, {
@@ -2206,7 +2207,7 @@ http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "GET" && requestPath === "/admin") {
+  if (req.method === "GET" && path === "/admin") {
     const authenticated = hasValidAdminSession(req);
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
@@ -2222,7 +2223,7 @@ http.createServer((req, res) => {
   //
   // Auth: x-admin-token header. Returns pending waitlist requests, newest
   // first, so the operator can see who's asking for access.
-  if (req.method === "GET" && req.url === "/admin/api/waitlist") {
+  if (req.method === "GET" && path === "/admin/api/waitlist") {
     (async () => {
       if (!requireAdminAuth(req, res)) return;
       try {
@@ -2233,7 +2234,7 @@ http.createServer((req, res) => {
           .get();
         const requests = snap.docs.map((d) => {
           const data = d.data();
-          const createdAt = data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString() : null;
+          const createdAt = timestampToIso(data.createdAt);
           return { requestId: d.id, createdAt };
         });
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -2241,7 +2242,7 @@ http.createServer((req, res) => {
       } catch (e) {
         console.error("admin/api/waitlist error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     })();
     return;
@@ -2252,9 +2253,9 @@ http.createServer((req, res) => {
   // Body: { requestId }. Auth: x-admin-token header.
   // Flips a pending waitlist doc to status: "approved" so the requester's
   // next /waitlistStatus poll lets them proceed to account creation.
-  if (req.method === "POST" && req.url === "/admin/api/waitlist/approve") {
+  if (req.method === "POST" && path === "/admin/api/waitlist/approve") {
     collectBody(req, res, async (body) => {
-      if (!requireAdminAuth(req, res)) return;
+      if (!requireAdminMutationAuth(req, res)) return;
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch (_) {
@@ -2287,7 +2288,7 @@ http.createServer((req, res) => {
         db.collection("adminAuditLog").add({
           action:    "waitlist_approved",
           requestId,
-          adminIp:   getClientIp(req),
+          adminIp:   adminActorFingerprint(req),
           at:        FieldValue.serverTimestamp(),
         }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
 
@@ -2296,7 +2297,7 @@ http.createServer((req, res) => {
       } catch (e) {
         console.error("admin/api/waitlist/approve error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     });
     return;
@@ -2306,24 +2307,24 @@ http.createServer((req, res) => {
   //
   // Auth: x-admin-token header. Returns currently-locked accounts so the
   // operator can see who's frozen and pick one to unfreeze.
-  if (req.method === "GET" && req.url === "/admin/api/locked") {
+  if (req.method === "GET" && path === "/admin/api/locked") {
     (async () => {
       if (!requireAdminAuth(req, res)) return;
       try {
         const snap = await db.collection("accountLock")
           .where("locked", "==", true)
+          .limit(200)
           .get();
         const accounts = snap.docs.map((d) => {
           const data = d.data();
-          const lockedAt = data.lockedAt && data.lockedAt.toDate ? data.lockedAt.toDate().toISOString() : null;
-          return { uid: d.id, lockedAt };
-        });
+          return { uid: d.id, lockedAt: timestampToIso(data.lockedAt) };
+        }).sort((a, b) => (b.lockedAt || "").localeCompare(a.lockedAt || "") || a.uid.localeCompare(b.uid));
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ accounts }));
       } catch (e) {
         console.error("admin/api/locked error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     })();
     return;
@@ -2334,9 +2335,9 @@ http.createServer((req, res) => {
   // Body: { uid }. Auth: x-admin-token header.
   // Deletes the accountLock/{uid} doc — the only way this doc can ever be
   // removed, per firestore.rules (clients get `allow delete: if false`).
-  if (req.method === "POST" && req.url === "/admin/api/locked/unfreeze") {
+  if (req.method === "POST" && path === "/admin/api/locked/unfreeze") {
     collectBody(req, res, async (body) => {
-      if (!requireAdminAuth(req, res)) return;
+      if (!requireAdminMutationAuth(req, res)) return;
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch (_) {
@@ -2364,7 +2365,7 @@ http.createServer((req, res) => {
         db.collection("adminAuditLog").add({
           action:  "account_unfrozen",
           uid,
-          adminIp: getClientIp(req),
+          adminIp: adminActorFingerprint(req),
           at:      FieldValue.serverTimestamp(),
         }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
 
@@ -2373,7 +2374,7 @@ http.createServer((req, res) => {
       } catch (e) {
         console.error("admin/api/locked/unfreeze error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     });
     return;
@@ -2383,25 +2384,24 @@ http.createServer((req, res) => {
   //
   // Auth: x-admin-token header. Returns all accounts currently enrolled for
   // duress-PIN eligibility (duressEligibility/{uid}.eligible == true).
-  if (req.method === "GET" && req.url === "/admin/api/duress/enrolled") {
+  if (req.method === "GET" && path === "/admin/api/duress/enrolled") {
     (async () => {
       if (!requireAdminAuth(req, res)) return;
       try {
         const snap = await db.collection("duressEligibility")
           .where("eligible", "==", true)
+          .limit(200)
           .get();
         const accounts = snap.docs.map((d) => {
           const data = d.data();
-          const enrolledAt = data.enrolledAt && data.enrolledAt.toDate
-            ? data.enrolledAt.toDate().toISOString() : null;
-          return { uid: d.id, enrolledAt };
-        });
+          return { uid: d.id, enrolledAt: timestampToIso(data.enrolledAt) };
+        }).sort((a, b) => (b.enrolledAt || "").localeCompare(a.enrolledAt || "") || a.uid.localeCompare(b.uid));
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ accounts }));
       } catch (e) {
         console.error("admin/api/duress/enrolled error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     })();
     return;
@@ -2413,7 +2413,7 @@ http.createServer((req, res) => {
   // actually exists (identities/{uid}) and its current duress-PIN eligibility
   // status. Used by the admin panel's "search by UID" step before enabling —
   // enrollment must never be granted blind to a UID that isn't a real account.
-  if (req.method === "GET" && req.url.startsWith("/admin/api/account/lookup")) {
+  if (req.method === "GET" && path === "/admin/api/account/lookup") {
     (async () => {
       if (!requireAdminAuth(req, res)) return;
       try {
@@ -2435,7 +2435,7 @@ http.createServer((req, res) => {
       } catch (e) {
         console.error("admin/api/account/lookup error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     })();
     return;
@@ -2448,9 +2448,9 @@ http.createServer((req, res) => {
   // shows the secondary-PIN setup UI for that account on next eligibility check.
   // Requires the UID to correspond to a real account (identities/{uid}) —
   // enrollment is never granted blind to an unverified/nonexistent UID.
-  if (req.method === "POST" && req.url === "/admin/api/duress/enroll") {
+  if (req.method === "POST" && path === "/admin/api/duress/enroll") {
     collectBody(req, res, async (body) => {
-      if (!requireAdminAuth(req, res)) return;
+      if (!requireAdminMutationAuth(req, res)) return;
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch (_) {
@@ -2479,7 +2479,7 @@ http.createServer((req, res) => {
         db.collection("adminAuditLog").add({
           action:  "duress_enrolled",
           uid,
-          adminIp: getClientIp(req),
+          adminIp: adminActorFingerprint(req),
           at:      FieldValue.serverTimestamp(),
         }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
 
@@ -2488,7 +2488,7 @@ http.createServer((req, res) => {
       } catch (e) {
         console.error("admin/api/duress/enroll error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     });
     return;
@@ -2499,9 +2499,9 @@ http.createServer((req, res) => {
   // Body: { uid }. Auth: x-admin-token header.
   // Sets eligible:false on duressEligibility/{uid} — the client's cached flag
   // is updated on the next eligibility refresh (sign-in or foreground).
-  if (req.method === "POST" && req.url === "/admin/api/duress/revoke") {
+  if (req.method === "POST" && path === "/admin/api/duress/revoke") {
     collectBody(req, res, async (body) => {
-      if (!requireAdminAuth(req, res)) return;
+      if (!requireAdminMutationAuth(req, res)) return;
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch (_) {
@@ -2528,7 +2528,7 @@ http.createServer((req, res) => {
         db.collection("adminAuditLog").add({
           action:  "duress_revoked",
           uid,
-          adminIp: getClientIp(req),
+          adminIp: adminActorFingerprint(req),
           at:      FieldValue.serverTimestamp(),
         }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
 
@@ -2537,7 +2537,7 @@ http.createServer((req, res) => {
       } catch (e) {
         console.error("admin/api/duress/revoke error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     });
     return;
@@ -2548,7 +2548,7 @@ http.createServer((req, res) => {
   // Auth: x-admin-token header. Returns the 100 most-recent admin actions
   // (waitlist approvals + account unfreezes) so the operator has a tamper-
   // evident record of who did what and when.
-  if (req.method === "GET" && req.url === "/admin/api/auditlog") {
+  if (req.method === "GET" && path === "/admin/api/auditlog") {
     (async () => {
       if (!requireAdminAuth(req, res)) return;
       try {
@@ -2558,7 +2558,7 @@ http.createServer((req, res) => {
           .get();
         const entries = snap.docs.map((d) => {
           const data = d.data();
-          const at = data.at && data.at.toDate ? data.at.toDate().toISOString() : null;
+          const at = timestampToIso(data.at);
           return { id: d.id, action: data.action, requestId: data.requestId || null, uid: data.uid || null, adminIp: data.adminIp || null, at };
         });
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -2566,7 +2566,7 @@ http.createServer((req, res) => {
       } catch (e) {
         console.error("admin/api/auditlog error:", e.message);
         res.writeHead(500, { "Content-Type": "text/plain" });
-        res.end("Server error: " + e.message);
+        res.end("Internal server error");
       }
     })();
     return;
