@@ -369,13 +369,17 @@ setInterval(() => {
   for (const [ip, rec] of waitlistIpHits) {
     if (rec.windowStart < cutoff) waitlistIpHits.delete(ip);
   }
-}, 30 * 60 * 1000);
+  for (const [userId, mintedAt] of mintCooldown) {
+    if (mintedAt < Date.now() - 60_000) mintCooldown.delete(userId);
+  }
+}, 30 * 60 * 1000).unref();
 
 function checkWaitlistIpRateLimit(ip) {
   const now = Date.now();
   const rec = waitlistIpHits.get(ip);
   if (!rec || now - rec.windowStart >= WAITLIST_IP_WINDOW_MS) {
     waitlistIpHits.set(ip, { count: 1, windowStart: now });
+    trimMap(waitlistIpHits, 10_000);
     return true;
   }
   if (rec.count >= WAITLIST_IP_MAX_HITS) return false;
@@ -421,6 +425,7 @@ function checkAuthRateLimit(uid, endpoint) {
   const rec   = authRateLimits.get(uid);
   if (!rec || now - rec.windowStart >= AUTH_RATE_WINDOW_MS) {
     authRateLimits.set(uid, { counts: { [endpoint]: 1 }, windowStart: now });
+    trimMap(authRateLimits, 10_000);
     return true;
   }
   const cur = rec.counts[endpoint] || 0;
@@ -585,6 +590,7 @@ function checkIpRateLimit(ip) {
   const rec = ipHits.get(ip);
   if (!rec || now - rec.windowStart >= IP_WINDOW_MS) {
     ipHits.set(ip, { count: 1, windowStart: now });
+    trimMap(ipHits, 10_000);
     return true; // allowed
   }
   if (rec.count >= IP_MAX_HITS) return false; // blocked
@@ -616,27 +622,24 @@ function isBlockedPreviewHost(hostname) {
 async function fetchFollowingSafeRedirects(targetUrl, { headers, timeoutMs, maxRedirects = 5 }) {
   let current = targetUrl;
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    const parsed = new URL(current);
-    if (!["http:", "https:"].includes(parsed.protocol) || isBlockedPreviewHost(parsed.hostname)) {
-      throw new Error(`Blocked redirect target: ${parsed.hostname}`);
-    }
+    const parsed = await assertPublicUrl(current);
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let response;
     try {
-      response = await fetch(current, { headers, signal: ctrl.signal, redirect: "manual" });
+      response = await fetch(parsed, { headers, signal: ctrl.signal, redirect: "manual" });
     } finally {
-      clearTimeout(t);
+      clearTimeout(timer);
     }
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get("location");
-      if (!location) throw new Error("Redirect with no Location header");
-      current = new URL(location, current).toString();
+      if (!location) throw new HttpError(502, "Redirect with no Location header");
+      current = new URL(location, parsed).toString();
       continue;
     }
-    return { response, finalUrl: current };
+    return { response, finalUrl: parsed.toString() };
   }
-  throw new Error("Too many redirects");
+  throw new HttpError(502, "Too many redirects");
 }
 
 // ── Request body size limit ───────────────────────────────────────────────────
@@ -1218,7 +1221,7 @@ document.getElementById("duressUidInput").addEventListener("keydown", (event) =>
 </html>
 `;
 
-// ── Health + status + mintToken HTTP server ───────────────────────────────────
+// ── Health + status + mintToken HTTP server ────────────────────────────────���──
 http.createServer((req, res) => {
   const path = requestPath(req.url);
 
@@ -1245,6 +1248,8 @@ http.createServer((req, res) => {
   //
   if (req.method === "POST" && path === "/mintToken") {
     collectBody(req, res, async (body) => {
+      let cooldownUserId = null;
+      let cooldownStartedAt = null;
       try {
         // ── IP rate limit (checked before parsing body) ──────────────────────
         const clientIp = getClientIp(req);
@@ -1277,6 +1282,9 @@ http.createServer((req, res) => {
           return;
         }
         mintCooldown.set(userId, now);
+        trimMap(mintCooldown, 10_000);
+        cooldownUserId = userId;
+        cooldownStartedAt = now;
 
         const incomingHash = sha256hex(identityPubKeyHex);
 
@@ -1337,15 +1345,19 @@ http.createServer((req, res) => {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ token }));
       } catch (e) {
+        if (cooldownUserId && mintCooldown.get(cooldownUserId) === cooldownStartedAt) {
+          mintCooldown.delete(cooldownUserId);
+        }
         if (e.status === 403) {
-          // Thrown from inside the Firestore transaction: either a key mismatch
-          // (F2 fix) or a missing/unapproved waitlist request for a new account.
-          console.warn(`mintToken: 403 (${e.message}) for userId=${JSON.parse(body || "{}").userId}`);
-          res.writeHead(403, { "Content-Type": "text/plain" });
+          console.warn(`mintToken: rejected (${e.message})`);
+          res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
           res.end(e.message);
+        } else if (e instanceof SyntaxError) {
+          res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Invalid JSON");
         } else {
           console.error("mintToken error:", e.message);
-          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
           res.end("Internal server error");
         }
       }
@@ -1453,9 +1465,7 @@ http.createServer((req, res) => {
   //   • Rate-limited: one call per userId per 60 s.
   //
   if (req.method === "POST" && path === "/migrateUid") {
-    let body = "";
-    req.on("data", (chunk) => { body += chunk; });
-    req.on("end", async () => {
+    collectBody(req, res, async (body) => {
       try {
         const authHeader = req.headers["authorization"] || "";
         const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
@@ -1634,9 +1644,7 @@ http.createServer((req, res) => {
   //     set to deny, so only this server path can create chat docs (F6 fix).
   //
   if (req.method === "POST" && path === "/createChat") {
-    let body = "";
-    req.on("data", (chunk) => { body += chunk; });
-    req.on("end", async () => {
+    collectBody(req, res, async (body) => {
       try {
         // Verify Firebase ID token from Authorization header
         const authHeader = req.headers["authorization"] || "";
@@ -1725,8 +1733,7 @@ http.createServer((req, res) => {
   // TURN_TOKEN_ID and TURN_API_TOKEN never leave the server.
   //
   if (req.method === "POST" && path === "/turnCredentials") {
-    req.on("data", () => {}); // drain body (unused)
-    req.on("end", async () => {
+    collectBody(req, res, async () => {
       try {
         // ── Auth ────────────────────────────────────────────────────────────
         const authHeader = req.headers["authorization"] || "";
@@ -1922,13 +1929,13 @@ http.createServer((req, res) => {
           res.writeHead(400); res.end("Missing url"); return;
         }
         let parsed;
-        try { parsed = new URL(targetUrl); }
-        catch { res.writeHead(400); res.end("Invalid URL"); return; }
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-          res.writeHead(400); res.end("Invalid URL scheme"); return;
-        }
-        if (isBlockedPreviewHost(parsed.hostname)) {
-          res.writeHead(403); res.end("Forbidden address"); return;
+        try {
+          parsed = await assertPublicUrl(targetUrl);
+        } catch (urlError) {
+          const status = urlError instanceof HttpError ? urlError.status : 400;
+          res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end(status === 403 ? "Forbidden address" : "Invalid URL");
+          return;
         }
 
         try {
@@ -2023,8 +2030,7 @@ http.createServer((req, res) => {
   // first successful /duress-lock call — so a leaked nonce cannot replay.
   //
   if (req.method === "POST" && path === "/requestLockNonce") {
-    req.on("data", () => {}); // body unused
-    req.on("end", async () => {
+    collectBody(req, res, async () => {
       try {
         const authHeader = req.headers["authorization"] || "";
         const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
