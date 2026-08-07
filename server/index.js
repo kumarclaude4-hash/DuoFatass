@@ -509,6 +509,7 @@ const AUTH_RATE_LIMITS = {
   turnCredentials:   20,   // 20 TURN fetches / min per user
   removeGroupMember: 20,   // 20 removals / min per user
   linkPreview:       30,   // 30 link previews / min per user
+  imageProxy:        30,   // 30 proxied images / min per user
   // Duress-lock nonce: very low limit — issuing a nonce writes a Firestore doc
   // and is never needed more than once per session.  Without this entry the
   // fallback default of 30/min would allow 30 Firestore writes/min per user.
@@ -876,6 +877,18 @@ async function readHtmlCapped(response, maxBytes) {
   }
   // Fallback for older Node versions — truncate after the fact.
   return (await response.text()).slice(0, maxBytes);
+}
+
+async function readHtmlCappedWithTimeout(response, maxBytes, timeoutMs) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("HTML body read timed out")), timeoutMs);
+  });
+  try {
+    return await Promise.race([readHtmlCapped(response, maxBytes), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Fetches targetUrl, manually validating and following redirects (instead of
@@ -2586,7 +2599,7 @@ http.createServer((req, res) => {
           if (r.ok && (r.headers.get("content-type") || "").includes("text/html")) {
             // S04-H2: readHtmlCapped streams at most LINK_PREVIEW_MAX_HTML_BYTES (100 KB)
             // and cancels the response body early instead of buffering the full page.
-            const html = await readHtmlCapped(r, LINK_PREVIEW_MAX_HTML_BYTES);
+            const html = await readHtmlCappedWithTimeout(r, LINK_PREVIEW_MAX_HTML_BYTES, 5000);
             const ogT = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{1,200})["']/i)
                      || html.match(/<meta[^>]+content=["']([^"']{1,200})["'][^>]+property=["']og:title["']/i)
                      || html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
@@ -2682,7 +2695,7 @@ http.createServer((req, res) => {
     return;
   }
 
-  // ── /requestLockNonce ─────────────────────────────────────────────────────
+  // ── /requestLockNonce ────────────���────────────────────────────────────────
   //
   // Issues a single-use, uid-bound, 24-hour nonce for AccountLockWorker to
   // consume later via /duress-lock. Called by DuressManager on the background

@@ -13,8 +13,9 @@ Generated from `../audit/`. This is the authoritative disposition record. Every 
 > landed (see that document for the five specific code sites that disprove the claim).
 >
 > Consequently:
-> - The **`Verify`** column is now `pending` for every row. It is filled in per-row only when the
->   fix is actually verified against source and/or a test, at round close.
+> - The **`Verify`** column starts as `pending` and is filled per-row when the fix is actually
+>   verified against source and/or a test. Tasks 1–3 of Round 2 now have source verification
+>   recorded; remaining Round 2 rows stay `pending` until their tasks execute.
 > - The last column is now **`Planned Disp`** — the *intended* disposition. It is a plan, not a
 >   result. It carries no evidentiary weight.
 > - **No finding in this index currently holds a final disposition.** Final dispositions are
@@ -130,16 +131,16 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 | S04-L2 | Low | `server/index.js` `/duress-lock` | TB-3 | `/duress-lock` unauthenticated, no rate limit (dup of S06-L2) | open | P2 | R3 | pending | fixed |
 | S04-L3 | Low | `server/index.js` limiters | TB-3 | All limiter state per-process/in-memory; `mintCooldown` never purged | open | P2 | R3 | pending | fixed (purge) + accepted (durable store deferred to ops) |
 | S04-I1 | Info | `server/index.js:2112-2128` | TB-3 | `/status` and `/` unauthenticated, publish platform counters | open | P2 | R3 | pending | fixed |
-| S04-I2 | Info | `server/index.js:2916-2928`,`server/lib/pure.js:88-131` | TB-8 | Dead B2 presign surface; B2 creds still expected in env | open | P1 | R2 | pending | fixed+runbook (revoke B2 key) |
+| S04-I2 | Info | `server/index.js:2916-2928`,`server/lib/pure.js:88-131` | TB-8 | Dead B2 presign surface; B2 creds still expected in env | open | P1 | R2 | verified-source | fixed+runbook (revoke B2 key) |
 | S04-I3 | Info | `server/index.js:2254,:2293-2299` | TB-3 | Preview provenance/failure indistinguishable to client | open | P2 | R3 | pending | fixed |
 
 ## Session 05 — Admin surface (`../audit/SESSION-05-ADMIN.md`)
 
 | ID | Sev (orig→gov) | Affected files | TB | Root cause | Status | Prio | Rnd | Verify | Planned Disp |
 |---|---|---|---|---|---|---|---|---|---|
-| S05-H1 | High | `server/index.js:537,:610` | TB-5 | `ADMIN_TOKEN` has no entropy floor, no startup validation, no rotation/expiry, no working brute-force ceiling | open | P1 | R2 | pending | fixed (startup entropy gate + failure logging) + runbook (rotate token) |
+| S05-H1 | High | `server/index.js:537,:610` | TB-5 | `ADMIN_TOKEN` has no entropy floor, no startup validation, no rotation/expiry, no working brute-force ceiling | open | P1 | R2 | verified-source | fixed (startup entropy gate + failure logging) + runbook (rotate token) |
 | S05-H2 | High | `server/index.js` waitlist | TB-5 | Waitlist unreviewable: no requester info, no deny/expire/revoke path | open | P2 | R3 | pending | fixed (deny/expire path) + accepted (product minimalism) |
-| S05-H3 | High | `server/index.js` admin actions | TB-5 | Admin actions not durably audited; admin auth not audited at all | open | P1 | R2 | pending | fixed |
+| S05-H3 | High | `server/index.js` admin actions | TB-5 | Admin actions not durably audited; admin auth not audited at all | open | P1 | R2 | verified-source | fixed |
 | S05-M1 | Medium | `server/index.js` admin | TB-5 | Raw operator IPs + raw uids persisted to Firestore forever, uids to stdout | open | P2 | R3 | pending | fixed |
 | S05-M2 | Medium | `server/index.js`,`firestore.rules` | TB-5 | `duressEligibility` enforced nowhere → enroll/revoke cosmetic (with S06-M1) | open | P2 | R3 | pending | fixed |
 | S05-M3 | Medium | `server/index.js` admin sessions | TB-5 | Admin sessions: no absolute lifetime, refreshed unauthenticated, bound to nothing, no bulk revoke | open | P2 | R3 | pending | fixed |
@@ -156,8 +157,8 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 | ID | Sev (orig→gov) | Affected files | TB | Root cause | Status | Prio | Rnd | Verify | Planned Disp |
 |---|---|---|---|---|---|---|---|---|---|
 | S06-H1 | High | `RestoreFromSeedActivity.java:252-268`,`server/index.js:1436-1546` | TB-1 | `accountLock` never enforced server-side; restore gate client-side post-auth | open | P0 (with S07-C1) | R1 | pending | fixed |
-| S06-H2 | High | `DuressManager.java:269-322`,`AccountLockWorker.java`,`FcmUnregisterWorker.java` | Theme F | Duress wipe leaves plaintext WorkManager records proving a duress code was entered | open | P1 | R2 | pending | fixed |
-| S06-H3 | High | `DuressManager.java:192-256` | TB-1 | Offline duress trigger silently fails to lock; attacker controls network | open | P1 | R2 | pending | fixed |
+| S06-H2 | High | `DuressManager.java:269-322`,`AccountLockWorker.java`,`FcmUnregisterWorker.java` | Theme F | Duress wipe leaves plaintext WorkManager records proving a duress code was entered | open | P1 | R2 | verified-source | fixed |
+| S06-H3 | High | `DuressManager.java:192-256` | TB-1 | Offline duress trigger silently fails to lock; attacker controls network | open | P1 | R2 | verified-source | fixed |
 | S06-M1 | Medium | `DuressManager.java`,`ManageUnlockCodesActivity.java`,`firestore.rules:321-324` | TB-1 | `duressEligibility` enforced nowhere; cached client bool only | open | P2 | R3 | pending | fixed |
 | S06-M2 | Medium | `server/index.js:2394-2466` | TB-1 | `_duressNonces` grows without bound | open | P2 | R3 | pending | fixed (per-uid single nonce + drop-path delete) + runbook (TTL policy) |
 | S06-M3 | Medium | `server/index.js:2398,:2476` | Theme F | Raw uids logged on both duress endpoints | open | P2 | R3 | pending | fixed |
@@ -177,7 +178,7 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 | S07-H1 | High | `server/index.js:1514-1517` | TB-1 | Existing-account key check fails open when `identityPubKeyHash` absent (dup of S02-L1) | open | P0 | R1 | pending | fixed |
 | S07-H2 | High | `BackupCryptoHelper.java:105-111`,`BackupManager.java` | TB-1 | Backup docs ship unkeyed SHA-256 of plaintext → offline plaintext-recovery oracle | open | P2 | R3 | pending | fixed |
 | S07-H3 | High | `GroupCipherHelper.java:43-79`,`firestore.rules:130-134` | TB-2 | Group messages have no AAD → sender attribution rules-only | open | P2 | R3 | pending | fixed |
-| S07-M1 | Med→High(=S08-H5) | `SecurePrefs.java` | Theme C | Silent plaintext fallback; `isInitialized()` ignores it | open | P1 | R2 | pending | fixed (same change as S08-H5) |
+| S07-M1 | Med→High(=S08-H5) | `SecurePrefs.java` | Theme C | Silent plaintext fallback; `isInitialized()` ignores it | open | P1 | R2 | verified-source | fixed (same change as S08-H5) |
 | S07-M2 | Medium | `DuoShieldSignalStore.java` | TB-2 | Trust keyed on mutable Firebase uid → `/migrateUid` resets safety numbers | open | P2 | R3 | pending | fixed |
 | S07-M3 | Medium | `BackupManager.java` | TB-1 | Backup metadata outside the AEAD (`isDeleted`/`compressed`/missing `checksum`) | open | P2 | R3 | pending | fixed |
 | S07-L1 | Low | `GroupChatActivity.java` `fetchGroupKey` | TB-2 | Creator check fails open on null cached `creatorUid` | open | P2 | R3 | pending | fixed |
@@ -194,10 +195,10 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 |---|---|---|---|---|---|---|---|---|---|
 | S08-C1 | **Critical** | `.github/workflows/release.yml:55-66`,`build-release.sh`,`build-apks.sh`,`app/build.gradle:167-183` | all | Firebase Admin service-account private key packaged into every released APK | open | P0 | R1 | pending | fixed+runbook (revoke GCP key) |
 | S08-H1 | High | `app/build.gradle:70-77`,`release.yml:76,:85`,`worker/src/index.js:357-362` | TB-9 | `WORKER_SECRET` compiled into `BuildConfig`; Worker still accepts it on `/stats` | open | P0/P1 | R1 | pending | fixed+runbook (rotate Worker secret) |
-| S08-H2 | High | `BaseActivity.java:42-46` + 4 clear sites | Theme F | `FLAG_SECURE` actively cleared app-wide → OS snapshots of plaintext chats | open | P1 | R2 | pending | fixed |
+| S08-H2 | High | `BaseActivity.java:42-46` + 4 clear sites | Theme F | `FLAG_SECURE` actively cleared app-wide → OS snapshots of plaintext chats | open | P1 | R2 | verified-source | fixed |
 | S08-H3 | High | `DuoShieldGlideModule.java:59-63`,`MessageAdapter.java`,`TempFileCleaner.java` | Theme F | 150 MB plaintext Glide disk cache + 4 unswept temp prefixes | open | P1 | R2 | pending | fixed |
 | S08-H4 | High | `MessageAdapter.java:890-895` | G4 | Link-preview images fetched from sender's host (client half of S04-H3) | open | P1 | R2 | pending | fixed |
-| S08-H5 | High | `SecurePrefs.java` | Theme C | Plaintext fallback holds identity key, backup key AND SQLCipher passphrase (re-rate of S07-M1) | open | P1 | R2 | pending | fixed |
+| S08-H5 | High | `SecurePrefs.java` | Theme C | Plaintext fallback holds identity key, backup key AND SQLCipher passphrase (re-rate of S07-M1) | open | P1 | R2 | verified-source | fixed |
 | S08-M1 | Medium | `AndroidManifest.xml` | Theme — | `allowNativeHeapPointerTagging="false"` disables memory-safety mitigation | open | P2 | R3 | pending | fixed |
 | S08-M2 | Medium | `res/xml/file_paths.xml` | F | `FileProvider` declares root-scoped grantable paths incl. unused external roots | open | P2 | R3 | pending | fixed |
 | S08-M3 | Medium | app-wide | F | No root/tamper/hooking detection, no keystore attestation | open | P2 | R3 | pending | accepted (out of threat model — compromised client granted) |
@@ -231,7 +232,7 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 | ID | Sev | Affected files | TB | Root cause | Status | Prio | Rnd | Verify | Planned Disp |
 |---|---|---|---|---|---|---|---|---|---|
 | S10-N1 | Medium | `app/build.gradle`,`app/src/main/**`,`firestore.rules` | TB-2 | Firebase App Check absent → every Firestore rule scriptable at machine speed | open | P2 | R3 | pending | accepted (sideloaded-APK caveat) + fixed (client provider wiring) + runbook (enable enforcement) |
-| S10-N2 | Low | `DuoShieldSignalStore.java:133,172,190,307,320` | Theme F | Peer uid written to release logcat, violating project log policy (with S07-L4) | open | P1 | R2 | pending | fixed |
+| S10-N2 | Low | `DuoShieldSignalStore.java:133,172,190,307,320` | Theme F | Peer uid written to release logcat, violating project log policy (with S07-L4) | open | P1 | R2 | verified-source | fixed |
 | S10-N3 | Low | `worker/src/index.js:530-548,:646-665` | TB-4 | Deleted media can survive in B2 cold tier when delete races nightly migration | open | P1 | R2 | pending | fixed |
 
 ---
