@@ -346,20 +346,73 @@ db.collection("calls").onSnapshot(
 const mintCooldown = new Map();
 
 // ── S07-C1 FIX: per-userId challenge store ────────────────────────────────────
-// /mintToken now requires a proof-of-possession: the client must sign a
+// /mintToken requires a proof-of-possession: the client must sign a
 // server-issued nonce with their identity PRIVATE key.  A nonce is obtained
 // from /mintChallenge and is valid for CHALLENGE_TTL_MS (5 minutes).
-// After use (or expiry) the nonce is deleted so replay is impossible.
+// Each nonce is single-use — consumed on first presentation, so replay fails.
 // In-memory only; a server restart invalidates all pending challenges and the
 // client simply calls /mintChallenge again.
-const CHALLENGE_TTL_MS  = 5 * 60 * 1000; // 5 minutes
-const mintChallenges    = new Map();      // userId → { nonce: string, expiresAt: number }
+//
+// S02-M1 (second door): each userId holds a SET of outstanding nonces, not a
+// single slot.  /mintChallenge is unauthenticated by necessity — the caller
+// cannot prove anything before it receives a nonce to sign — so a single-slot
+// store let an attacker who merely knows a victim's userId call /mintChallenge
+// repeatedly and evict the victim's pending nonce between their own
+// /mintChallenge and /mintToken, denying that account re-authentication
+// indefinitely.  That is exactly the pre-auth DoS S02-M1 removed from the
+// cooldown, reintroduced through the challenge path.  Holding several nonces
+// concurrently means an attacker's requests ADD entries instead of destroying
+// the victim's.
+//
+// The per-user cap bounds memory (an unauthenticated endpoint must not grow the
+// heap without limit); evicting the OLDEST entry on overflow keeps the newest —
+// and therefore the legitimate in-flight — challenge alive.
+const CHALLENGE_TTL_MS       = 5 * 60 * 1000; // 5 minutes
+const MAX_CHALLENGES_PER_UID = 16;
+const mintChallenges         = new Map();     // userId → Map<nonce, expiresAt>
+
+/** Issue a fresh single-use nonce for `userId`, bounded per user. */
+function issueChallenge(userId) {
+  const nonce = crypto.randomBytes(32).toString("hex");
+  let perUid  = mintChallenges.get(userId);
+  if (!perUid) {
+    perUid = new Map();
+    mintChallenges.set(userId, perUid);
+  }
+  // Drop expired entries first, then enforce the cap oldest-first (Map preserves
+  // insertion order, so the first key is the oldest).
+  const now = Date.now();
+  for (const [n, exp] of perUid) if (exp <= now) perUid.delete(n);
+  while (perUid.size >= MAX_CHALLENGES_PER_UID) {
+    perUid.delete(perUid.keys().next().value);
+  }
+  perUid.set(nonce, now + CHALLENGE_TTL_MS);
+  return nonce;
+}
+
+/**
+ * Atomically consume `nonce` for `userId`.
+ * Returns "ok" | "missing" | "expired". Consuming makes replay impossible.
+ */
+function consumeChallenge(userId, nonce) {
+  const perUid = mintChallenges.get(userId);
+  if (!perUid) return "missing";
+  const expiresAt = perUid.get(nonce);
+  if (expiresAt === undefined) return "missing";
+  // Single-use: remove regardless of whether it had expired.
+  perUid.delete(nonce);
+  if (perUid.size === 0) mintChallenges.delete(userId);
+  return Date.now() > expiresAt ? "expired" : "ok";
+}
 
 // Purge expired challenges every 10 minutes.
 setInterval(() => {
   const now = Date.now();
-  for (const [uid, entry] of mintChallenges) {
-    if (entry.expiresAt <= now) mintChallenges.delete(uid);
+  for (const [uid, perUid] of mintChallenges) {
+    for (const [nonce, expiresAt] of perUid) {
+      if (expiresAt <= now) perUid.delete(nonce);
+    }
+    if (perUid.size === 0) mintChallenges.delete(uid);
   }
 }, 10 * 60 * 1000);
 
@@ -407,7 +460,7 @@ function checkWaitlistPollRateLimit(ip) {
   return true;
 }
 
-// ── Per-IP rate limit ───────────────────────────────��─────────────────────────
+// ── Per-IP rate limit ───────────────────────────────���─────────────────────────
 // Max 5 /mintToken attempts per IP in any rolling 15-minute window.
 // Render appends its own entry to X-Forwarded-For; we use the RIGHTMOST value
 // (proxy-appended, not client-controlled) via getClientIp(). See CRIT-1 fix.
@@ -1442,7 +1495,7 @@ http.createServer((req, res) => {
     return;
   }
 
-  // ── POST /mintToken ────────────────────────────────���────────────────────────
+  // ── POST /mintToken ───────────────────────────────������────────────────────────
   //
   // Body (JSON): { userId, identityPubKeyHex }
   //
@@ -1485,10 +1538,11 @@ http.createServer((req, res) => {
           return;
         }
 
-        // Issue (or replace) a challenge for this userId.
-        const nonce     = crypto.randomBytes(32).toString("hex");
-        const expiresAt = Date.now() + CHALLENGE_TTL_MS;
-        mintChallenges.set(userId, { nonce, expiresAt });
+        // Issue an ADDITIONAL single-use challenge for this userId. Deliberately
+        // additive rather than replacing: see the S02-M1 note on the challenge
+        // store — replacing would let an unauthenticated caller evict a victim's
+        // in-flight nonce and deny them re-authentication.
+        const nonce = issueChallenge(userId);
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ nonce }));
@@ -1552,28 +1606,20 @@ http.createServer((req, res) => {
         }
 
         // ── Validate and consume the challenge nonce ─────────────────────────
-        const challenge = mintChallenges.get(userId);
-        if (!challenge) {
+        // Single-use: consumeChallenge removes the nonce, so a replay of this
+        // exact request body returns "missing" on the second attempt.  An unknown
+        // nonce does NOT disturb this user's other outstanding challenges, so a
+        // guessing flood cannot evict a legitimate in-flight nonce (S02-M1).
+        const challengeState = consumeChallenge(userId, nonce);
+        if (challengeState !== "ok") {
           res.writeHead(403, { "Content-Type": "text/plain" });
-          res.end("No active challenge for this userId — call /mintChallenge first");
+          res.end(
+            challengeState === "expired"
+              ? "Challenge expired — call /mintChallenge again"
+              : "No active challenge for this nonce — call /mintChallenge first",
+          );
           return;
         }
-        if (Date.now() > challenge.expiresAt) {
-          mintChallenges.delete(userId);
-          res.writeHead(403, { "Content-Type": "text/plain" });
-          res.end("Challenge expired — call /mintChallenge again");
-          return;
-        }
-        if (nonce !== challenge.nonce) {
-          // Replay with a different nonce (or a nonce from a different challenge
-          // round): consume the entry so a flood cannot try many nonces.
-          mintChallenges.delete(userId);
-          res.writeHead(403, { "Content-Type": "text/plain" });
-          res.end("Challenge nonce mismatch");
-          return;
-        }
-        // Consume on first use — prevents replay.
-        mintChallenges.delete(userId);
 
         // ── Verify XEd25519 signature over the nonce ─────────────────────────
         // Signal's identity key is Curve25519 (Montgomery form). The client
@@ -1597,6 +1643,26 @@ http.createServer((req, res) => {
           console.warn(`mintToken: signature verification failed userId=${attemptedUid}`);
           res.writeHead(403, { "Content-Type": "text/plain" });
           res.end("Signature verification failed");
+          return;
+        }
+
+        // ── S02-M1 FIX: cooldown gate for an AUTHENTICATED caller only ────────
+        // Reachable only after the signature verifies, so an unauthenticated
+        // caller can no longer pin a victim's cooldown by supplying their userId.
+        //
+        // Checked BEFORE the Firestore transaction because the transaction has
+        // side effects that must not occur on a request we are about to reject:
+        // gating afterwards would consume the caller's single-use waitlist invite
+        // and write the identity binding, then return 429 — leaving the invite
+        // marked "used" and the account unrecoverable on retry.
+        //
+        // Stamped only on SUCCESS (after the token is issued) so a request that
+        // fails the lock check or key comparison does not start a 60 s cooldown.
+        const mintStart = Date.now();
+        const lastMint  = mintCooldown.get(userId) || 0;
+        if (mintStart - lastMint < 60_000) {
+          res.writeHead(429, { "Content-Type": "text/plain" });
+          res.end("Too many requests — wait 60 s and retry");
           return;
         }
 
@@ -1684,21 +1750,12 @@ http.createServer((req, res) => {
           }
         });
 
-        // ── S02-M1 FIX: stamp cooldown AFTER authentication succeeds ─────────
-        // Previously stamped before the first await, which let an unauthenticated
-        // caller pin any victim's cooldown by supplying their userId.
-        const now  = Date.now();
-        const last = mintCooldown.get(userId) || 0;
-        if (now - last < 60_000) {
-          res.writeHead(429, { "Content-Type": "text/plain" });
-          res.end("Too many requests — wait 60 s and retry");
-          return;
-        }
-        mintCooldown.set(userId, now);
-
         // Mint custom token — uid = userId (permanent, seed-derived).
         // Issued only after signature verification AND atomic identity-claim.
         const token = await admin.auth().createCustomToken(userId);
+
+        // Cooldown stamped only now, on the success path (see the gate above).
+        mintCooldown.set(userId, Date.now());
 
         console.log(`mintToken: issued token uid=${uidTag(userId)} newAccount=${isNewAccount}`);
 

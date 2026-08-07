@@ -1,0 +1,32 @@
+
+> duoshield-push-server@1.0.0 test
+> node --test test/*.test.js
+
+✔ a freshly issued nonce is accepted exactly once (1.135323ms)
+✔ a nonce is not valid for a different userId (0.185126ms)
+✔ an unknown nonce is rejected (0.143273ms)
+✔ an expired nonce is reported expired and consumed (0.160089ms)
+✔ a nonce one millisecond before expiry is still valid (0.149665ms)
+✔ an attacker calling /mintChallenge cannot evict a victim's in-flight nonce (0.285679ms)
+✔ a failed guessing flood does not disturb an outstanding nonce (1.350529ms)
+✔ overflow evicts the OLDEST nonce, preserving the newest in-flight one (0.255551ms)
+✔ per-user challenge count is bounded regardless of flood size (22.455029ms)
+✔ expired entries are reclaimed on the next issue for that user (0.371147ms)
+✔ the user entry is removed once its last nonce is consumed (0.122708ms)
+✔ consuming for a user with no challenges at all is a clean miss (0.083611ms)
+✔ issued nonces are 32-byte hex and unique (2.009464ms)
+✔ accepts a genuine XEdDSA signature over the challenge nonce (13.309012ms)
+✔ accepts signatures across many independent identities (38.626698ms)
+✔ rejects a signature over a different nonce (replay of an old signature) (8.398867ms)
+✔ rejects a valid signature checked against a different identity's key (10.862692ms)
+✔ rejects a tampered signature (9.463998ms)
+✔ rejects malformed input instead of throwing (fail closed) (3.740205ms)
+✔ an all-zero public key does not verify arbitrary signatures (0.264496ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 184.3927

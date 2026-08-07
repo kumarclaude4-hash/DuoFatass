@@ -1,0 +1,53 @@
+diff --git a/server/lib/xed25519.js b/server/lib/xed25519.js
+index 4ad02f4..cad7650 100644
+--- a/server/lib/xed25519.js
++++ b/server/lib/xed25519.js
+@@ -21,9 +21,13 @@
+  *   - Uses Node.js built-in `crypto` (Ed25519 supported in Node 12+).
+  *   - Pure-JS big-int arithmetic; not timing-safe. Used only for verification
+  *     of a signature over a nonce, not for key material protection.
+- *   - The XEd25519 spec defines the message as prefixed with a domain-separation
+- *     constant when produced by Signal's implementation. This module expects the
+- *     caller to apply the same prefix to `message` before calling verifySignature.
++ *   - The message is verified UNPREFIXED. XEdDSA's 32-byte domain-separation
++ *     prefix belongs to `hash_1`, which the signer uses only to derive the
++ *     per-signature nonce `r`; it never enters the challenge hash. Verification
++ *     recomputes h = SHA-512(R || A || M) over the raw message, so prefixing
++ *     `message` here would reject every legitimate signature. See §2.4/§2.5 of
++ *     the XEdDSA spec, and `server/test/xed25519.test.js`, which signs with an
++ *     independent XEdDSA implementation and would fail if a prefix were applied.
+  *
+  * Usage:
+  *   const { verifySignature } = require('./xed25519');
+@@ -100,12 +104,13 @@ function montgomeryToEdwards(curve25519Pub) {
+ /**
+  * Verify an XEd25519 signature produced by Signal's Curve.calculateSignature.
+  *
+- * Signal's calculateSignature prepends a 32-byte domain-separation prefix
+- * (0xFE repeated 32 times) before performing the Ed25519 sign operation
+- * (XEd25519 spec §2 "nonce and message"). We prepend the same prefix here.
++ * XEdDSA verification is standard Ed25519 verification against the Edwards-form
++ * public key, over the message exactly as signed. The signer's `hash_1` domain
++ * prefix (XEdDSA §2.4) is applied only when deriving the secret nonce `r` and is
++ * invisible to a verifier, so no prefix is applied to `message` here.
+  *
+  * @param  {Buffer} curve25519PubKey  32-byte Curve25519 public key
+- * @param  {Buffer} message           Original message (without prefix)
++ * @param  {Buffer} message           Message as signed, unprefixed
+  * @param  {Buffer} signature         64-byte XEd25519 signature
+  * @returns {boolean}                 true if the signature is valid
+  */
+@@ -143,11 +148,8 @@ function verifySignature(curve25519PubKey, message, signature) {
+ 
+     const pubKeyObj = crypto.createPublicKey({ key: spki, format: 'der', type: 'spki' });
+ 
+-    // XEd25519 domain prefix: 32 × 0xFE (Signal spec §2).
+-    const prefix       = Buffer.alloc(32, 0xfe);
+-    const prefixedMsg  = Buffer.concat([prefix, message]);
+-
+-    return crypto.verify(null, prefixedMsg, pubKeyObj, signature);
++    // Message is verified as signed — no domain prefix (see the note above).
++    return crypto.verify(null, message, pubKeyObj, signature);
+   } catch (_) {
+     return false;
+   }

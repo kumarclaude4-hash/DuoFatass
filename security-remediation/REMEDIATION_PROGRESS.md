@@ -5,9 +5,9 @@ closed remediation program built on it._
 
 Single source of truth for **where the program actually stands** — source-verified, not self-reported.
 
-**Last reconciled:** 2026-08-07
-**Program phase:** Phase 0 complete — Reconciliation & Planning. Execution not yet begun.
-**Rounds executed:** 0 of 3
+**Last reconciled:** 2026-08-07 (Round 1 execution session)
+**Program phase:** Round 1 executed — 9 of 11 findings `fixed`, 2 `open`. Round 1 **not closed**.
+**Rounds executed:** 1 of 3 (R1 executed, not closed — see §1)
 
 > ### Correction notice (2026-08-07)
 >
