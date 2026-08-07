@@ -247,11 +247,28 @@ public class DuressManager {
                         if (nonce != null && !nonce.isEmpty()) {
                             AccountLockWorker.enqueue(appCtx, uidBeforeWipe, nonce);
                             android.util.Log.d("DuressManager", "AccountLockWorker enqueued with nonce.");
+                        } else {
+                            // S06-H3: Nonce fetch returned empty/null (server error) — enqueue
+                            // without a nonce so AccountLockWorker can attempt UID-only nonce
+                            // recovery on its first retry, once the device is back online.
+                            AccountLockWorker.enqueue(appCtx, uidBeforeWipe, "");
+                            android.util.Log.w("DuressManager",
+                                    "Nonce empty — AccountLockWorker enqueued for UID-only retry.");
                         }
+                    } else {
+                        // S06-H3: Could not obtain an ID token (session already expired or
+                        // unavailable) — still enqueue for UID-only nonce recovery.
+                        AccountLockWorker.enqueue(appCtx, uidBeforeWipe, "");
+                        android.util.Log.w("DuressManager",
+                                "No ID token — AccountLockWorker enqueued for UID-only retry.");
                     }
                 } catch (Exception e) {
+                    // S06-H3: Exception during nonce acquisition (offline, timeout, etc.) —
+                    // enqueue the worker anyway so it can retry once connectivity returns.
+                    AccountLockWorker.enqueue(appCtx, uidBeforeWipe, "");
                     android.util.Log.w("DuressManager",
-                            "Could not obtain lock nonce — WorkManager retry skipped: " + e.getMessage());
+                            "Could not obtain lock nonce — AccountLockWorker enqueued for UID-only retry: "
+                            + e.getMessage());
                 }
             }
 
@@ -311,6 +328,20 @@ public class DuressManager {
 
             // 4. Firebase local sign-out (no network call, no Firestore writes).
             try { FirebaseAuth.getInstance().signOut(); } catch (Exception ignored) {}
+
+            // S06-H2: Remove WorkManager task history so a forensic analysis of
+            // WorkManager's internal SQLite DB cannot reconstruct the duress-logout
+            // event sequence. cancelAllWorkByTag() terminates any still-queued jobs;
+            // pruneWork() deletes the FINISHED work records (the primary forensic
+            // concern — completed jobs linger in WorkManager's DB until pruned).
+            try {
+                androidx.work.WorkManager wm = androidx.work.WorkManager.getInstance(appCtx);
+                if (uidBeforeWipe != null) {
+                    wm.cancelAllWorkByTag("account_lock_" + uidBeforeWipe);
+                    wm.cancelAllWorkByTag("fcm_unregister_" + uidBeforeWipe);
+                }
+                wm.pruneWork();
+            } catch (Exception ignored) {}
 
             // F30 fix: Clear the routing-guard flag LAST, after signOut() and after all
             // prefs are wiped. The step-3d clear above already removes it as part of the

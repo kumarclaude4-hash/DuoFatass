@@ -886,10 +886,17 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                 h.linkPreviewTitle.setVisibility(View.GONE);
             }
 
-            // OG image
+            // OG image — S04-H3 / S08-H4: never hand the raw og:image URL directly to
+            // Glide. Route it through the server-side /imageProxy endpoint instead so
+            // (a) the device IP is never disclosed to the third-party image host and
+            // (b) the server can enforce its own SSRF / content-type allow-list before
+            // the bytes ever reach the client.
             if (preview.imageUrl != null && !preview.imageUrl.isEmpty()) {
                 h.linkPreviewImage.setVisibility(View.VISIBLE);
-                Glide.with(ctx).load(preview.imageUrl)
+                String proxyUrl = com.duoshield.app.BuildConfig.PUSH_SERVER_URL
+                        + "/imageProxy?url="
+                        + android.net.Uri.encode(preview.imageUrl);
+                Glide.with(ctx).load(proxyUrl)
                      .centerCrop()
                      .placeholder(android.R.drawable.ic_menu_gallery)
                      .into(h.linkPreviewImage);

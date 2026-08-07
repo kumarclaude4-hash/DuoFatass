@@ -130,7 +130,7 @@ public final class DuoShieldSignalStore
             return true; // new identity — session can proceed
         }
         if (!existing.equals(incoming)) {
-            Log.w(TAG, "Identity key changed for " + address + " — storing new key (TOFU).");
+            Log.w(TAG, "Identity key changed for <redacted> — storing new key (TOFU).");
             // Batch the SecurePrefs writes into one editor so only one apply() call
             // flushes to disk instead of three (BUG-CR03).
             prefs.edit()
@@ -169,8 +169,7 @@ public final class DuoShieldSignalStore
         }
         boolean trusted = stored.equals(identityKey);
         if (!trusted) {
-            Log.w(TAG, "Identity key changed for " + address.getName()
-                    + " — raising safety-number banner");
+            Log.w(TAG, "Identity key changed for <redacted> — raising safety-number banner");
             ctx.getSharedPreferences("duoshield_prefs", android.content.Context.MODE_PRIVATE)
                .edit()
                .putBoolean("safety_num_changed_" + address.getName(), true)
@@ -187,7 +186,7 @@ public final class DuoShieldSignalStore
         try {
             return new IdentityKey(Base64.decode(b64, Base64.NO_WRAP), 0);
         } catch (InvalidKeyException e) {
-            Log.e(TAG, "Failed to deserialise stored identity for " + address, e);
+            Log.e(TAG, "Failed to deserialise stored identity for <redacted>", e);
             return null;
         }
     }
@@ -304,7 +303,7 @@ public final class DuoShieldSignalStore
         try {
             return new SessionRecord(row.sessionData);
         } catch (Exception e) {
-            Log.e(TAG, "Session deserialisation failed for " + key + " — returning fresh.", e);
+            Log.e(TAG, "Session deserialisation failed for <redacted> — returning fresh.", e);
             return new SessionRecord();
         }
     }
@@ -317,7 +316,7 @@ public final class DuoShieldSignalStore
                     key, record.serialize(), System.currentTimeMillis());
             AppDatabase.getInstance(ctx).signalSessionDao().store(row);
         } catch (Exception e) {
-            Log.e(TAG, "Failed to store session for " + key, e);
+            Log.e(TAG, "Failed to store session for <redacted>", e);
         }
     }
 

@@ -74,7 +74,14 @@ public class SecurePrefs {
         if (cached != null) return cached;
         synchronized (SecurePrefs.class) {
             if (cached != null) return cached;
-            Built built = buildTiered(context, FILE_NAME);
+            // S08-H5 / S07-M1: the account-scoped file stores crypto key material
+            // (Signal identity keys, pre-keys, PIN hashes). A plaintext fallback
+            // would expose that material on any device where the KeyStore is
+            // unavailable or broken. Throw here instead so the startup flow can
+            // surface a clear error rather than silently degrading to unencrypted
+            // storage.  getDeviceGate() keeps the plaintext fallback because it
+            // stores only the device-level PIN gate and must survive account wipes.
+            Built built = buildTiered(context, FILE_NAME, /* throwOnFallback= */ true);
             cached              = built.prefs;
             encryptionAvailable = built.encryptionAvailable;
             initialized         = true;
@@ -91,7 +98,9 @@ public class SecurePrefs {
         if (deviceGateCached != null) return deviceGateCached;
         synchronized (SecurePrefs.class) {
             if (deviceGateCached != null) return deviceGateCached;
-            Built built = buildTiered(context, DEVICE_GATE_FILE);
+            // Device-gate stores only the device-level PIN — no crypto key material.
+            // A plaintext fallback here is acceptable and must survive account wipes.
+            Built built = buildTiered(context, DEVICE_GATE_FILE, /* throwOnFallback= */ false);
             deviceGateCached              = built.prefs;
             deviceGateEncryptionAvailable = built.encryptionAvailable;
             return deviceGateCached;
@@ -110,10 +119,15 @@ public class SecurePrefs {
 
     /**
      * Runs the three-tier EncryptedSharedPreferences initialisation strategy
-     * (see class javadoc) against an arbitrary file name, falling back to
-     * plaintext MODE_PRIVATE prefs if every tier fails.
+     * (see class javadoc) against an arbitrary file name.
+     *
+     * @param throwOnFallback if {@code true}, throws {@link IllegalStateException}
+     *   instead of returning a plaintext-backed {@link Built} when every encryption
+     *   tier fails. Must be {@code true} for files that store crypto key material
+     *   ({@link #FILE_NAME}); {@code false} for files whose plaintext fallback is
+     *   acceptable ({@link #DEVICE_GATE_FILE}).
      */
-    private static Built buildTiered(Context context, String fileName) {
+    private static Built buildTiered(Context context, String fileName, boolean throwOnFallback) {
         Context appCtx = context.getApplicationContext();
 
         // ── Tier 1: standard MasterKey (hardware-backed when available) ──────
@@ -167,9 +181,20 @@ public class SecurePrefs {
                     + " API=" + android.os.Build.VERSION.SDK_INT, e3);
         }
 
-        // ── Fallback: plaintext (MODE_PRIVATE) ───────────────────────────────
-        // Still protected by Android's per-app file isolation. No screen lock
-        // required — same posture as WhatsApp/Telegram on devices without a TEE.
+        // ── Fallback path ─────────────────────────────────────────────────────
+        // S08-H5 / S07-M1: Files that store crypto key material must not fall
+        // back to plaintext — throw so the caller can surface a fatal error rather
+        // than silently storing private keys unencrypted.
+        if (throwOnFallback) {
+            throw new IllegalStateException(
+                    "EncryptedSharedPreferences unavailable for '" + fileName
+                    + "' and plaintext fallback is not permitted for this file. "
+                    + "Device: " + android.os.Build.MANUFACTURER
+                    + " " + android.os.Build.MODEL
+                    + " API=" + android.os.Build.VERSION.SDK_INT);
+        }
+        // Still protected by Android's per-app file isolation (MODE_PRIVATE) —
+        // same posture as WhatsApp/Telegram on devices without a hardware TEE.
         SharedPreferences sp = appCtx.getSharedPreferences(fileName, Context.MODE_PRIVATE);
         return new Built(sp, false);
     }

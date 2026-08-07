@@ -1,6 +1,7 @@
 const admin = require("firebase-admin");
 const http = require("http");
 const crypto = require("crypto");
+const dns = require("dns").promises;
 const pure = require("./lib/pure");
 // S07-C1 FIX: XEd25519 signature verification for Signal identity keys.
 // Converts Curve25519 pubkeys to Edwards form before verifying Ed25519 sigs.
@@ -70,6 +71,26 @@ console.log(`Initial Firestore snapshot will only process messages from the last
     } else {
       console.warn("⚠️  Firestore write check inconclusive:", err.message);
     }
+  }
+
+  // S05-H1: ADMIN_TOKEN entropy floor check.
+  // A short or low-entropy token is trivially guessable by an attacker who can
+  // reach the /admin endpoints (e.g. through a misconfigured firewall rule).
+  // Enforce a minimum of 32 printable ASCII characters and emit a clear startup
+  // error that shows up in deployment logs before any admin request can succeed.
+  // The server continues running so other endpoints remain available — the admin
+  // panel simply returns 503 until the operator sets a strong token.
+  const adminTokenRaw = process.env.ADMIN_TOKEN || "";
+  if (!adminTokenRaw) {
+    console.error("❌ S05-H1: ADMIN_TOKEN is not set — admin panel will be unavailable. " +
+      "Generate a token with: openssl rand -base64 48");
+  } else if (adminTokenRaw.length < 32) {
+    console.error(
+      `❌ S05-H1: ADMIN_TOKEN is too short (${adminTokenRaw.length} chars, minimum 32). ` +
+      "Replace it with a high-entropy token: openssl rand -base64 48"
+    );
+  } else {
+    console.log("✅ ADMIN_TOKEN entropy OK");
   }
 })();
 
@@ -477,13 +498,12 @@ setInterval(() => {
 }, 30 * 60 * 1000);
 
 // ── Per-UID authenticated-endpoint rate limiter ───────────────────────────────
-// Prevents an authenticated user from flooding B2 presign/delete or other
-// server-mediated endpoints.  Each endpoint has its own per-minute bucket.
+// Prevents an authenticated user from flooding server-mediated endpoints.
+// Each endpoint has its own per-minute bucket.
 const AUTH_RATE_WINDOW_MS = 60_000;
 const AUTH_RATE_LIMITS = {
-  b2PresignedPut:    30,   // 30 PUT presigns / min per user
-  b2PresignedGet:    60,   // 60 GET presigns / min per user
-  b2Delete:          10,   // 10 deletes / min per user
+  // S04-I2: b2PresignedPut, b2PresignedGet, b2Delete removed — those routes no
+  // longer exist in this codebase (media storage moved off B2 in an earlier cycle).
   createChat:        10,   // 10 chat creations / min per user
   migrateUid:         2,   //  2 migrations / min per user
   turnCredentials:   20,   // 20 TURN fetches / min per user
@@ -787,9 +807,81 @@ function sha256hex(hexStr) {
 // a malicious server redirect the fetch to an internal address afterwards.
 const isBlockedPreviewHost = pure.isBlockedPreviewHost;
 
+// S04-H1: Resolves a hostname to an IP via dns.lookup() and throws if the
+// resolved IP falls in a private, loopback, or cloud-metadata range. Applied
+// to every hop in fetchFollowingSafeRedirects so a DNS rebinding attack cannot
+// swap a public IP for a private one between the hostname check and the fetch.
+function isPrivateOrMetadataIp(ip) {
+  const blocked = [
+    /^127\./,                                           // IPv4 loopback
+    /^10\./,                                            // RFC 1918 class A
+    /^172\.(1[6-9]|2\d|3[01])\./,                       // RFC 1918 class B
+    /^192\.168\./,                                      // RFC 1918 class C
+    /^169\.254\./,                                      // link-local / GCP/AWS metadata
+    /^100\.(6[4-9]|[7-9]\d|1([01]\d|2[0-7]))\./,       // RFC 6598 shared address space
+    /^0\./,                                             // "this" network (RFC 1122)
+    /^198\.1[89]\./,                                    // benchmarking (RFC 2544)
+    /^::1$/,                                            // IPv6 loopback
+    /^fc[0-9a-f]{2}:/i,                                 // IPv6 unique local (fc00::/7 first half)
+    /^fd[0-9a-f]{2}:/i,                                 // IPv6 unique local (fc00::/7 second half)
+    /^fe80:/i,                                          // IPv6 link-local
+  ];
+  return blocked.some((r) => r.test(ip));
+}
+
+async function resolveAndCheckHost(hostname) {
+  let address;
+  try {
+    ({ address } = await dns.lookup(hostname, { verbatim: false }));
+  } catch (e) {
+    throw new Error(`DNS lookup failed for ${hostname}: ${e.message}`);
+  }
+  if (isPrivateOrMetadataIp(address)) {
+    throw new Error(`Resolved ${hostname} → ${address} which is in a blocked range (SSRF guard)`);
+  }
+}
+
+// S04-H2: Read at most maxBytes from a fetch Response body without buffering
+// the entire response first. Returns a UTF-8 string. Falls back to r.text()
+// on environments where r.body is unavailable (Node < 18).
+const LINK_PREVIEW_MAX_HTML_BYTES = 100 * 1024; // 100 KB
+
+async function readHtmlCapped(response, maxBytes) {
+  // Fast path: declared Content-Length is within the cap — read all at once.
+  const cl = parseInt(response.headers.get("content-length") || "0", 10);
+  if (cl > 0 && cl <= maxBytes) {
+    return response.text();
+  }
+  // Stream with cap; cancel the body as soon as we have enough bytes.
+  if (response.body && typeof response.body.getReader === "function") {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > maxBytes) {
+          // Keep only as many bytes as remain within the cap.
+          chunks.push(value.slice(0, value.length - (total - maxBytes)));
+          break;
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.cancel().catch(() => {});
+    }
+    return Buffer.concat(chunks).toString("utf-8");
+  }
+  // Fallback for older Node versions — truncate after the fact.
+  return (await response.text()).slice(0, maxBytes);
+}
+
 // Fetches targetUrl, manually validating and following redirects (instead of
 // `redirect: "follow"`) so each hop is re-checked against isBlockedPreviewHost
-// before it is fetched. Throws on a blocked/invalid hop or too many redirects.
+// AND has its DNS-resolved IP verified via resolveAndCheckHost (S04-H1) before
+// it is fetched. Throws on a blocked/invalid hop or too many redirects.
 async function fetchFollowingSafeRedirects(targetUrl, { headers, timeoutMs, maxRedirects = 5 }) {
   let current = targetUrl;
   for (let hop = 0; hop <= maxRedirects; hop++) {
@@ -797,6 +889,8 @@ async function fetchFollowingSafeRedirects(targetUrl, { headers, timeoutMs, maxR
     if (!["http:", "https:"].includes(parsed.protocol) || isBlockedPreviewHost(parsed.hostname)) {
       throw new Error(`Blocked redirect target: ${parsed.hostname}`);
     }
+    // S04-H1: Resolve hostname → IP and reject if private/metadata address.
+    await resolveAndCheckHost(parsed.hostname);
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     let response;
@@ -2483,13 +2577,16 @@ http.createServer((req, res) => {
           // already passed the check above — Node's fetch does not re-run
           // caller validation on redirect hops. Follow redirects manually
           // instead, so every hop's host is checked before it's fetched.
+          // S04-H2: 5 s timeout (down from 6 s) + body capped at 100 KB via readHtmlCapped.
           const { response: r, finalUrl } = await fetchFollowingSafeRedirects(targetUrl, {
             headers: { "User-Agent": "Mozilla/5.0 (compatible; DuoShield/1.0)" },
-            timeoutMs: 6000,
+            timeoutMs: 5000,
           });
           const preview = { url: targetUrl, domain: parsed.hostname.replace(/^www\./, "") };
           if (r.ok && (r.headers.get("content-type") || "").includes("text/html")) {
-            const html = (await r.text()).slice(0, 30000);
+            // S04-H2: readHtmlCapped streams at most LINK_PREVIEW_MAX_HTML_BYTES (100 KB)
+            // and cancels the response body early instead of buffering the full page.
+            const html = await readHtmlCapped(r, LINK_PREVIEW_MAX_HTML_BYTES);
             const ogT = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{1,200})["']/i)
                      || html.match(/<meta[^>]+content=["']([^"']{1,200})["'][^>]+property=["']og:title["']/i)
                      || html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
@@ -2512,14 +2609,18 @@ http.createServer((req, res) => {
                 .replace(/&#x([0-9a-f]{1,5});/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)));
             }
             if (ogI) {
-              // Validate the extracted URL before returning it to the client.
-              // A malicious page could set og:image to a javascript:, data:, or
-              // internal-network URL — reject anything that isn't http(s):.
+              // S04-H3 / S08-H4: Do NOT return the raw og:image URL to the client — the
+              // Android client would then load it directly, leaking the device IP to the
+              // third-party image host. Instead return an opaque imageProxy URL that the
+              // client can fetch safely: the server validates and proxies the image,
+              // keeping the raw origin URL server-side. Only http(s) URLs are proxied.
               const rawImageUrl = ogI[1].trim();
               try {
                 const imageUrlParsed = new URL(rawImageUrl, targetUrl); // resolve relative URLs
                 if (["http:", "https:"].includes(imageUrlParsed.protocol)) {
-                  preview.imageUrl = imageUrlParsed.href;
+                  // The imageUrl field now contains a server-relative proxy path, not the
+                  // third-party URL. The client appends it to PUSH_SERVER_URL to load the image.
+                  preview.imageUrl = "/imageProxy?url=" + encodeURIComponent(imageUrlParsed.href);
                 }
               } catch {
                 // Malformed image URL — silently omit it.
@@ -2804,7 +2905,7 @@ http.createServer((req, res) => {
     return;
   }
 
-  // ── GET /admin/api/waitlist ───────────────────────────────────────────────
+  // ── GET /admin/api/waitlist ──────────────────────────────────────��────────
   //
   // Auth: x-admin-token header. Returns pending waitlist requests, newest
   // first, so the operator can see who's asking for access.
@@ -2867,13 +2968,17 @@ http.createServer((req, res) => {
         await ref.update({ status: "approved", approvedAt: FieldValue.serverTimestamp() });
         console.log(`[admin] waitlist request approved: requestId=${requestId}`);
 
-        // Audit log — non-fatal; never block the response on this write
-        db.collection("adminAuditLog").add({
+        // S05-H3: Durable audit write — awaited so a write failure is caught by
+        // the outer try/catch and surfaces as a 500 rather than being silently
+        // swallowed. Changed collection from "adminAuditLog" to "_adminAudit" so
+        // the leading underscore marks it as server-internal (Firestore rules deny
+        // all client reads/writes to underscore-prefixed collections).
+        await db.collection("_adminAudit").add({
           action:    "waitlist_approved",
           requestId,
           adminIp:   getClientIp(req),
           at:        FieldValue.serverTimestamp(),
-        }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
+        });
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -2940,13 +3045,13 @@ http.createServer((req, res) => {
         await ref.delete();
         console.log(`[admin] account unfrozen: uid=${uid}`);
 
-        // Audit log — non-fatal; never block the response on this write
-        db.collection("adminAuditLog").add({
+        // S05-H3: Durable _adminAudit write (see waitlist_approved note above).
+        await db.collection("_adminAudit").add({
           action:  "account_unfrozen",
           uid,
           adminIp: getClientIp(req),
           at:      FieldValue.serverTimestamp(),
-        }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
+        });
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -3050,12 +3155,13 @@ http.createServer((req, res) => {
         }, { merge: true });
         console.log(`[admin] duress enrollment granted: uid=${uid}`);
 
-        db.collection("adminAuditLog").add({
+        // S05-H3: Durable _adminAudit write.
+        await db.collection("_adminAudit").add({
           action:  "duress_enrolled",
           uid,
           adminIp: getClientIp(req),
           at:      FieldValue.serverTimestamp(),
-        }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
+        });
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -3097,12 +3203,13 @@ http.createServer((req, res) => {
         await ref.update({ eligible: false, revokedAt: FieldValue.serverTimestamp() });
         console.log(`[admin] duress enrollment revoked: uid=${uid}`);
 
-        db.collection("adminAuditLog").add({
+        // S05-H3: Durable _adminAudit write.
+        await db.collection("_adminAudit").add({
           action:  "duress_revoked",
           uid,
           adminIp: getClientIp(req),
           at:      FieldValue.serverTimestamp(),
-        }).catch((auditErr) => console.warn("[admin] audit log write failed:", auditErr.message));
+        });
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
@@ -3122,7 +3229,7 @@ http.createServer((req, res) => {
     (async () => {
       if (!requireAdminAuth(req, res)) return;
       try {
-        const snap = await db.collection("adminAuditLog")
+        const snap = await db.collection("_adminAudit")
           .orderBy("at", "desc")
           .limit(100)
           .get();
@@ -3145,20 +3252,7 @@ http.createServer((req, res) => {
 
 }).listen(PORT, () => console.log(`Push server listening on port ${PORT}`));
 
-// ── B2 SigV4 helpers — used by /b2PresignedPut, /b2PresignedGet, /b2Delete ──
-// The signing math lives in ./lib/pure (unit-tested there). This wrapper only
-// supplies the runtime credentials/config and the current time.
-
-function b2PresignUrl(method, objectKey, contentType, ttlSeconds) {
-  return pure.buildB2PresignUrl({
-    keyId:       process.env.B2_KEY_ID          || "",
-    appKey:      process.env.B2_APPLICATION_KEY  || "",
-    bucket:      process.env.B2_BUCKET           || "yyush-duoshield",
-    region:      process.env.B2_REGION           || "eu-central-003",
-    method,
-    objectKey,
-    contentType,
-    ttlSeconds,
-    now: new Date(),
-  });
-}
+// S04-I2: b2PresignUrl helper removed — all three B2 routes (b2PresignedPut,
+// b2PresignedGet, b2Delete) were dead code: the routes were never wired into
+// the HTTP handler and the function had no callers. The rate-limit entries
+// for those endpoints were removed at the AUTH_RATE_LIMITS declaration above.

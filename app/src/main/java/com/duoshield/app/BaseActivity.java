@@ -41,8 +41,12 @@ public class BaseActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Screenshots are always allowed — FLAG_SECURE is not applied globally.
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        // S08-H2: Prevent screenshots and screen recording across the entire app.
+        // FLAG_SECURE is set here in the base class so every Activity subclass
+        // inherits it without needing individual opt-in. Any Activity that
+        // legitimately needs to be excluded must call clearFlags explicitly and
+        // document the reason in a code comment.
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
     }
 
     @Override

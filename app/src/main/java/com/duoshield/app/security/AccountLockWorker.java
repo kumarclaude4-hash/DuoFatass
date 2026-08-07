@@ -60,15 +60,19 @@ public class AccountLockWorker extends Worker {
     }
 
     /**
-     * Schedules a jittered account-lock retry authenticated with a server-issued
-     * one-time nonce. The nonce must have been obtained via {@code /requestLockNonce}
-     * while the Firebase session was still live (before sign-out and wipe).
+     * Schedules a jittered account-lock retry. The nonce should have been obtained
+     * via {@code /requestLockNonce} while the Firebase session was still live (before
+     * sign-out and wipe). If {@code nonce} is null or empty (S06-H3: offline at
+     * trigger time), the worker is still enqueued and will attempt UID-only nonce
+     * recovery in {@link #doWork()} on its first retry once connectivity returns.
      */
     public static void enqueue(Context ctx, String uid, String nonce) {
-        if (uid == null || uid.isEmpty() || nonce == null || nonce.isEmpty()) {
-            Log.w(TAG, "enqueue skipped — missing uid or nonce.");
+        if (uid == null || uid.isEmpty()) {
+            Log.w(TAG, "enqueue skipped — missing uid.");
             return;
         }
+        // S06-H3: nonce may be absent when the device was offline at trigger time.
+        // Enqueue unconditionally; doWork() will attempt UID-only nonce recovery.
         long jitterMs = JITTER_MIN_MS + (long) (new SecureRandom().nextDouble() * JITTER_RANGE_MS);
         Data input = new Data.Builder()
                 .putString(DATA_UID, uid)
@@ -84,14 +88,73 @@ public class AccountLockWorker extends Worker {
         Log.d(TAG, "AccountLockWorker enqueued (nonce-based retry).");
     }
 
+    /**
+     * S06-H3: Attempts to obtain a lock nonce without a Firebase ID token, using the
+     * uid in the POST body. The server enforces rate-limiting (one request per uid per
+     * 10 minutes) and only issues a nonce if the uid's {@code accountLock} document is
+     * in the expected pre-locked state. Returns the nonce string, or {@code null} on
+     * failure (including HTTP errors and network unavailability).
+     */
+    private String tryRecoverNonce(String uid) {
+        String serverUrl = BuildConfig.PUSH_SERVER_URL;
+        if (serverUrl == null || serverUrl.isEmpty()) return null;
+        String endpoint = serverUrl.endsWith("/")
+                ? serverUrl + "requestLockNonce"
+                : serverUrl + "/requestLockNonce";
+        try {
+            byte[] body = new org.json.JSONObject()
+                    .put("uid", uid)
+                    .toString()
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            java.net.HttpURLConnection conn =
+                    (java.net.HttpURLConnection) new java.net.URL(endpoint).openConnection();
+            try {
+                conn.setRequestMethod("POST");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(10_000);
+                conn.setReadTimeout(10_000);
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
+                int code = conn.getResponseCode();
+                if (code != 200) {
+                    Log.w(TAG, "UID-only nonce recovery: server returned HTTP " + code);
+                    return null;
+                }
+                java.io.InputStream is = conn.getInputStream();
+                java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                byte[] tmp = new byte[2048]; int n;
+                while ((n = is.read(tmp)) != -1) buf.write(tmp, 0, n);
+                String nonce = new org.json.JSONObject(buf.toString("UTF-8")).optString("nonce", null);
+                return (nonce != null && !nonce.isEmpty()) ? nonce : null;
+            } finally {
+                conn.disconnect();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "UID-only nonce recovery failed: " + e.getMessage());
+            return null;
+        }
+    }
+
     @NonNull
     @Override
     public Result doWork() {
         String uid   = getInputData().getString(DATA_UID);
         String nonce = getInputData().getString(DATA_NONCE);
-        if (uid == null || uid.isEmpty() || nonce == null || nonce.isEmpty()) {
-            Log.w(TAG, "Missing input data — dropping job.");
+        if (uid == null || uid.isEmpty()) {
+            Log.w(TAG, "Missing uid — dropping job.");
             return Result.success();
+        }
+
+        // S06-H3: Nonce may be absent if the device was offline when the duress
+        // wipe was triggered. Attempt UID-only nonce recovery via the server's
+        // /requestLockNonce endpoint (uid-in-body path, no Firebase token required).
+        if (nonce == null || nonce.isEmpty()) {
+            nonce = tryRecoverNonce(uid);
+            if (nonce == null || nonce.isEmpty()) {
+                Log.w(TAG, "UID-only nonce recovery failed — will retry.");
+                return Result.retry();
+            }
+            Log.d(TAG, "UID-only nonce recovery succeeded.");
         }
 
         String serverUrl = BuildConfig.PUSH_SERVER_URL;
