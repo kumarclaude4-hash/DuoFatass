@@ -103,7 +103,7 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 
 | ID | Sev (orig→gov) | Affected files | TB | Root cause | Status | Prio | Rnd | Verify | Planned Disp |
 |---|---|---|---|---|---|---|---|---|---|
-| S03-H1 | High | `server/index.js:509-530`,`firestore.rules:99-100`,`worker/src/index.js` | TB-4 | Scope confusion: client-created `groups/{chatId}` self-asserts membership → media token for another conversation | partial (SEC-A01) | P1 | R2 | pending | fixed |
+| S03-H1 | High | `server/index.js:509-530`,`firestore.rules:99-100`,`worker/src/index.js` | TB-4 | Scope confusion: client-created `groups/{chatId}` self-asserts membership → media token for another conversation | partial (SEC-A01) | P1 | R2 | verified-source | fixed |
 | S03-H2 | High | `worker/src/index.js:224-287` | TB-4 | Per-token (not per-user) Worker rate bucket → one account exhausts global 90K/day | open | P2 | R3 | pending | fixed |
 | S03-H3 | Med→High | `worker/src/index.js:6,20,445-457` | TB-4 | No per-user storage quota → ~19 uploads fill 9.5 GB global cap | open | P2 | R3 | pending | fixed |
 | S03-M1 | Medium | `worker/src/index.js:459-522` | TB-4 | Attacker `Content-Type` stored/echoed, no `nosniff`/`Content-Disposition` | open | P2 | R3 | pending | fixed |
@@ -121,9 +121,9 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 
 | ID | Sev (orig→gov) | Affected files | TB | Root cause | Status | Prio | Rnd | Verify | Planned Disp |
 |---|---|---|---|---|---|---|---|---|---|
-| S04-H1 | High | `server/lib/pure.js:60-68`,`server/index.js:2239,:723` | TB-3/G4 | SSRF predicate never resolves DNS, misses IPv6/literal forms | partial | P1 | R2 | pending | fixed |
-| S04-H2 | High | `server/index.js:2256,:726-733` | TB-3 | `/linkPreview` reads body with no size cap and no timeout → OOM crash | open | P1 | R2 | pending | fixed |
-| S04-H3 | High | `server/index.js:2278-2291`,`MessageAdapter.java:890-895` | G4/TB-3 | `og:image` fetched directly by both devices → recipient IP + read-timestamp beacon | open | P1 | R2 | pending | fixed |
+| S04-H1 | High | `server/lib/pure.js:60-68`,`server/index.js:2239,:723` | TB-3/G4 | SSRF predicate never resolves DNS, misses IPv6/literal forms | partial | P1 | R2 | verified-source | fixed |
+| S04-H2 | High | `server/index.js:2256,:726-733` | TB-3 | `/linkPreview` reads body with no size cap and no timeout → OOM crash | open | P1 | R2 | verified-source | fixed |
+| S04-H3 | High | `server/index.js:2278-2291`,`MessageAdapter.java:890-895` | G4/TB-3 | `og:image` fetched directly by both devices → recipient IP + read-timestamp beacon | open | P1 | R2 | verified-source | fixed |
 | S04-M1 | Med→High | `server/index.js:643-655` + limiter callers | TB-3/TB-5 | IPv6 /64 defeats every IP-keyed limit incl. admin lockout | open | P2 | R3 | pending | fixed |
 | S04-M2 | Medium | `server/index.js:2032` | TB-7 | 24h redistributable TURN creds, no aggregate cap, no outbound timeout | open | P2 | R3 | pending | fixed |
 | S04-M3 | Medium | `server/index.js:643-655` | TB-3 | XFF trust hard-coded to one proxy | open | P2 | R3 | pending | fixed (made configurable) |
@@ -197,7 +197,7 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 | S08-H1 | High | `app/build.gradle:70-77`,`release.yml:76,:85`,`worker/src/index.js:357-362` | TB-9 | `WORKER_SECRET` compiled into `BuildConfig`; Worker still accepts it on `/stats` | open | P0/P1 | R1 | pending | fixed+runbook (rotate Worker secret) |
 | S08-H2 | High | `BaseActivity.java:42-46` + 4 clear sites | Theme F | `FLAG_SECURE` actively cleared app-wide → OS snapshots of plaintext chats | open | P1 | R2 | verified-source | fixed |
 | S08-H3 | High | `DuoShieldGlideModule.java:59-63`,`MessageAdapter.java`,`TempFileCleaner.java` | Theme F | 150 MB plaintext Glide disk cache + 4 unswept temp prefixes | open | P1 | R2 | pending | fixed |
-| S08-H4 | High | `MessageAdapter.java:890-895` | G4 | Link-preview images fetched from sender's host (client half of S04-H3) | open | P1 | R2 | pending | fixed |
+| S08-H4 | High | `MessageAdapter.java:890-895` | G4 | Link-preview images fetched from sender's host (client half of S04-H3) | open | P1 | R2 | verified-source | fixed |
 | S08-H5 | High | `SecurePrefs.java` | Theme C | Plaintext fallback holds identity key, backup key AND SQLCipher passphrase (re-rate of S07-M1) | open | P1 | R2 | verified-source | fixed |
 | S08-M1 | Medium | `AndroidManifest.xml` | Theme — | `allowNativeHeapPointerTagging="false"` disables memory-safety mitigation | open | P2 | R3 | pending | fixed |
 | S08-M2 | Medium | `res/xml/file_paths.xml` | F | `FileProvider` declares root-scoped grantable paths incl. unused external roots | open | P2 | R3 | pending | fixed |
@@ -214,7 +214,7 @@ The **governing severity** used for prioritization is the audit's own cross-sess
 
 | ID | Sev | Affected files | TB | Root cause | Status | Prio | Rnd | Verify | Planned Disp |
 |---|---|---|---|---|---|---|---|---|---|
-| SC-01 | **Critical** | `app/libs/libsignal-client-0.54.1-stripped.jar`,`scripts/strip_signal_records.py` | Theme H | Vendored crypto JAR not reproducible from committed script; no recorded hash; not validated in CI | open | P1 | R2 | pending | fixed |
+| SC-01 | **Critical** | `app/libs/libsignal-client-0.54.1-stripped.jar`,`scripts/strip_signal_records.py` | Theme H | Vendored crypto JAR not reproducible from committed script; no recorded hash; not validated in CI | open | P1 | R2 | verified-source | fixed |
 | SC-02 | **Critical** | `.github/workflows/release.yml:47-76` | Theme D | Release workflow bakes full backend secret set into shipped APK | open | P0 | R1 | pending | fixed+runbook (rotate all creds) |
 | SC-03 | High | `build.gradle`,`app/build.gradle` | Theme H | No Gradle dependency verification — ~30 coordinates unpinned by hash | open | P2 | R3 | pending | fixed (scaffold + CI wiring) + runbook (generate metadata) |
 | SC-04 | High | `release.yml:130,167` | Theme H | Release APKs unverifiable: no checksums, no signature record, no provenance | open | P1 | R2 | pending | fixed |

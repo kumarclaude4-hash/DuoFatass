@@ -109,8 +109,8 @@ jobs:
       # ── Resolve the release tag ──────────────────────────────────────────────
       # Manual dispatch with an explicit tag  → use it as-is.
       # Manual dispatch without a tag         → v{versionName}.
-      # Automatic push                        → v{versionName}  (always the same
-      #   rolling tag; old release is replaced and prior ones are deleted below).
+      # Automatic push                        → v{versionName}.
+      # Existing releases and tags are preserved for auditability and rollback.
       - name: Resolve release tag
         id: tag
         run: |
@@ -126,42 +126,12 @@ jobs:
           echo "version_name=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "Resolved release tag: ${TAG}"
 
-      # ── Delete ALL existing releases + their tags ────────────────────────────
-      # Runs after a successful build, before publishing the new release, so we
-      # never have more than one release live at a time.
-      # Uses paginated REST API calls (100 per page) so it never misses releases
-      # regardless of how many have accumulated.
-      - name: Delete all previous releases and tags
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # SC-04: Publish a tamper-evident SHA-256 manifest alongside the APKs.
+      - name: Generate APK SHA-256 checksums
         run: |
-          REPO="${{ github.repository }}"
-          PAGE=1
-          TOTAL=0
-
-          while true; do
-            # Fetch one page of releases (id + tag_name pairs).
-            BATCH=$(gh api "repos/${REPO}/releases?per_page=100&page=${PAGE}" \
-              --jq '.[] | "\(.id) \(.tag_name)"' 2>/dev/null || true)
-
-            [ -z "$BATCH" ] && break   # no more releases
-
-            while IFS=' ' read -r RELEASE_ID TAG_NAME; do
-              [ -z "$RELEASE_ID" ] && continue
-              echo "Deleting release '${TAG_NAME}' (id=${RELEASE_ID})..."
-              # Delete the release record
-              gh api --method DELETE "repos/${REPO}/releases/${RELEASE_ID}" \
-                2>/dev/null || echo "  could not delete release ${RELEASE_ID}"
-              # Delete the git tag
-              gh api --method DELETE "repos/${REPO}/git/refs/tags/${TAG_NAME}" \
-                2>/dev/null || echo "  could not delete tag ${TAG_NAME}"
-              TOTAL=$((TOTAL + 1))
-            done <<< "$BATCH"
-
-            PAGE=$((PAGE + 1))
-          done
-
-          echo "Done — deleted ${TOTAL} release(s)."
+          cd app/build/outputs/apk/release
+          sha256sum *.apk | sort -k2 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       # ── Publish the new release ──────────────────────────────────────────────
       - name: Create GitHub Release
@@ -184,6 +154,8 @@ jobs:
 
             ---
             Built from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

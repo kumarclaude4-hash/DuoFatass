@@ -595,33 +595,28 @@ function signMediaToken({ op, key, uid, expiresAt }) {
 }
 
 /**
- * True if {@code uid} participates in the chat or group named by {@code scopeId}.
+ * True if {@code uid} participates in the specifically typed scope.
  *
- * The object-key middle segment is either a chats/{id} or a groups/{id}, so both
- * collections are checked. Membership fields mirror firestore.rules:
- * chats use `participants`, groups use `members`.
+ * S03-H1: the key prefix is security-relevant. A key beginning with `media/`
+ * must authorize against the chats collection, while `voice/` must authorize
+ * against groups. Never check both collections: identical IDs across the two
+ * collections must not create a cross-scope authorization bypass.
  */
-async function callerMayAccessScope(uid, scopeId) {
-  if (!uid || !scopeId) return false;
+async function callerMayAccessScope(uid, scopeType, scopeId) {
+  if (!uid || !scopeId || !["media", "voice"].includes(scopeType)) return false;
   try {
-    const [chatDoc, groupDoc] = await Promise.all([
-      db.collection("chats").doc(scopeId).get(),
-      db.collection("groups").doc(scopeId).get(),
-    ]);
-    if (chatDoc.exists) {
-      const participants = chatDoc.data().participants;
-      if (Array.isArray(participants) && participants.includes(uid)) return true;
-    }
-    if (groupDoc.exists) {
-      const members = groupDoc.data().members;
-      if (Array.isArray(members) && members.includes(uid)) return true;
-    }
+    const collection = scopeType === "media" ? "chats" : "groups";
+    const doc = await db.collection(collection).doc(scopeId).get();
+    if (!doc.exists) return false;
+    const members = scopeType === "media"
+      ? doc.data().participants
+      : doc.data().members;
+    return Array.isArray(members) && members.includes(uid);
   } catch (e) {
     // Fail closed on lookup errors — never mint a token we could not authorize.
     console.error("callerMayAccessScope lookup failed:", e.message);
     return false;
   }
-  return false;
 }
 
 // ── Admin panel auth ──────────────────────────────────────────────────────────
@@ -2345,10 +2340,10 @@ http.createServer((req, res) => {
         // ── Authorization: caller must belong to the conversation ───────────
         // Key shape is <media|voice>/<chatId|groupId>/<uuid>.<ext>, so the
         // middle segment names the conversation the object belongs to.
-        const scopeId = key.split("/")[1];
-        const allowed = await callerMayAccessScope(uid, scopeId);
+        const [scopeType, scopeId] = key.split("/");
+        const allowed = await callerMayAccessScope(uid, scopeType, scopeId);
         if (!allowed) {
-          console.warn(`mediaToken: denied uid=${uidTag(uid)} scope=${scopeId} op=${op}`);
+          console.warn(`mediaToken: denied uid=${uidTag(uid)} scopeType=${scopeType} scope=${scopeId} op=${op}`);
           res.writeHead(403, { "Content-Type": "text/plain" });
           res.end("Not a participant of this conversation");
           return;
@@ -2652,6 +2647,79 @@ http.createServer((req, res) => {
         res.writeHead(500); res.end("Internal server error");
       }
     });
+    return;
+  }
+
+  // ── /imageProxy — server-side OG image proxy (S04-H3 / S08-H4) ───────────
+  // The client receives this relative path from /linkPreview instead of the raw
+  // third-party image URL. Validate every redirect hop server-side, cap the image
+  // body, and stream only image content back to the client.
+  if (req.method === "GET" && req.url.startsWith("/imageProxy")) {
+    try {
+      const proxyRequestUrl = new URL(req.url, "http://localhost");
+      const rawImageUrl = proxyRequestUrl.searchParams.get("url");
+      if (!rawImageUrl || rawImageUrl.length > 2048) {
+        res.writeHead(400); res.end("Missing or invalid image URL"); return;
+      }
+      let imageTarget;
+      try { imageTarget = new URL(rawImageUrl); }
+      catch { res.writeHead(400); res.end("Invalid image URL"); return; }
+      if (!["http:", "https:"].includes(imageTarget.protocol)
+          || isBlockedPreviewHost(imageTarget.hostname)) {
+        res.writeHead(403); res.end("Forbidden image address"); return;
+      }
+      if (!checkAuthRateLimit(getClientIp(req), "imageProxy")) {
+        res.writeHead(429, { "Retry-After": "60" }); res.end("Rate limit exceeded"); return;
+      }
+
+      const { response: imageResponse, finalUrl } = await fetchFollowingSafeRedirects(rawImageUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; DuoShield/1.0)" },
+        timeoutMs: 5000,
+        maxRedirects: 3,
+      });
+      const contentType = (imageResponse.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      const contentLength = parseInt(imageResponse.headers.get("content-length") || "0", 10);
+      const maxImageBytes = 5 * 1024 * 1024;
+      if (!imageResponse.ok || !contentType.startsWith("image/")
+          || (contentLength > maxImageBytes)) {
+        try { await imageResponse.body?.cancel(); } catch {}
+        res.writeHead(415); res.end("Unsupported image response"); return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        "Cache-Control": "private, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+      });
+      if (!imageResponse.body || typeof imageResponse.body.getReader !== "function") {
+        const bytes = Buffer.from(await imageResponse.arrayBuffer());
+        if (bytes.length > maxImageBytes) { res.destroy(); return; }
+        res.end(bytes); return;
+      }
+      const reader = imageResponse.body.getReader();
+      let total = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.length;
+          if (total > maxImageBytes) {
+            await reader.cancel();
+            res.destroy();
+            return;
+          }
+          res.write(Buffer.from(value));
+        }
+        res.end();
+      } catch (streamErr) {
+        try { await reader.cancel(); } catch {}
+        if (!res.destroyed) res.destroy(streamErr);
+      }
+    } catch (e) {
+      console.warn("/imageProxy failed:", e.message);
+      if (!res.headersSent) { res.writeHead(502); res.end("Image fetch failed"); }
+      else if (!res.destroyed) res.destroy();
+    }
     return;
   }
 

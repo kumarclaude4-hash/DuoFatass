@@ -22,6 +22,7 @@ which DuoShield does not use.
 """
 
 import glob
+import hashlib
 import zipfile
 import os
 import sys
@@ -67,8 +68,22 @@ def main():
                 z_out.writestr(item, z_in.read(item.filename))
                 kept += 1
 
+    expected_removed = STRIP.intersection(removed)
+    missing = STRIP.difference(removed)
+    if missing:
+        raise RuntimeError(
+            "Refusing to publish an incomplete stripped JAR; missing expected classes: "
+            + ", ".join(sorted(missing))
+        )
+    if expected_removed != STRIP:
+        raise RuntimeError("Stripped JAR removal set does not match STRIP")
+
+    with open(DEST, "rb") as jar_file:
+        output_sha256 = hashlib.sha256(jar_file.read()).hexdigest()
+
     print(f"Source : {src}")
     print(f"Output : {DEST}")
+    print(f"SHA256 : {output_sha256}")
     print(f"Kept   : {kept} entries")
     print(f"Removed: {len(removed)} Record classes")
     for r in removed:

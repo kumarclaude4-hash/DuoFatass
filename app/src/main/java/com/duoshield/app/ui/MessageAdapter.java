@@ -893,9 +893,11 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
             // the bytes ever reach the client.
             if (preview.imageUrl != null && !preview.imageUrl.isEmpty()) {
                 h.linkPreviewImage.setVisibility(View.VISIBLE);
-                String proxyUrl = com.duoshield.app.BuildConfig.PUSH_SERVER_URL
-                        + "/imageProxy?url="
-                        + android.net.Uri.encode(preview.imageUrl);
+                String proxyUrl = preview.imageUrl.startsWith("/imageProxy")
+                        ? com.duoshield.app.BuildConfig.PUSH_SERVER_URL + preview.imageUrl
+                        : com.duoshield.app.BuildConfig.PUSH_SERVER_URL
+                            + "/imageProxy?url="
+                            + android.net.Uri.encode(preview.imageUrl);
                 Glide.with(ctx).load(proxyUrl)
                      .centerCrop()
                      .placeholder(android.R.drawable.ic_menu_gallery)
