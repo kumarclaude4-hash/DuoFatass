@@ -893,8 +893,8 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
         <div class="sub">Manage access and duress-PIN eligibility without opening the Firebase console.</div>
       </div>
       <div class="header-actions">
-        <button class="action" type="button" onclick="refreshAll()">Refresh all</button>
-        <button class="action" type="button" onclick="logout()">Sign out</button>
+        <button class="action" id="refreshAllBtn" type="button">Refresh all</button>
+        <button class="action" id="signOutBtn" type="button">Sign out</button>
       </div>
     </header>
 
@@ -906,7 +906,7 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
     </div>
 
     <section>
-      <div class="section-head"><h2>Pending waitlist requests</h2><button class="action refresh" type="button" onclick="loadWaitlist()">Refresh</button></div>
+      <div class="section-head"><h2>Pending waitlist requests</h2><button class="action refresh" id="waitlistRefreshBtn" type="button">Refresh</button></div>
       <div class="section-body">
         <div class="table-scroll"><table><thead><tr><th>Request ID</th><th>Requested</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="waitlistBody"></tbody></table></div>
         <div class="loading" id="waitlistLoading">Loading…</div>
@@ -915,7 +915,7 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
     </section>
 
     <section>
-      <div class="section-head"><h2>Locked accounts</h2><button class="action refresh" type="button" onclick="loadLocked()">Refresh</button></div>
+      <div class="section-head"><h2>Locked accounts</h2><button class="action refresh" id="lockedRefreshBtn" type="button">Refresh</button></div>
       <div class="section-body">
         <div class="table-scroll"><table><thead><tr><th>UID</th><th>Locked at</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="lockedBody"></tbody></table></div>
         <div class="loading" id="lockedLoading">Loading…</div>
@@ -924,13 +924,13 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
     </section>
 
     <section>
-      <div class="section-head"><h2>Duress PIN enrollment</h2><button class="action refresh" type="button" onclick="loadDuressEnrolled()">Refresh</button></div>
+      <div class="section-head"><h2>Duress PIN enrollment</h2><button class="action refresh" id="duressRefreshBtn" type="button">Refresh</button></div>
       <div class="section-help">Search a real account UID first. Enable makes the secondary-PIN setup available in the app; it does not set a PIN for the user.</div>
       <div class="section-body">
       <div class="search-row">
         <label class="sr-only" for="duressUidInput">Account UID</label>
         <input class="search-input" id="duressUidInput" type="text" placeholder="Search by account UID" autocomplete="off" spellcheck="false">
-        <button class="action primary" id="duressSearchButton" type="button" onclick="searchDuressAccount()">Search account</button>
+        <button class="action primary" id="duressSearchButton" type="button">Search account</button>
       </div>
       <div id="duressSearchResult" class="search-result" hidden>
           <div>
@@ -947,7 +947,7 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
     </section>
 
     <section>
-      <div class="section-head"><h2>Audit log</h2><button class="action refresh" type="button" onclick="loadAuditLog()">Refresh</button></div>
+      <div class="section-head"><h2>Audit log</h2><button class="action refresh" id="auditRefreshBtn" type="button">Refresh</button></div>
       <div class="section-body">
         <div class="table-scroll"><table><thead><tr><th>Action</th><th>Target</th><th>Admin IP</th><th>When</th></tr></thead><tbody id="auditBody"></tbody></table></div>
         <div class="loading" id="auditLoading">Loading…</div>
