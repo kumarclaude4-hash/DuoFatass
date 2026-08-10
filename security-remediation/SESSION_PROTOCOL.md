@@ -320,17 +320,28 @@ Run a dedicated FINAL VERIFICATION session (§9) first.
 
 ---
 
-## 8. Chain state + ready-to-paste prompt for the NEXT session (Round 2, cluster B — egress/admin)
+## 8. Chain state + ready-to-paste prompt for the NEXT session (single item: `SC-05`)
 
-### Chain state (authoritative, updated 2026-08-10)
+### Chain state (authoritative, updated 2026-08-10, session `02c`)
 
 | Unit | Findings | State |
 |---|---|---|
 | R1 `S07-C1` | + `S02-M1`, `S02-L1`, `S06-H1`, `S03-L1` | **CLOSED** at `2b7fc4c`. Do not re-litigate. |
 | R2 cluster A | `S03-H1`, `S06-H2`, `S06-H3`, `S06-I2` | **CODE COMPLETE + RECORDED.** Code `bb5b8bb` (merged PR #55); recording completed/corrected `224546b`. |
-| **R2 cluster B** | `S04-H1`, `S04-H2`, `S04-H3`, `S05-H1`, `S05-H3`, `S05-I1` | **← NEXT. Not started.** |
-| R2 cluster C | `S08-H5`/`S07-M1`, `S08-H2`/`H3`/`H4`, `S10-N2`/`N3`, `S07-L4`, `SC-01`/`04`/`05`, `S04-I2` | Not started. |
+| R2 cluster B | `S04-H1`, `S04-H2`, `S04-H3`, `S05-H1`, `S05-H3`, `S05-I1` | **CODE COMPLETE + RE-VERIFIED, RECORDING COMPLETED.** Code `48a3f7e`/`f636d8b`/`7653515` (merged PRs #57–#59). Session `02c` (2026-08-10) re-derived every claim from source instead of trusting the tracker (per §3) — all wiring confirmed live (not dead code), `cd server && npm test` → **153/153 pass** reproduced fresh (after `npm ci`; a stale clone briefly showed 138/137/1-fail, resolved by the fresh-clone note in §0/PR-6, not by editing any disposition). **Do not redo.** The missing `§7` session-log record for this cluster (it was implemented+tracked but never logged) was filled in retroactively in `sessions/SESSION-02.md` §8. |
+| R2/R3 misc | `S10-N3` | **FIXED this session** (`worker/src/index.js`, one-line, source-reviewed only — see `PR-7`, no worker test harness exists here). Everything else originally grouped in "cluster C" is still open — see below, deliberately **not** batched into one prompt anymore. |
+| Remaining cluster-C-shaped work | `S08-H5`/`S07-M1` (SecurePrefs, Java), `S08-H2`/`H3` (Java), `S10-N2`/`S07-L4` (Java), `SC-01`/`SC-04` (supply chain, YAML/script) | Not started. **Deliberately not assigned as one 6-8-finding cluster** — see note below. |
+| **`SC-05`** | Release workflow deletes all prior releases/tags on every push to `main` | **← NEXT. Single item, ~20 lines of YAML, fully described in `audit/SESSION-09-SUPPLY-CHAIN-CI.md` line 269+. No Java, no toolchain gap.** |
 | R3 | everything still `open`/`partial` (incl. `S01-L1` remainder) | Not started. |
+
+**Why the next prompt is one finding, not a cluster:** every session so far that batched 4-6 findings
+ended up spending real budget on verification/correction of *inherited* claims before it could start
+new work (cluster A's dead-code catch, cluster B's `npm ci` false alarm this session). Shrinking the
+unit of work to one finding removes that overhead almost entirely — there is nothing upstream to
+falsify for `SC-05` beyond reading the one workflow file — and it directly answers the standing
+instruction to keep each session's assigned scope smaller than the one before it, since credits are
+limited. The remaining Java-only findings (`S08-*`, `S10-N2`, `S07-*`, `SC-01`) should each become
+their own single-item prompt too, in whatever order is convenient, once `SC-05` is closed.
 
 **Cluster A outcome — what is fixed, what is blocked:**
 
@@ -342,75 +353,67 @@ Run a dedicated FINAL VERIFICATION session (§9) first.
 
 **BLOCKED, not done (see `PR-4` in `RISK_REGISTER.md`):** Android compilation (no JDK/SDK); the 4 new
 `firestore-tests/rules.test.js` `S03-H1` cases (**added, never executed** — no JVM/`firebase` CLI).
-Also note `npm test` is **83/84 with 1 pre-existing failure** (`identityVerify.test.js`, missing native
-`@signalapp/libsignal-client`) — that is the expected baseline, **not** a regression you introduced.
 
-**MUST NOT BE REDONE:** any cluster A code — `server/lib/mediaScope.js` and its tests, the
-`/mediaToken` rewiring in `server/index.js`, the `firestore.rules` `groups`-create constraints, the
-`BaseActivity`/`DuressManager`/`PendingLockStore` Java edits. All four rows hold final dispositions.
+**Cluster B outcome (re-verified 2026-08-10, session `02c`):** all six rows genuinely fixed and
+test-backed. `cd server && npm test` → **153 tests / 153 pass / 0 fail**, reproduced fresh this
+session (a stale clone briefly showed 138/137/1-fail before `npm ci`; see `PR-6`). Every claimed call
+site (`egressGuard.resolveAndCheckHost`, `adminSecret.evaluateSecretStrength`, `auditAdminEvent`'s 7
+sites) was grepped and confirmed live, not dead code. The `§7` session-log record for this cluster had
+never been appended anywhere — filled in retroactively in `sessions/SESSION-02.md` §8 this session.
 
-**Task budget: 4 max** — (1) falsify inherited state for the six rows, (2) `S04` egress fixes,
-(3) `S05` admin fixes, (4) verify + record. **Stopping condition:** if budget runs short, finish the
-`S04-*` group completely and defer all `S05-*` to a named follow-up session rather than
-half-finishing six rows.
+**MUST NOT BE REDONE:** any cluster A or cluster B code — `server/lib/mediaScope.js`, `egressGuard.js`,
+`imageProxy.js`, `adminSecret.js`, the `firestore.rules` `groups`-create constraints, the
+`BaseActivity`/`DuressManager`/`PendingLockStore` Java edits, `auditAdminEvent()` and its 7 call sites.
+All ten rows across both clusters hold final dispositions.
+
+**Also fixed this session, outside any cluster:** `S10-N3` (`worker/src/index.js`, one line — undoes
+the nightly R2→B2 migration's own write when it detects a concurrent client delete, so deleted media
+cannot survive forever in B2 cold tier). Source-reviewed only; `worker/` has no test framework in this
+environment (`PR-7`).
+
+**Task budget for the next session: 1.** Deliberately shrunk from "cluster" to "single finding" — see
+the chain-state table's rationale note above. Do not add a second finding to this prompt even if
+budget remains; that is exactly the "grew past its cluster because there's budget left" mistake §5
+already warns against, just at a smaller scale.
 
 ### Paste this verbatim
 
 > Read `security-remediation/SESSION_PROTOCOL.md` in full first (§8 chain state especially), then the
-> `S04-H1`, `S04-H2`, `S04-H3`, `S05-H1`, `S05-H3`, `S05-I1` rows in `FINDING_INDEX.md`, then
-> `git status --short` and `git log -5 --oneline`. Scope this session to **Round 2 cluster B only**.
+> `SC-05` row in `FINDING_INDEX.md`, then `git status --short` and `git log -3 --oneline`. Scope this
+> session to **`SC-05` only** — one finding, not a cluster.
 >
-> Do **not** touch, re-verify, or "improve" Round 2 cluster A (`S03-H1`, `S06-H2`, `S06-H3`,
-> `S06-I2`) or R1 `S07-C1`. They are recorded with final dispositions; re-litigating them wastes the
-> budget. In particular do not re-fix `server/lib/mediaScope.js`, the `/mediaToken` scope check, the
-> `firestore.rules` `groups`-create rule, or the duress/`BaseActivity` Java edits.
+> Do **not** touch, re-verify, or "improve" R1 `S07-C1`, R2 cluster A, R2 cluster B, or `S10-N3`. All
+> are recorded with final dispositions (cluster B was re-verified and `S10-N3` fixed in the immediately
+> prior session — read that session's record in `sessions/SESSION-02.md` §8 rather than redoing the
+> falsification work). Re-litigating any of them wastes this session's budget on zero new security
+> value.
 >
-> **Baseline you inherit:** `cd server && npm test` → **84 tests, 83 pass, 1 fail**. The failure is
-> `lib/identityVerify.test.js` aborting on `Cannot find module '@signalapp/libsignal-client'` (declared
-> but not installed; native dep unavailable here). That is pre-existing. Your job is to not make it
-> worse — if your count differs by anything other than tests you added, you caused a regression.
+> **The finding:** `SC-05` — the release workflow (`.github/workflows/release.yml`, roughly lines
+> 126-162 per the audit, **but verify the real current line numbers with Grep first**, they drift) does
+> something on every push to `main` that deletes *every prior GitHub Release and every prior git tag*,
+> not just the one it's about to replace. Read the full writeup at
+> `audit/SESSION-09-SUPPLY-CHAIN-CI.md` line 269 onward before writing any YAML — it explains exactly
+> which step does the deletion and why, and names the interaction with `SC-04` (no checksums) that you
+> should be aware of but **not fix in this session** (that is a separate, already-deferred finding).
 >
-> Per §3, before writing any code, falsify the inherited state for these six rows from source. The
-> index's line numbers come from the audit and have drifted badly before (cluster A's were off by
-> ~1900 lines) — locate the real code with Grep, and trust source over the row:
+> **Implement:** change the release step so it only ever touches the release/tag for *this* version —
+> stop deleting the full history of releases and tags. The audit file states the intended remedy
+> shape; follow it, verifying against the actual current workflow syntax rather than assuming GitHub
+> Actions YAML you remember from training.
 >
-> 1. `S04-H1` — SSRF predicate in `server/lib/pure.js` never resolves DNS and misses IPv6/literal
->    forms. Status says `partial`; find the actual current predicate and its callers
->    (`/linkPreview`, and grep for other users).
-> 2. `S04-H2` — `/linkPreview` reads the response body with no size cap and no timeout → OOM.
-> 3. `S04-H3` — `og:image` fetched directly by both devices, leaking the recipient's IP and a
->    read-timestamp beacon to an attacker-chosen host. Server-side proxying is the shape; note the
->    client half (`MessageAdapter.java`) is **Java and therefore not compilable here**.
-> 4. `S05-H1` — `ADMIN_TOKEN` has no entropy floor, no startup validation, no brute-force ceiling.
-> 5. `S05-H3` — admin actions not durably audited; admin *authentication* not audited at all.
-> 6. `S05-I1` — operator secrets undocumented; server boots without them.
+> **Verify:** this is YAML with no runtime in this sandbox (no way to actually trigger a workflow run
+> here), so verification per §4 means: re-read the changed file, confirm the deletion step now scopes
+> to the current tag/version only, and — if `actionlint` or a YAML linter is available in this
+> environment — run it. If nothing can execute the workflow, record verification as
+> **source-reviewed only**, exactly like `S10-N3` in the prior session; do not claim a test that cannot
+> run here.
 >
-> Then implement. Guidance, not a spec — verify against source first:
-> - Prefer a **pure, I/O-free function** for each decision (SSRF verdict, entropy verdict) so it can
->   earn a real `node --test` rather than an asserted one. `server/lib/mediaScope.js` from cluster A is
->   the precedent that worked.
-> - **Grep for call sites of every function you add or rely on.** Cluster A's most important finding
->   was that `maintainLockCredential()` existed, looked correct, was documented as load-bearing, and
->   had **zero callers** — a silently inert fix. "The function exists" is not evidence; wiring is.
-> - Add, don't replace, existing checks.
-> - `S05-H1`'s entropy gate should fail **at startup**, not per-request, so a weak token cannot be
->   deployed at all.
->
-> Testing: server-side changes get `node --test` unit tests under `server/lib/` following
-> `server/lib/challengeStore.test.js` / `mediaScope.test.js` (real library-produced values, never
-> hand-written expected outputs). Run `cd server && npm test` and **paste the real counts from this
-> session** — never quote a count you did not just run (the previous session recorded a "99/99 pass"
-> that did not exist, and it had to be retracted). Cluster B is almost entirely server-side JS, which
-> is the one layer this environment can truly verify, so aim for genuine test-backed closure. Any Java
-> touched by `S04-H3` is source-verifiable only: record Android compilation as `BLOCKED`, and never
-> imply an APK was built.
->
-> Record per §4: update the six `FINDING_INDEX.md` rows with real command output from *this* session
-> and a commit hash from `git log -1 --format=%H` **after** committing; add residual risk to
-> `RISK_REGISTER.md`; append a cluster B section to `sessions/SESSION-02.md` (that log is revised in
-> place per cluster — do not create a new file and do not overwrite cluster A's sections). Update this
-> §8 chain state before you stop. If budget runs short, finish `S04-*` completely and defer `S05-*`
-> honestly rather than half-finishing all six.
+> **Record per §4:** update the `SC-05` row in `FINDING_INDEX.md` with what you actually changed and
+> how you verified it; append a short session record to `sessions/SESSION-02.md` (or start
+> `sessions/SESSION-03.md` if you judge the file has grown unwieldy — your call, not mandatory); update
+> this §8 chain state to name the next single finding (suggest `SC-04` or `SC-01`, both supply-chain,
+> both no Java) with the same one-item scoping. Get a commit hash from `git log -1 --format=%H` **after**
+> committing — never invent one.
 
 ## 9. What "done" looks like for this whole program
 
