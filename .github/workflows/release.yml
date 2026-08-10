@@ -147,63 +147,60 @@ jobs:
         run: rm -f app/duoshield-release.keystore
 
       # ── Resolve the release tag ──────────────────────────────────────────────
-      # Manual dispatch with an explicit tag  → use it as-is.
-      # Manual dispatch without a tag         → v{versionName}.
-      # Automatic push                        → v{versionName}  (always the same
-      #   rolling tag; old release is replaced and prior ones are deleted below).
+      # SC-05: releases and tags are permanent audit records now — nothing
+      # deletes them (see the removed "Delete all previous releases and tags"
+      # step below this comment's former location). That makes a rolling tag
+      # unsafe: if every automatic push reused `v{versionName}`, an unchanged
+      # version would just fail to publish a second time (the tag already
+      # exists) instead of silently overwriting history, which is correct but
+      # not useful. So every automatic push gets a tag that names the exact
+      # commit it was built from — `v{versionName}+{short-sha}` — per the
+      # audit's recommendation, so a tag always identifies exactly one binary
+      # and "DuoShield v1.3.1" is never ambiguous again. Manual dispatch may
+      # still supply an explicit tag (e.g. for a curated `v1.3.1` marker once a
+      # version is final) and is trusted as-is since a human chose it.
       - name: Resolve release tag
         id: tag
         run: |
           VERSION_NAME=$(grep -m1 'versionName' app/build.gradle | grep -oP '"\K[^"]+')
+          SHORT_SHA="${GITHUB_SHA:0:7}"
 
           if [ -n "${{ inputs.version_tag }}" ]; then
             TAG="${{ inputs.version_tag }}"
           else
-            TAG="v${VERSION_NAME}"
+            TAG="v${VERSION_NAME}+${SHORT_SHA}"
           fi
 
           echo "name=${TAG}" >> $GITHUB_OUTPUT
           echo "version_name=${VERSION_NAME}" >> $GITHUB_OUTPUT
           echo "Resolved release tag: ${TAG}"
 
-      # ── Delete ALL existing releases + their tags ────────────────────────────
-      # Runs after a successful build, before publishing the new release, so we
-      # never have more than one release live at a time.
-      # Uses paginated REST API calls (100 per page) so it never misses releases
-      # regardless of how many have accumulated.
-      - name: Delete all previous releases and tags
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ── Generate checksums + capture the signing certificate fingerprint ────
+      # SC-04: releases previously shipped with no way to verify a downloaded
+      # APK against what was actually built. SHA256SUMS lets a user check the
+      # file they downloaded; the signing certificate SHA-256 (printed into the
+      # release body below) lets them additionally confirm it was signed by
+      # the same key as prior releases, independent of any single GitHub
+      # download being trustworthy.
+      - name: Generate checksums and certificate fingerprint
+        id: verify
         run: |
-          REPO="${{ github.repository }}"
-          PAGE=1
-          TOTAL=0
+          cd app/build/outputs/apk/release
+          sha256sum ./*.apk > SHA256SUMS
+          cat SHA256SUMS
+          cd - > /dev/null
 
-          while true; do
-            # Fetch one page of releases (id + tag_name pairs).
-            BATCH=$(gh api "repos/${REPO}/releases?per_page=100&page=${PAGE}" \
-              --jq '.[] | "\(.id) \(.tag_name)"' 2>/dev/null || true)
+          FIRST_APK=$(find app/build/outputs/apk/release -name '*.apk' | sort | head -n1)
+          FINGERPRINT=$("$ANDROID_SDK_ROOT"/build-tools/*/apksigner verify --print-certs "$FIRST_APK" \
+            | grep -m1 'SHA-256 digest' | sed -E 's/.*:\s*//')
 
-            [ -z "$BATCH" ] && break   # no more releases
+          {
+            echo "fingerprint<<EOF"
+            echo "${FINGERPRINT:-unavailable — apksigner did not report a SHA-256 digest}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-            while IFS=' ' read -r RELEASE_ID TAG_NAME; do
-              [ -z "$RELEASE_ID" ] && continue
-              echo "Deleting release '${TAG_NAME}' (id=${RELEASE_ID})..."
-              # Delete the release record
-              gh api --method DELETE "repos/${REPO}/releases/${RELEASE_ID}" \
-                2>/dev/null || echo "  could not delete release ${RELEASE_ID}"
-              # Delete the git tag
-              gh api --method DELETE "repos/${REPO}/git/refs/tags/${TAG_NAME}" \
-                2>/dev/null || echo "  could not delete tag ${TAG_NAME}"
-              TOTAL=$((TOTAL + 1))
-            done <<< "$BATCH"
-
-            PAGE=$((PAGE + 1))
-          done
-
-          echo "Done — deleted ${TOTAL} release(s)."
-
-      # ── Publish the new release ──────────────────────────────────────────────
+      # ── Publish the new release (immutable — never deleted by this workflow) ─
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -222,8 +219,22 @@ jobs:
 
             Enable **Install from unknown sources** in Settings → Security, then tap the APK to install.
 
+            ## Verify what you downloaded
+
+            Checksums for this release's APKs are in `SHA256SUMS` below. The signing certificate
+            SHA-256 fingerprint for this build is:
+
+            ```
+            ${{ steps.verify.outputs.fingerprint }}
+            ```
+
+            Compare it against `apksigner verify --print-certs <apk>` after downloading, and against
+            the fingerprint printed on prior releases — it should never change between releases.
+
             ---
             Built from commit `${{ github.sha }}` on `${{ github.ref_name }}`.
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

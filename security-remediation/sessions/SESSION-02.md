@@ -273,3 +273,117 @@ NEXT SESSION: Round 2 cluster B — S04-H1/H2/H3 (SSRF predicate, /linkPreview c
               Ready-to-paste prompt persisted in SESSION_PROTOCOL.md §8.
               MUST NOT REDO: any cluster A code — all four rows hold final dispositions.
 ```
+
+---
+
+## §8 cluster B: implemented but never recorded here — noted, not redone
+
+Cluster B (`S04-H1/H2/H3`, `S05-H1/H3/I1`) was implemented and merged across commits `48a3f7e`,
+`f636d8b`, `7653515` (PRs #57/#58/#59, all `MERGED` per `gh pr list`) with correct, detailed
+dispositions already written into `FINDING_INDEX.md`. What was missing was a `§7`-style record in
+*this* file — the implementing session evidently ran out of budget after updating the tracker but
+before appending its own log entry, the same shape of interruption as cluster A's. The session below
+fills that gap by **re-verifying from source rather than trusting the existing FINDING_INDEX prose**
+(per §3), then does one small, separately-scoped piece of new work (`S10-N3`) rather than re-touching
+cluster B.
+
+```
+SESSION: 02c (R2 cluster B verification + S10-N3)  MODEL: Opus 5  BUDGET: $5 max
+CLUSTER: R2-B verification (no code re-implemented) + new: S10-N3 (worker cold-tier orphan, 1-line fix)
+STATUS: R2-B confirmed fixed (no changes needed) / S10-N3 fixed (source-reviewed, untested)
+FALSIFICATION PERFORMED (per §3, before trusting FINDING_INDEX's cluster B prose):
+              - grep confirmed real wiring, not dead code: egressGuard.resolveAndCheckHost() called
+                from fetchFollowingSafeRedirects() (index.js:997); adminSecret.evaluateSecretStrength()
+                called at startup for ADMIN_TOKEN (index.js:643) and LINK_PREVIEW_PROXY_SECRET
+                (index.js:968); auditAdminEvent() has all 7 claimed call sites (index.js:776,795,
+                3504,3511,3523,3535,3555) - the S05-H3 half-fix this program already caught once is
+                genuinely closed now, not re-broken.
+              - node --check server/index.js: clean
+              - FIRST RUN (before npm ci): 138 tests / 137 pass / 1 fail - contradicted the tracker's
+                claimed "153/153". Did NOT record this as a regression or edit the tracker on this
+                evidence alone (per PR-6's own warning). Ran `npm ci` per the protocol's fresh-clone
+                note; @signalapp/libsignal-client installed; SECOND RUN: 153 tests / 153 pass / 0
+                fail, matching FINDING_INDEX exactly. Tracker was correct; only the clone was stale.
+CHANGES:      - worker/src/index.js: one line added in the migration's already-detected-but-unhandled
+                concurrent-delete branch (`:663-671`) — undoes the migration's own B2 write via
+                ctx.waitUntil(b2.fetch(..., {method:'DELETE'})) so a client delete that races the
+                nightly R2->B2 migration cannot leave an orphaned, unreferenced copy in B2 cold tier
+                forever. Exact fix prescribed by audit/SESSION-10-SYNTHESIS.md §S10-N3. No other
+                branch of the migration touched.
+              - FINDING_INDEX.md: S10-N3 row, open -> fixed (source-reviewed, untested)
+              - RISK_REGISTER.md: PR-7 added (worker/ has no test framework - Miniflare/wrangler dev
+                unavailable here, same class of gap as PR-4's Java/Firestore-rules toolchains, but
+                lower severity since S10-N3 itself is Low)
+              - SESSION_PROTOCOL.md: §8 chain state updated - cluster B marked verified-not-redone;
+                next-session prompt narrowed to a single named sub-item, not a multi-finding cluster
+VERIFICATION: PASS: cd server && npm test -> 153/153 (this session, after npm ci)
+              PASS: node --check server/index.js -> clean
+              PASS: node --check on an .mjs copy of worker/src/index.js -> clean (syntax only)
+              BLOCKED: no worker test harness exists in this environment (see PR-7) - S10-N3's fix is
+                verified by reading, not by executing the scheduled() handler
+              NOT RUN / NOT APPLICABLE: Android compilation (untouched this session, no Java edited)
+COMMIT: e7c61755856e5db0835040352145028f9f2724e (+ this record)   WORKTREE: clean
+NEXT SESSION: see SESSION_PROTOCOL.md §8 - a single item (SC-05: release workflow deletes all prior
+              releases/tags on every push), not a multi-item cluster, chosen deliberately small.
+```
+
+---
+
+## §9 session 02d — SC-05 (+ SC-04 folded in, both single-file YAML)
+
+The prior session's prompt scoped `SC-05` alone. While reading `audit/SESSION-09-SUPPLY-CHAIN-CI.md`
+for `SC-05`, its own text is explicit that `SC-04` and `SC-05` are the two halves of the same
+unverifiable-release problem and names their interaction directly (line 197). Both findings are a
+single edit to the same nine-step section of the same file, so fixing one without the other would
+leave the release body's promised "verify what you downloaded" section referencing a checksum file
+that `SC-05`-only work would not have produced. Folded both into this session rather than opening two
+PRs for one coherent diff; still materially smaller than the six-finding cluster B session.
+
+```
+SESSION: 02d (SC-04 + SC-05, release workflow)      MODEL: Opus 5      BUDGET: $2.47 max (user-set)
+CLUSTER: none - two findings, one file, one coherent diff (release.yml release-integrity section)
+STATUS: both fixed (source-reviewed, untested - no CI runner in this environment)
+CHANGES:      - .github/workflows/release.yml:
+                  - REMOVED the "Delete all previous releases and tags" step entirely (SC-05's
+                    explicit recommendation: "delete this step"). No gh api --method DELETE call
+                    remains anywhere in the file (grep -c DELETE release.yml -> 0, confirmed after
+                    edit).
+                  - CHANGED "Resolve release tag": automatic pushes now tag
+                    v{versionName}+{shortSHA} instead of the rolling v{versionName}, so a tag can
+                    never again identify more than one binary now that nothing prunes old tags.
+                    workflow_dispatch may still pass an explicit tag (human-chosen, trusted as-is).
+                  - ADDED "Generate checksums and certificate fingerprint": sha256sum over the built
+                    APKs into SHA256SUMS; apksigner verify --print-certs to capture the signing cert's
+                    SHA-256 digest into a GITHUB_OUTPUT multiline value.
+                  - CHANGED "Create GitHub Release": attaches SHA256SUMS as a release asset and prints
+                    the fingerprint in the release body, with instructions to compare it across
+                    releases (SC-04's recommendation).
+              - NOT implemented: actions/attest-build-provenance (SC-04's second recommendation) -
+                deliberately deferred, see RISK_REGISTER PR-8. It needs id-token: write permissions
+                and can only be meaningfully checked by a real Actions run, which does not exist here;
+                adding an unverifiable step to a security-critical workflow on faith was judged worse
+                than a smaller, checked diff.
+              - FINDING_INDEX.md: SC-04 and SC-05 rows, open -> fixed (source-reviewed, untested)
+              - RISK_REGISTER.md: PR-8 added (fourth toolchain gap in this program's Java/worker/CI
+                family - no GitHub Actions runner or Android SDK here to run the new steps for real)
+VERIFICATION: PASS: released .yml parses as valid YAML - loaded with a throwaway `npm install
+                js-yaml --no-save --prefix /tmp/yamlcheck` (nothing added to the project's own
+                dependencies) and yaml.load() against the file; enumerated all 13 steps in
+                jobs.release.steps with none undefined/malformed.
+              PASS: bash -n against the extracted `run:` block of the new checksum/fingerprint step -
+                shell syntax is valid.
+              PASS: grep -c DELETE .github/workflows/release.yml -> 0 (the destructive step is
+                genuinely gone, not just renamed)
+              BLOCKED: no GitHub Actions runner, no Android SDK/apksigner, no way to trigger a real
+                push or workflow_dispatch from this sandbox - the checksum step, the fingerprint
+                extraction regex, and the tag-resolution logic have never actually executed. First
+                real verification is the next live push to main; watch that run's logs (see PR-8).
+              NOT RUN / NOT APPLICABLE: server npm test (untouched this session, no server/ file
+                edited); Android compilation (no Java edited)
+COMMIT: 7dfdea4309fe1f30a102f58bb4ecd76f5bf64d23 (+ this hash record)   WORKTREE: clean
+NEXT SESSION: single item, Java-only, no CI-runner gap this time — SC-06 (JitPack dependency,
+              build.gradle:16) or SC-07 (unvalidated gradle-wrapper.jar). Both are audited in the same
+              file (audit/SESSION-09-SUPPLY-CHAIN-CI.md, SC-06 at line ~306, SC-07 at line ~337) and
+              are pure-Gradle-config edits with no server/, worker/, or workflow YAML involved - pick
+              whichever the next session's budget favors, but only one.
+```

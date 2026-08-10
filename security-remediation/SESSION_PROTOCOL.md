@@ -320,97 +320,81 @@ Run a dedicated FINAL VERIFICATION session (§9) first.
 
 ---
 
-## 8. Chain state + ready-to-paste prompt for the NEXT session (Round 2, cluster B — egress/admin)
+## 8. Chain state + ready-to-paste prompt for the NEXT session (single item: `SC-06`)
 
-### Chain state (authoritative, updated 2026-08-10)
+### Chain state (authoritative, updated 2026-08-10, session `02d`)
 
 | Unit | Findings | State |
 |---|---|---|
 | R1 `S07-C1` | + `S02-M1`, `S02-L1`, `S06-H1`, `S03-L1` | **CLOSED** at `2b7fc4c`. Do not re-litigate. |
 | R2 cluster A | `S03-H1`, `S06-H2`, `S06-H3`, `S06-I2` | **CODE COMPLETE + RECORDED.** Code `bb5b8bb` (merged PR #55); recording completed/corrected `224546b`. |
-| **R2 cluster B** | `S04-H1`, `S04-H2`, `S04-H3`, `S05-H1`, `S05-H3`, `S05-I1` | **← NEXT. Not started.** |
-| R2 cluster C | `S08-H5`/`S07-M1`, `S08-H2`/`H3`/`H4`, `S10-N2`/`N3`, `S07-L4`, `SC-01`/`04`/`05`, `S04-I2` | Not started. |
+| R2 cluster B | `S04-H1`, `S04-H2`, `S04-H3`, `S05-H1`, `S05-H3`, `S05-I1` | **CODE COMPLETE + RE-VERIFIED, RECORDING COMPLETED.** Code `48a3f7e`/`f636d8b`/`7653515` (merged PRs #57–#59). Re-verified from source session `02c`, `npm test` → 153/153. **Do not redo.** |
+| `S10-N3` | worker cold-tier orphan | **FIXED** (`worker/src/index.js`, one line, source-reviewed only — `PR-7`, no worker test harness here). |
+| `SC-04` + `SC-05` | Release APKs unverifiable (no checksums/fingerprint) + workflow destroyed all release/tag history on every push | **FIXED this session (`02d`)**, both in one diff to `.github/workflows/release.yml` since the audit ties them together (line 197) — see below. Source-reviewed only (`PR-8`: no GitHub Actions runner or Android SDK here to execute the new steps for real). **Do not redo.** `actions/attest-build-provenance` (SC-04's second, optional recommendation) was deliberately deferred — see `PR-8`. |
+| Remaining supply-chain work | `SC-01` (dependency pinning, likely mixed Gradle/npm), `SC-08` (actions pinned to mutable tags), `SC-09` (no scanning) | Not started. Larger/multi-file; leave for a dedicated session, do not fold into the next single-item prompt. |
+| **`SC-06`** | JitPack repo in `build.gradle:16` resolves an unmaintained, retaggable dependency (`PhotoView`) with no verification | **← NEXT. Single item, pure Gradle config, `audit/SESSION-09-SUPPLY-CHAIN-CI.md` line ~306. No workflow YAML, no CI-runner gap — this is a source file, so it can be read and diffed with full confidence even though it still can't be *compiled* here (`PR-4`).** |
+| Remaining Java-only findings | `S08-H5`/`S07-M1`, `S08-H2`/`H3`, `S10-N2`/`S07-L4`, `SC-07` (gradle-wrapper validation) | Not started. Each should become its own single-item prompt in turn, same reasoning as `SC-06`. |
 | R3 | everything still `open`/`partial` (incl. `S01-L1` remainder) | Not started. |
 
-**Cluster A outcome — what is fixed, what is blocked:**
+**Why `SC-06` and not something else:** it is the smallest remaining item that touches no file this
+program has already fixed, requires no new toolchain, and — like `SC-05` before it — the audit already
+states the exact remedy (drop the dependency, or scope the JitPack repo to one group and pin its hash).
+Every prior multi-finding session spent real budget re-verifying inherited claims before starting new
+work; one-finding sessions keep removing that overhead. **Task budget for the next session: 1** — do
+not add a second finding even if budget remains (§5's standing warning against a session quietly
+growing past its assigned scope).
 
-- `S03-H1` **fixed**, server layer genuinely test-verified (`lib/mediaScope.js`, 16/16). The
-  `firestore.rules` `groups`-create hardening also shipped but is **source-reviewed only**.
-- `S06-H3` **fixed** — `maintainLockCredential()` was dead code; call added in `BaseActivity.onStart()`.
-- `S06-H2`, `S06-I2` **fixed, no code change** — were already remediated; the `open` rows were stale.
-- `S01-L1` moved `open` → **partial** as a side effect (its `createdBy` half is closed).
+**`SC-04`/`SC-05` outcome (this session, `02d`):** deleted the "Delete all previous releases and tags"
+step outright (no `gh api --method DELETE` remains — confirmed via `grep -c DELETE release.yml` → 0);
+changed automatic-push tags from rolling `v{versionName}` to `v{versionName}+{shortSHA}` so a tag
+always identifies one commit; added a step generating `SHA256SUMS` + the signing certificate's SHA-256
+fingerprint, both surfaced on the release. Verified by YAML-parsing the file (throwaway `js-yaml`
+install, nothing added to the repo's own deps) and `bash -n` on the new step's shell — **not** by an
+actual CI run, which does not exist in this sandbox. First real verification happens on the next live
+push to `main`; see `PR-8`.
 
-**BLOCKED, not done (see `PR-4` in `RISK_REGISTER.md`):** Android compilation (no JDK/SDK); the 4 new
-`firestore-tests/rules.test.js` `S03-H1` cases (**added, never executed** — no JVM/`firebase` CLI).
-Also note `npm test` is **83/84 with 1 pre-existing failure** (`identityVerify.test.js`, missing native
-`@signalapp/libsignal-client`) — that is the expected baseline, **not** a regression you introduced.
-
-**MUST NOT BE REDONE:** any cluster A code — `server/lib/mediaScope.js` and its tests, the
-`/mediaToken` rewiring in `server/index.js`, the `firestore.rules` `groups`-create constraints, the
-`BaseActivity`/`DuressManager`/`PendingLockStore` Java edits. All four rows hold final dispositions.
-
-**Task budget: 4 max** — (1) falsify inherited state for the six rows, (2) `S04` egress fixes,
-(3) `S05` admin fixes, (4) verify + record. **Stopping condition:** if budget runs short, finish the
-`S04-*` group completely and defer all `S05-*` to a named follow-up session rather than
-half-finishing six rows.
+**MUST NOT BE REDONE:** any cluster A/B code, `S10-N3`, or the `SC-04`/`SC-05` release-workflow changes
+just described. All fourteen rows across R1/cluster A/cluster B/`S10-N3`/`SC-04`/`SC-05` hold final
+dispositions.
 
 ### Paste this verbatim
 
 > Read `security-remediation/SESSION_PROTOCOL.md` in full first (§8 chain state especially), then the
-> `S04-H1`, `S04-H2`, `S04-H3`, `S05-H1`, `S05-H3`, `S05-I1` rows in `FINDING_INDEX.md`, then
-> `git status --short` and `git log -5 --oneline`. Scope this session to **Round 2 cluster B only**.
+> `SC-06` row in `FINDING_INDEX.md`, then `git status --short` and `git log -3 --oneline`. Scope this
+> session to **`SC-06` only** — one finding.
 >
-> Do **not** touch, re-verify, or "improve" Round 2 cluster A (`S03-H1`, `S06-H2`, `S06-H3`,
-> `S06-I2`) or R1 `S07-C1`. They are recorded with final dispositions; re-litigating them wastes the
-> budget. In particular do not re-fix `server/lib/mediaScope.js`, the `/mediaToken` scope check, the
-> `firestore.rules` `groups`-create rule, or the duress/`BaseActivity` Java edits.
+> Do **not** touch, re-verify, or "improve" R1 `S07-C1`, R2 cluster A, R2 cluster B, `S10-N3`, or
+> `SC-04`/`SC-05`. All are recorded with final dispositions — read `sessions/SESSION-02.md` §9 for what
+> the immediately prior session did rather than redoing its falsification work. Re-litigating any of
+> them wastes this session's budget on zero new security value.
 >
-> **Baseline you inherit:** `cd server && npm test` → **84 tests, 83 pass, 1 fail**. The failure is
-> `lib/identityVerify.test.js` aborting on `Cannot find module '@signalapp/libsignal-client'` (declared
-> but not installed; native dep unavailable here). That is pre-existing. Your job is to not make it
-> worse — if your count differs by anything other than tests you added, you caused a regression.
+> **The finding:** `SC-06` — `build.gradle:16` adds `maven { url 'https://jitpack.io' }` to resolve
+> `com.github.chrisbanes:PhotoView:2.3.0`. JitPack builds from mutable git tags the upstream owner
+> controls, PhotoView is effectively unmaintained, and there is no dependency-hash verification, so a
+> retagged release would be consumed silently inside the process that decrypts and displays user media.
+> Read the full writeup in `audit/SESSION-09-SUPPLY-CHAIN-CI.md` (search for `SC-06`) before editing —
+> it gives two remedy shapes.
 >
-> Per §3, before writing any code, falsify the inherited state for these six rows from source. The
-> index's line numbers come from the audit and have drifted badly before (cluster A's were off by
-> ~1900 lines) — locate the real code with Grep, and trust source over the row:
+> **Implement one of:** (a) drop the `PhotoView` dependency and its JitPack repo entirely, replacing
+> pinch-zoom with a small amount of code against an `androidx` view (the audit's preferred fix) — only
+> do this if you can find every call site with Grep and are confident the replacement is a drop-in
+> behavioral match; or (b) if removal is too large for this session's budget, keep the dependency but
+> scope the JitPack `maven` block to `content { includeGroup 'com.github.chrisbanes' }` so it cannot
+> resolve anything else, exactly as the audit shows. Prefer (a) if it fits in budget; (b) is the
+> acceptable fallback, not a shortcut to prefer by default.
 >
-> 1. `S04-H1` — SSRF predicate in `server/lib/pure.js` never resolves DNS and misses IPv6/literal
->    forms. Status says `partial`; find the actual current predicate and its callers
->    (`/linkPreview`, and grep for other users).
-> 2. `S04-H2` — `/linkPreview` reads the response body with no size cap and no timeout → OOM.
-> 3. `S04-H3` — `og:image` fetched directly by both devices, leaking the recipient's IP and a
->    read-timestamp beacon to an attacker-chosen host. Server-side proxying is the shape; note the
->    client half (`MessageAdapter.java`) is **Java and therefore not compilable here**.
-> 4. `S05-H1` — `ADMIN_TOKEN` has no entropy floor, no startup validation, no brute-force ceiling.
-> 5. `S05-H3` — admin actions not durably audited; admin *authentication* not audited at all.
-> 6. `S05-I1` — operator secrets undocumented; server boots without them.
+> **Verify:** this is Gradle config with no Android SDK/JDK in this sandbox (`PR-4`), so nothing here
+> can actually be compiled. Verification per §4 means: re-read the diff, confirm the change is
+> syntactically valid Gradle (matching the file's existing style), and if you chose (a), grep the whole
+> Java source tree for every remaining reference to the removed class/import to confirm nothing still
+> depends on it. Record verification as **source-reviewed only** — do not claim a build that didn't run.
 >
-> Then implement. Guidance, not a spec — verify against source first:
-> - Prefer a **pure, I/O-free function** for each decision (SSRF verdict, entropy verdict) so it can
->   earn a real `node --test` rather than an asserted one. `server/lib/mediaScope.js` from cluster A is
->   the precedent that worked.
-> - **Grep for call sites of every function you add or rely on.** Cluster A's most important finding
->   was that `maintainLockCredential()` existed, looked correct, was documented as load-bearing, and
->   had **zero callers** — a silently inert fix. "The function exists" is not evidence; wiring is.
-> - Add, don't replace, existing checks.
-> - `S05-H1`'s entropy gate should fail **at startup**, not per-request, so a weak token cannot be
->   deployed at all.
->
-> Testing: server-side changes get `node --test` unit tests under `server/lib/` following
-> `server/lib/challengeStore.test.js` / `mediaScope.test.js` (real library-produced values, never
-> hand-written expected outputs). Run `cd server && npm test` and **paste the real counts from this
-> session** — never quote a count you did not just run (the previous session recorded a "99/99 pass"
-> that did not exist, and it had to be retracted). Cluster B is almost entirely server-side JS, which
-> is the one layer this environment can truly verify, so aim for genuine test-backed closure. Any Java
-> touched by `S04-H3` is source-verifiable only: record Android compilation as `BLOCKED`, and never
-> imply an APK was built.
->
-> Record per §4: update the six `FINDING_INDEX.md` rows with real command output from *this* session
-> and a commit hash from `git log -1 --format=%H` **after** committing; add residual risk to
-> `RISK_REGISTER.md`; append a cluster B section to `sessions/SESSION-02.md` (that log is revised in
-> place per cluster — do not create a new file and do not overwrite cluster A's sections). Update this
-> §8 chain state before you stop. If budget runs short, finish `S04-*` completely and defer `S05-*`
-> honestly rather than half-finishing all six.
+> **Record per §4:** update the `SC-06` row in `FINDING_INDEX.md`; append a short session record
+> (`sessions/SESSION-02.md` §10, or a new `SESSION-03.md` if you judge the file unwieldy — your call);
+> add a `RISK_REGISTER.md` entry only if genuine residual risk remains (e.g. option (b) still trusts
+> JitPack's build process for that one group); update this §8 chain state to name the next single
+> finding (suggest `SC-07`, gradle-wrapper validation, or one of the remaining Java findings) with the
+> same one-item scoping. Get a commit hash from `git log -1 --format=%H` **after** committing.
 
 ## 9. What "done" looks like for this whole program
 

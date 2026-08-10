@@ -661,6 +661,14 @@ export default {
             r2TotalBytes += current.size ?? 0;
           } else {
             // Deleted concurrently — nothing left in R2, nothing to count.
+            // But the client's DELETE ran before our PUT above landed, so its
+            // best-effort B2 cleanup (see the DELETE handler) was a no-op on a
+            // B2 object that didn't exist yet. We just created it. Undo that
+            // write here or the deleted object survives forever in B2 cold
+            // tier, unreferenced and unreachable by any later cron run (S10-N3).
+            ctx.waitUntil(
+              b2.fetch(b2Url(env, obj.key), { method: 'DELETE' }).catch(() => {})
+            );
           }
         } else {
           // B2 PUT failed — object stays in R2. Count it and retry tomorrow.
