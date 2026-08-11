@@ -112,6 +112,6 @@ VERIFICATION:
   FAIL: none
   BLOCKED: firestore emulator run (no firebase CLI / no JVM / jest not installed) -> RULES lane, promoted in S3-15b
   NOT RUN: live emulator test execution (operator toolchain)
-COMMIT: 04c5009 (firestore.rules + rules.test.js + BUG_TRACKER.md + START_HERE.md + SESSION_INDEX.md + this log)          WORKTREE: clean
+COMMIT: 21e1609 (firestore.rules + rules.test.js + BUG_TRACKER.md + START_HERE.md + SESSION_INDEX.md + this log); hash recorded in follow-up reconciliation commit          WORKTREE: clean
 NEXT SESSION: S3-05 remainder — S01-M4 (group delete membership re-check), S01-L1 (finish: shape + ID-squatting), S01-L2 (users doc shape); lane RULES, verification BLOCKED here -> S3-15b
 ```
