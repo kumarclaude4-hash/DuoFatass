@@ -562,6 +562,43 @@ describe('/groups/{groupId}/messages/{msgId}', () => {
       })
     );
   });
+
+  // ── S01-M1: per-write size cap on the encrypted body (volume/cost DoS half) ────
+  // The membership-TOCTOU half is ACCEPTED (documented in the rule): rules cannot
+  // make remove-then-deny atomic. The size half is enforced here.
+  test('S01-M1: member can write a realistically large ciphertext (a few KiB)', async () => {
+    await assertSucceeds(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_big_ok`).set({
+        sender: 'bob',
+        text: 'c'.repeat(8192), // ~8 KiB — well within any real Signal ciphertext
+        isEncrypted: true,
+      })
+    );
+  });
+
+  test('S01-M1: member can write a media message with empty text', async () => {
+    await assertSucceeds(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_media`).set({
+        sender: 'bob',
+        text: '',
+        type: 'image',
+        mediaType: 'image',
+        path: 'media/x',
+        mediaKey: 'k',
+        isEncrypted: true,
+      })
+    );
+  });
+
+  test('S01-M1: member CANNOT stuff an oversized body (write-amplification DoS)', async () => {
+    await assertFails(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_bloat`).set({
+        sender: 'bob',
+        text: 'c'.repeat(65537), // > 64 KiB cap
+        isEncrypted: true,
+      })
+    );
+  });
 });
 
 describe('/groups/{groupId}/keys/{memberUid}', () => {
@@ -838,9 +875,43 @@ describe('/identities/{userId}', () => {
     await assertFails(asAnon().doc(`identities/${USER_ID}`).get());
   });
 
-  test('owner can update their identity without changing its public-key hash', async () => {
+  // ── S01-M2: identities update is restricted to a strict field allow-list ──────
+  // identities/{userId} is world-readable (contact-lookup oracle). Before the fix
+  // the update rule pinned only uid/identityPubKeyHash and let the owner write ANY
+  // other field into that globally-readable doc (stored-content injection). The
+  // rule now enforces hasOnly(['uid','identityPubKeyHash','updatedAt']).
+  test('S01-M2: owner CAN re-assert uid (+updatedAt) without touching the key hash', async () => {
+    // The only legitimate client write (SeedPhraseDisplayActivity) is set({uid}, merge).
     await assertSucceeds(
-      asUser(USER_ID).doc(`identities/${USER_ID}`).update({ label: 'legacy' })
+      asUser(USER_ID).doc(`identities/${USER_ID}`).update({
+        uid: USER_ID,
+        updatedAt: 2000,
+      })
+    );
+  });
+
+  test('S01-M2: owner CANNOT inject an arbitrary field into the world-readable doc', async () => {
+    await assertFails(
+      asUser(USER_ID).doc(`identities/${USER_ID}`).update({ label: '<broadcast payload>' })
+    );
+  });
+
+  test('S01-M2: owner CANNOT smuggle an extra field alongside a legit uid write', async () => {
+    await assertFails(
+      asUser(USER_ID).doc(`identities/${USER_ID}`).update({
+        uid: USER_ID,
+        fcmToken: 'pollution',
+      })
+    );
+  });
+
+  test('S01-M2: create is also restricted to the allow-list', async () => {
+    const NEW_ID = 'ZZZZZ-YYYYY-XXX';
+    await assertFails(
+      asUser(NEW_ID).doc(`identities/${NEW_ID}`).set({
+        uid: NEW_ID,
+        spam: 'x',
+      })
     );
   });
 
@@ -948,7 +1019,7 @@ describe('/conversations/{convId} (retired)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────���───────────────────
 // RECOVERY
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1101,12 +1172,26 @@ describe('/backups/{userId}/groups/{groupId}', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('/backup_logs/{logId}', () => {
-  test('owner can create a backup log entry', async () => {
+  test('owner can create a backup log entry (real BackupManager.logEvent shape)', async () => {
+    // BackupManager.logEvent always emits {uid, event, ts, count} (+ optional error).
     await assertSucceeds(
       asUser('alice').doc('backup_logs/log_1').set({
         uid: 'alice',
         event: 'backup_complete',
         ts: 1000,
+        count: 42,
+      })
+    );
+  });
+
+  test('owner can create a backup log entry carrying the optional error field', async () => {
+    await assertSucceeds(
+      asUser('alice').doc('backup_logs/log_1e').set({
+        uid: 'alice',
+        event: 'backup_failed',
+        ts: 1000,
+        count: 0,
+        error: 'network timeout',
       })
     );
   });
@@ -1117,6 +1202,64 @@ describe('/backup_logs/{logId}', () => {
         uid: 'bob',
         event: 'backup_complete',
         ts: 1000,
+        count: 1,
+      })
+    );
+  });
+
+  // ── S01-M3: backup_logs create must validate shape/size, not just uid ─────────
+  test('S01-M3: rejects a log doc with an unexpected extra field (schema pin)', async () => {
+    await assertFails(
+      asUser('alice').doc('backup_logs/log_m3a').set({
+        uid: 'alice',
+        event: 'backup_complete',
+        ts: 1000,
+        count: 1,
+        junk: 'x'.repeat(500000), // storage-cost smuggling via arbitrary field
+      })
+    );
+  });
+
+  test('S01-M3: rejects a log doc missing a required field (count)', async () => {
+    await assertFails(
+      asUser('alice').doc('backup_logs/log_m3b').set({
+        uid: 'alice',
+        event: 'backup_complete',
+        ts: 1000,
+      })
+    );
+  });
+
+  test('S01-M3: rejects an over-long event string', async () => {
+    await assertFails(
+      asUser('alice').doc('backup_logs/log_m3c').set({
+        uid: 'alice',
+        event: 'e'.repeat(65), // > 64-char cap
+        ts: 1000,
+        count: 1,
+      })
+    );
+  });
+
+  test('S01-M3: rejects an over-long error string (bulk-storage channel)', async () => {
+    await assertFails(
+      asUser('alice').doc('backup_logs/log_m3d').set({
+        uid: 'alice',
+        event: 'backup_failed',
+        ts: 1000,
+        count: 0,
+        error: 'x'.repeat(513), // > 512-char cap
+      })
+    );
+  });
+
+  test('S01-M3: rejects a wrong-typed ts (string instead of number)', async () => {
+    await assertFails(
+      asUser('alice').doc('backup_logs/log_m3e').set({
+        uid: 'alice',
+        event: 'backup_complete',
+        ts: 'not-a-number',
+        count: 1,
       })
     );
   });
@@ -1161,7 +1304,7 @@ describe('/_server_health/{doc}', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACCOUNT LOCK  (Issue 1 — one-way latch enforcement)
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────��──────────────────────────
 
 describe('/accountLock/{accountId}', () => {
   // Client create now additionally requires duressEligibility/{uid}.eligible.
@@ -1342,7 +1485,7 @@ describe('/duressEligibility/{accountId}', () => {
 // The nonce doc also holds {uid, expiresAt}, so client read access would let any
 // authenticated user enumerate which accounts have a duress trigger in flight —
 // the exact event the feature exists to make undetectable.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────��───────────────────
 
 describe('/_duressNonces/{nonce}', () => {
   const NONCE = 'a'.repeat(64);

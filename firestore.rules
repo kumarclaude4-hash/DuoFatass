@@ -226,11 +226,37 @@ service cloud.firestore {
         // auth UID, and that the message is marked encrypted. Without these constraints a
         // member could write a forged sender or send a plaintext (isEncrypted:false) message
         // that bypasses decryption on the receiver.
+        //
+        // S01-M1 has two halves:
+        //   (a) MEMBERSHIP TOCTOU — the `auth.uid in members` gate is evaluated
+        //       against the group doc at write time via get(). Because member
+        //       removal (creator-only `members` edit, above) and message writes
+        //       are independent operations, a member who is about-to-be-removed
+        //       can keep writing until the members array commits. This is a
+        //       narrow race inherent to any rule that authorizes against a
+        //       separately-mutated document — Firestore rules cannot make the
+        //       remove-then-deny atomic. ACCEPTED and documented here per the
+        //       audit (S01-M1): it is a brief window, not a durable hole, and no
+        //       rule change closes it without server-side transactional membership.
+        //   (b) VOLUME / SIZE DoS — there was no bound on message document size,
+        //       so a member could bulk-write near-maximal docs to run up Firestore
+        //       cost and load the server's collectionGroup("messages") listener.
+        //       Document COUNT throttling is a server-side/quota control
+        //       (FirebaseCostGuard client-side + server accounting), but the
+        //       per-write SIZE half belongs in the rule: the encrypted body
+        //       (`text`) is now capped. A legitimate Signal-encrypted text message
+        //       is a few hundred bytes to a few KiB; media messages carry
+        //       text:"" and reference storage out-of-band. 64 KiB is far above any
+        //       real ciphertext yet blocks stuffing ~1 MiB of junk into every doc.
+        //       Emulator-verified in S3-15b.
         allow create: if request.auth != null
                       && request.auth.uid in
                          get(/databases/$(database)/documents/groups/$(groupId)).data.members
                       && request.resource.data.sender == request.auth.uid
-                      && request.resource.data.isEncrypted == true;
+                      && request.resource.data.isEncrypted == true
+                      && (!('text' in request.resource.data.keys())
+                          || (request.resource.data.text is string
+                              && request.resource.data.text.size() <= 65536));
         // Messages are append-only — no update allowed (prevents silent edit injection).
         // delete is restricted to the original sender so they can retract their own messages.
         allow delete: if request.auth != null
@@ -365,17 +391,36 @@ service cloud.firestore {
     // User ID → Firebase UID mapping. New records are atomically claimed by the
     // token-minting server. A client can only complete an existing legacy record
     // for its own deterministic Firebase UID; it cannot retarget another account.
+    // S01-M2: identities/{userId} is readable by EVERY authenticated user (the
+    // contact-lookup oracle — see the `read` rule and S01-I1). The update rule
+    // pinned `uid` and `identityPubKeyHash` (the anti-takeover continuity check)
+    // but placed no constraint on ANY other field, so the owner could publish
+    // arbitrary attacker-controlled content into a globally-readable doc — a
+    // stored-content-injection / metadata-pollution primitive whose severity is
+    // bounded only by how consumers render these fields (see S01-L2). The fix is
+    // a strict field allow-list on client update: the only fields a client ever
+    // writes here are `uid` (SeedPhraseDisplayActivity, legacy-record completion)
+    // plus an optional `updatedAt` timestamp; `identityPubKeyHash` is populated by
+    // the token-minting server via the Admin SDK (which bypasses these rules), so
+    // it is kept in the allow-list for the immutability pin above but a client can
+    // only ever re-write it to its existing value. Anything outside this set is
+    // denied, so the world-readable doc cannot be turned into a broadcast surface.
+    // Emulator-verified in S3-15b.
     match /identities/{userId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
                     && request.auth.uid == userId
-                    && request.resource.data.uid == userId;
+                    && request.resource.data.uid == userId
+                    && request.resource.data.keys()
+                         .hasOnly(['uid', 'identityPubKeyHash', 'updatedAt']);
       allow update: if request.auth != null
                     && request.auth.uid == userId
                     && resource.data.uid == userId
                     && request.resource.data.uid == userId
                     && request.resource.data.identityPubKeyHash
-                       == resource.data.identityPubKeyHash;
+                       == resource.data.identityPubKeyHash
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['uid', 'identityPubKeyHash', 'updatedAt']);
       allow delete: if false;
     }
 
@@ -515,7 +560,7 @@ service cloud.firestore {
     // Duress lock nonces: server-managed, single-use tokens that allow
     // AccountLockWorker to write accountLock/{uid} via the push server's
     // /duress-lock endpoint after a device wipe. Stored and consumed entirely
-    // by the server's Admin SDK — no client should ever read or write these.
+    // by the server's Admin SDK �� no client should ever read or write these.
     match /_duressNonces/{nonce} {
       allow read, write: if false;
     }
@@ -531,9 +576,36 @@ service cloud.firestore {
     // Backup event log: write-only for the owning user; no client-side reads.
     // Logs backup_started / backup_complete / backup_failed events for
     // server-side monitoring.  Clients never need to read these back.
+    //
+    // S01-M3: create previously checked ONLY `uid == auth.uid`, with no cap on
+    // document count, no size bound, and no field-shape validation — an
+    // authenticated attacker could create unbounded `backup_logs/*` documents as
+    // themselves (monotonic IDs), a pure write-amplification / storage-cost DoS,
+    // and could stuff arbitrarily large arbitrary-typed payloads into each. Reads
+    // are already denied so there is no confidentiality impact, but Firestore
+    // billing and any downstream log processor were exposed. Fix: pin the exact
+    // schema the only writer emits (BackupManager.logEvent →
+    // {uid, event, ts, count, error?}). `event` is one of a small fixed set and
+    // is length-bounded; `error` (optional) is length-bounded so a log line
+    // cannot become a bulk-storage smuggling channel. Per-document volume (the
+    // count of log docs) remains a server-side/quota concern, per the audit —
+    // this rule closes the per-write size/shape half. Emulator-verified in S3-15b.
     match /backup_logs/{logId} {
       allow create: if request.auth != null
-                    && request.resource.data.uid == request.auth.uid;
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys()
+                         .hasOnly(['uid', 'event', 'ts', 'count', 'error'])
+                    && request.resource.data.keys()
+                         .hasAll(['uid', 'event', 'ts', 'count'])
+                    && request.resource.data.event is string
+                    && request.resource.data.event.size() <= 64
+                    && request.resource.data.ts is number
+                    && request.resource.data.count is number
+                    && (
+                      !('error' in request.resource.data.keys())
+                      || (request.resource.data.error is string
+                          && request.resource.data.error.size() <= 512)
+                    );
       allow read:   if false;
       allow update: if false;
       allow delete: if false;
