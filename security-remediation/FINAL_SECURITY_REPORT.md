@@ -139,14 +139,34 @@ vulnerability** and must not be done.
 
 ## 4. What could not be verified — stated as BLOCKED, never as PASS
 
+Two of the three rows below were BLOCKED when this report was first written and are **now closed with
+command output** by the follow-up verification session of 2026-08-11 (§4.1). The third is unchanged.
+
 | Area | Status | Consequence |
 |---|---|---|
-| Android compilation (`./gradlew :app:assembleDebug`) | **BLOCKED** — no JDK, Gradle, or Android SDK in this environment | Every Java edit in this program (`BaseActivity`, `DuressManager`, `PendingLockStore`, `AuthTokenHelper`, `MessageAdapter`) is **source-reviewed only and has never been compiled.** An operator must build before release. |
-| `firestore-tests/rules.test.js` | **BLOCKED** — no JVM, no `firebase` CLI | The rules test cases added for `S03-H1` were **written but never executed.** `firestore.rules` changes throughout this program are source-reviewed only. |
-| Runtime/integration behavior of the live server | **NOT RUN** | Verification is unit-level plus source review. No deployed environment was exercised. |
+| Android compilation (`./gradlew :app:assembleDebug`) | **RESOLVED 2026-08-11 — PASS.** Toolchain provisioned in-session: Corretto 17, Gradle 8.7, SDK platform 34 + build-tools 34.0.0. `BUILD SUCCESSFUL`, 37 actionable tasks, APKs emitted for `arm64-v8a` and `armeabi-v7a`. | Every Java edit in this program (`BaseActivity`, `DuressManager`, `PendingLockStore`, `AuthTokenHelper`, `MessageAdapter`) now **compiles** — no longer source-reviewed-only. Scope limit: **debug** variant against `app/google-services.json.template` placeholder config. Not a signed release build; compilation is not runtime behaviour. An operator must still produce the signed release artifact. |
+| `firestore-tests/rules.test.js` | **RESOLVED 2026-08-11 — PASS.** `firebase emulators:exec --only firestore` (CLI 15.26.0 on Corretto 21) + Jest: **155/155 pass.** | The `S03-H1` cases have now actually executed, together with the `accountLock` one-way-latch, `duressEligibility`, `_duressNonces`, backup-gating and `waitlist` suites. `firestore.rules` is no longer source-reviewed-only. |
+| Runtime/integration behavior of the live server | **NOT RUN** — unchanged | Verification is unit-level, rules-emulator-level and compile-level, plus source review. No deployed environment was exercised. |
 
-These are limits of the environment, not of the fixes — but a fix whose test has never run is
-weaker evidence than one whose test just passed, and this report does not blur the two.
+The first two were limits of the environment, not of the fixes, and are now closed by executed
+commands rather than by assertion. The third remains genuinely unverified — a fix whose runtime path
+has never been exercised is weaker evidence than one whose test just passed, and this report does not
+blur the two.
+
+### 4.1 Follow-up verification session — 2026-08-11
+
+| Check | Command | Result |
+|---|---|---|
+| Server suite (re-run) | `cd server && npm test` | **153 / 153 pass, 0 fail** — matches the §1 baseline |
+| Firestore rules | `firebase emulators:exec --only firestore --project duoshield-test "npm test"` | **155 / 155 pass, 0 fail** |
+| Android compile | `./gradlew :app:assembleDebug` | **BUILD SUCCESSFUL** |
+| `/mintToken` auth fields | source read of `server/index.js:1956-1961` | `nonce` + `signatureHex` still **hard-required**, fail-closed 400 — unchanged |
+| Branch protection (`SC-12`) | `gh api repos/.../branches/main/protection` | **404 "Branch not protected"** — still open, §3 item 5 |
+| Operator items §3 1–8 | no live evidence found | **all 8 still open** — none closed by this session |
+
+Toolchains were installed inside the verification sandbox (`dnf` Corretto 17/21, Android
+`cmdline-tools` + platform 34, `firebase-tools` 15.26.0). `local.properties` and the placeholder
+`app/google-services.json` used for the build are both git-ignored and were not committed.
 
 Notable **residual risk that is real even where the fix is correct:** the SSRF guard (`S04-H1`) is
 check-then-connect, so **DNS rebinding with a sub-second TTL survives it.** Closing that requires
@@ -202,14 +222,18 @@ until someone spends the budget to check. Corrected in the same commit as this r
 - All 116 findings hold exactly one disposition. **Zero open. Zero partial.**
 - **No Critical or High finding is unfixed in code.** `S07-C1`, the audit's worst finding and the
   subject of this program's worst false claim, is genuinely closed and re-verified from source here.
-- The server layer — the one layer this environment can truly test — is **153/153 green**.
-- **The system is NOT yet safe to consider remediated in production**, for two reasons that are
-  code-complete but not operator-complete: the **leaked GCP admin key has not been revoked**, and the
-  **Android client has never been compiled**. Both are §3/§4 items.
+- All three testable layers are green: **server 153/153**, **Firestore rules 155/155**, and the
+  **Android debug build compiles** (§4.1, 2026-08-11). The compile gap and the rules-execution gap
+  called out in the original §4 are closed.
+- **The system is NOT yet safe to consider remediated in production.** The blocking reason is now
+  singular and entirely operator-side: the **leaked GCP admin service-account key has not been
+  revoked**, and **none of the 8 operator actions in §3 have been closed** — `main` is still
+  unprotected. A compiled debug APK is not a released signed APK.
 
 **Therefore this report does not declare the program secure. It declares the code remediation
-complete and verified to the limit of this environment, with 8 named operator actions and 3 named
-verification gaps outstanding.** `FINAL_SIGNOFF.md` should be signed only after items 1–5 of §3 are
-done and an operator has built and released the APK together with the server.
+complete and now test-verified on every layer this environment can exercise, with 8 named operator
+actions outstanding and live-runtime behaviour still unverified.** `FINAL_SIGNOFF.md` should be
+signed only after items 1–5 of §3 are done and an operator has built and released the signed APK
+together with the server.
 
 Anything stronger than that sentence would be the fourth false claim in this program's history.
