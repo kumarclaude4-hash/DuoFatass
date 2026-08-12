@@ -392,7 +392,7 @@ dependencies — `package.json`/lockfile were not modified.
   `SESSION_INDEX.md` updates — see `git log` for the commit hash following
   this file's addition.
 
-## Remaining S3-12 findings
+## Remaining S3-12 findings (resolved in a later continuation — see below)
 
 - `S03-L3`/`S04-I2` — dead B2 presign surface; has a manual runbook step
   (B2 key revocation) that code alone cannot complete.
@@ -400,9 +400,118 @@ dependencies — `package.json`/lockfile were not modified.
   (a race guard exists at `worker/src/index.js:553-574`, not yet confirmed
   end-to-end).
 
+---
+
+## Continuation — S10-N3 verification + S03-L3/S04-I2 close-out
+
+**Status:** `S10-N3` remains **Partial** (code/tests verified, production
+Cloudflare/R2/B2 runtime verification **BLOCKED** in this environment —
+no live Cloudflare Workers/R2/B2 access). `S03-L3`/`S04-I2` are now
+**Fixed** (code-level dead-surface removal; a pre-existing operator
+runbook item — revoking the leaked Backblaze B2 application key,
+tracked jointly with `SC-02`/`S08-C1` — remains open and is unaffected by
+this change).
+
+### S10-N3 — re-confirmed, not re-implemented
+
+The race guard (`worker/src/index.js:553-574`, "Race guard: the nightly
+migration PUTs to B2 and THEN deletes from R2") and its two dedicated
+regression tests were already present on this branch from prior work on
+commit `e366730`. This pass re-ran and re-read them rather than
+reimplementing:
+
+- `worker/src/index.js` full suite: **29/29 pass**, including the two
+  `S10-N3` cases (a racing client DELETE during migration fires a
+  compensating B2 delete so the migrated copy isn't orphaned in cold tier;
+  a normal no-race migration does NOT fire a spurious compensating
+  delete).
+- `node --check worker/src/index.js` — clean.
+- **Still blocked:** this verifies the guard against the worker's own
+  test harness/mocks (fake R2/B2 bindings), not a real Cloudflare
+  Workers + R2 + B2 environment under load. No live Cloudflare/R2/B2
+  credentials or access exist in this VM. Do not promote to `Fixed`
+  without that end-to-end runtime confirmation — `Partial` is the
+  correct, evidence-backed status.
+
+### S03-L3 / S04-I2 — finishing the dead-code removal
+
+Prior work on this branch (commit `e366730`) had already removed
+`b2PresignUrl`/`b2PresignUrlForUid` from `server/index.js`,
+`buildB2PresignUrl`/`b2HmacKey` (+ exports) from `server/lib/pure.js`,
+and the dead B2 presign rate-limit entries. This pass finished the job:
+
+1. **Repo-wide reference sweep.** Grepped the full repository for
+   `b2PresignUrl`, `b2PresignUrlForUid`, `buildB2PresignUrl`, `b2HmacKey`,
+   and the removed rate-limit constants. Inside `server/`, the only
+   remaining hits are the explanatory removal comments already left in
+   `index.js`/`pure.js` (and now `pure.test.js`) — no live code, export,
+   or route reference survives. Hits elsewhere (worker, CI workflows,
+   audit/session docs, evidence diffs) are either the worker's own
+   legitimate B2 tiering config (untouched — see below) or historical
+   record of the finding, not live server code.
+2. **Obsolete test cleanup.** `server/lib/pure.test.js` still carried 7
+   tests exercising the deleted `buildB2PresignUrl`/`b2HmacKey` exports
+   (`pure.buildB2PresignUrl is not a function` failures). Removed that
+   block and replaced it with a one-paragraph pointer comment explaining
+   why the coverage is gone, rather than leaving silently-failing tests
+   or deleting the explanation along with the code.
+3. **Stale docs.** `server/README.md`'s env-var table still documented
+   `B2_KEY_ID`/`B2_APPLICATION_KEY`/`B2_BUCKET`/`B2_REGION` as
+   server-required config. Repo-wide grep confirms `server/` reads zero
+   `process.env.B2_*` variables now, so that row was removed.
+4. **Scope check — what was *not* touched.** The worker's own B2
+   credentials (`worker/wrangler.jsonc`, `worker/src/index.js`) back the
+   legitimate nightly cold-tier migration and R2↔B2 media pipeline
+   (`S10-N3`'s subject) — an entirely separate, live surface from the
+   server's dead presign helpers. Nothing there was modified. Test
+   coverage for legitimately-used worker functionality was not weakened;
+   only the 7 tests for the two deleted pure functions were removed.
+
+**Evidence:**
+- `node --check server/index.js` — clean.
+- `node --check server/lib/pure.js` — clean.
+- `node --check server/lib/pure.test.js` — clean.
+- `node --test server/lib/pure.test.js` — **60/60 pass** (was 67 tests,
+  60 pass/7 fail before this cleanup; the 7 failures were exactly the
+  obsolete `buildB2PresignUrl`/`b2HmacKey` cases now removed).
+- `node --test server/lib/*.test.js` (full server lib suite) —
+  **193/194 pass**. The 1 failure (`identityVerify.test.js`) is
+  pre-existing and unrelated: `Cannot find module '@signalapp/libsignal-client'`,
+  a native dependency not installed in this VM (`server/node_modules` was
+  never present this session) — not caused by, or related to, this
+  change.
+- `worker/src/index.js` full suite: **29/29 pass** (unchanged by this
+  work; re-run only to confirm S10-N3 still holds after the server-side
+  edits, since both files share no runtime dependency but do share the
+  `S3-12` remediation batch).
+- Repo-wide grep for the four removed symbol names inside `server/`
+  returns only comments, confirmed above.
+
+### Files changed (this continuation)
+
+- `server/lib/pure.test.js` — removed 7 obsolete tests for
+  `buildB2PresignUrl`/`b2HmacKey` (already-deleted exports), replaced
+  with an explanatory comment.
+- `server/README.md` — removed the stale `B2_KEY_ID`/`B2_APPLICATION_KEY`/
+  `B2_BUCKET`/`B2_REGION` env-var table row (server no longer reads any
+  of them).
+- `BUG_TRACKER.md`, `START_HERE.md`, `SESSION_INDEX.md` — status updates
+  for `S03-L3`, `S04-I2` (→ Fixed), `S10-N3` (Partial, re-confirmed with
+  updated evidence and explicit runtime-verification-blocked note).
+
+### Commits
+
+- Implementation: `959ef20` — `server/lib/pure.test.js`,
+  `server/README.md` (auto-committed during this session's editing).
+- Documentation: see `git log` for the commit hash following this
+  file's update.
+
 ## Next remediation session
 
-Continue **S3-12** with the remaining two findings (`S03-L3`/`S04-I2`,
-`S10-N3`), or proceed to **S3-13** (Admin surface, part 1) if S3-12's
-remainder is deferred — `START_HERE.md` and `SESSION_INDEX.md` point to
-finishing S3-12 next since it remains only partially done.
+**S3-12 is now fully closed out** — all six bundled findings
+(`S03-M1`, `S03-M2`, `S03-M3`, `S03-L2`, `S03-L3`/`S04-I2`, plus the
+`S03-H3` follow-up) have been addressed from source, and `S10-N3` is
+re-confirmed `Partial` with an explicit, environment-caused runtime-
+verification block (not a code gap). Proceed to **S3-13** (Admin
+surface) next — do not start it from this file; `START_HERE.md` and
+`SESSION_INDEX.md` are the authoritative pointers.
