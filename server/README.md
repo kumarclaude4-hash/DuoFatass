@@ -63,7 +63,6 @@ messaging server over one would trade a small exposure for a total outage.
 
 | Variable | Purpose | Missing |
 |---|---|---|
-| `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET`, `B2_REGION` | Backblaze B2 media storage. `B2_BUCKET` defaults to `yyush-duoshield`; the two key values default to empty | Media upload/download unavailable |
 | `TURN_TOKEN_ID`, `TURN_API_TOKEN` | Cloudflare TURN credentials for calls | `/turnCredentials` returns `503`; client-side behaviour after that is not documented here (not verified) |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 (Watch Together search) | `POST /youtubeSearch` returns `503` |
 | `PUBLIC_BASE_URL` | Absolute origin of this server, used to build proxied preview-image URLs | Derived from `X-Forwarded-Proto`/`Host`; set it explicitly behind a proxy that rewrites `Host` |

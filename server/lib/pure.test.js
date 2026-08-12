@@ -251,136 +251,14 @@ test("evaluateFixedWindow resets once the window elapses", () => {
   assert.ok(first);
 });
 
-test("buildB2PresignUrl returns null without credentials", () => {
-  assert.equal(
-    pure.buildB2PresignUrl({
-      keyId: "", appKey: "", bucket: "b", region: "eu-central-003",
-      method: "GET", objectKey: "k", ttlSeconds: 300, now: new Date(0),
-    }),
-    null
-  );
-  assert.equal(
-    pure.buildB2PresignUrl({
-      keyId: "id", appKey: "", bucket: "b", region: "eu-central-003",
-      method: "GET", objectKey: "k", ttlSeconds: 300, now: new Date(0),
-    }),
-    null
-  );
-});
-
-test("buildB2PresignUrl produces a deterministic, well-formed SigV4 GET URL", () => {
-  const url = pure.buildB2PresignUrl({
-    keyId: "000abc0000000000000000001",
-    appKey: "K000secretsecretsecretsecret",
-    bucket: "my-bucket",
-    region: "eu-central-003",
-    method: "GET",
-    objectKey: "path/to/object.bin",
-    ttlSeconds: 900,
-    now: new Date("2026-01-02T03:04:05.678Z"),
-  });
-  assert.ok(url.startsWith("https://s3.eu-central-003.backblazeb2.com/my-bucket/path/to/object.bin?"));
-  assert.match(url, /X-Amz-Algorithm=AWS4-HMAC-SHA256/);
-  assert.match(url, /X-Amz-Date=20260102T030405Z/);
-  assert.match(url, /X-Amz-Expires=900/);
-  // GET signs only the host header.
-  assert.match(url, /X-Amz-SignedHeaders=host/);
-  assert.match(url, /&X-Amz-Signature=[0-9a-f]{64}$/);
-
-  // Deterministic: same inputs → same signature.
-  const url2 = pure.buildB2PresignUrl({
-    keyId: "000abc0000000000000000001",
-    appKey: "K000secretsecretsecretsecret",
-    bucket: "my-bucket",
-    region: "eu-central-003",
-    method: "GET",
-    objectKey: "path/to/object.bin",
-    ttlSeconds: 900,
-    now: new Date("2026-01-02T03:04:05.678Z"),
-  });
-  assert.equal(url, url2);
-});
-
-test("buildB2PresignUrl signs content-type for PUT with a body type", () => {
-  const url = pure.buildB2PresignUrl({
-    keyId: "000abc0000000000000000001",
-    appKey: "K000secretsecretsecretsecret",
-    bucket: "my-bucket",
-    region: "eu-central-003",
-    method: "PUT",
-    objectKey: "upload.jpg",
-    contentType: "image/jpeg",
-    ttlSeconds: 300,
-    now: new Date("2026-01-02T03:04:05.678Z"),
-  });
-  // content-type must be part of the signed headers for a PUT with a type.
-  assert.match(url, /X-Amz-SignedHeaders=content-type%3Bhost/);
-});
-
-test("buildB2PresignUrl changes the signature when any input changes", () => {
-  const base = {
-    keyId: "000abc0000000000000000001",
-    appKey: "K000secretsecretsecretsecret",
-    bucket: "my-bucket",
-    region: "eu-central-003",
-    method: "GET",
-    objectKey: "a.bin",
-    ttlSeconds: 900,
-    now: new Date("2026-01-02T03:04:05.678Z"),
-  };
-  const sig = (u) => u.match(/X-Amz-Signature=([0-9a-f]{64})/)[1];
-  const baseSig = sig(pure.buildB2PresignUrl(base));
-  assert.notEqual(baseSig, sig(pure.buildB2PresignUrl({ ...base, objectKey: "b.bin" })));
-  assert.notEqual(baseSig, sig(pure.buildB2PresignUrl({ ...base, ttlSeconds: 901 })));
-  assert.notEqual(baseSig, sig(pure.buildB2PresignUrl({ ...base, appKey: "K000different-secret-value00" })));
-});
-
-test("b2HmacKey derivation matches a hand-computed AWS4 signing key", () => {
-  // Reference computation of the SigV4 signing key chain.
-  const appKey = "K000secretsecretsecretsecret";
-  const ds = "20260102";
-  const region = "eu-central-003";
-  const kDate = crypto.createHmac("sha256", Buffer.from("AWS4" + appKey)).update(ds).digest();
-  const kRegion = crypto.createHmac("sha256", kDate).update(region).digest();
-  const kService = crypto.createHmac("sha256", kRegion).update("s3").digest();
-  const expected = crypto.createHmac("sha256", kService).update("aws4_request").digest();
-  assert.deepEqual(pure.b2HmacKey(appKey, ds, region), expected);
-});
+// ── B2 SigV4 presign coverage removed (S03-L3 / S04-I2) ───────────────────────
+// `buildB2PresignUrl` / `b2HmacKey` were tested here. Both were deleted from
+// server/lib/pure.js because their only caller — the server's dead
+// `b2PresignUrl` / `b2PresignUrlForUid` helpers and the `/b2PresignedPut`,
+// `/b2PresignedGet`, `/b2Delete` routes they were meant to serve — never
+// existed in the router table. See server/index.js for the full removal note.
 
 // ── Additional edge-case coverage ─────────────────────────────────────────────
-
-test("buildB2PresignUrl PUT without contentType signs only host (no content-type header)", () => {
-  const url = pure.buildB2PresignUrl({
-    keyId: "000abc0000000000000000001",
-    appKey: "K000secretsecretsecretsecret",
-    bucket: "my-bucket",
-    region: "eu-central-003",
-    method: "PUT",
-    objectKey: "upload.bin",
-    // contentType deliberately omitted
-    ttlSeconds: 300,
-    now: new Date("2026-01-02T03:04:05.678Z"),
-  });
-  // Without contentType, PUT falls back to signing only the host header.
-  assert.match(url, /X-Amz-SignedHeaders=host(?:[^a-z]|$)/);
-  assert.doesNotMatch(url, /content-type/);
-});
-
-test("buildB2PresignUrl accepts a Date object or plain new Date() for `now`", () => {
-  const params = {
-    keyId: "000abc0000000000000000001",
-    appKey: "K000secretsecretsecretsecret",
-    bucket: "b",
-    region: "eu-central-003",
-    method: "GET",
-    objectKey: "k",
-    ttlSeconds: 60,
-    now: new Date("2026-03-15T12:00:00.000Z"),
-  };
-  const url = pure.buildB2PresignUrl(params);
-  // Date stamp in the credential string must reflect the `now` value.
-  assert.match(url, /X-Amz-Date=20260315T120000Z/);
-});
 
 test("isBlockedPreviewHost blocks bracketed IPv6 loopback [::1]", () => {
   assert.equal(pure.isBlockedPreviewHost("[::1]"), true);
