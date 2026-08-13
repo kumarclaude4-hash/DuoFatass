@@ -121,7 +121,18 @@ function verifyImageUrl(params, secret, { now = Date.now() } = {}) {
   }
   if (!targetUrl) return { ok: false, reason: "empty target" };
 
-  const expectedMac = computeMac(targetUrl, expiresAt, secret);
+  let parsedTarget;
+  try {
+    parsedTarget = new URL(targetUrl);
+  } catch {
+    return { ok: false, reason: "malformed target" };
+  }
+  if (!["http:", "https:"].includes(parsedTarget.protocol) || !parsedTarget.hostname) {
+    return { ok: false, reason: "unsupported target protocol" };
+  }
+  const normalizedTargetUrl = parsedTarget.toString();
+
+  const expectedMac = computeMac(normalizedTargetUrl, expiresAt, secret);
   let suppliedMac;
   try {
     suppliedMac = unb64u(providedMac);
@@ -135,7 +146,7 @@ function verifyImageUrl(params, secret, { now = Date.now() } = {}) {
   if (!crypto.timingSafeEqual(suppliedMac, expectedMac)) {
     return { ok: false, reason: "bad signature" };
   }
-  return { ok: true, targetUrl };
+  return { ok: true, targetUrl: normalizedTargetUrl };
 }
 
 // Only real raster/vector image types a preview thumbnail can legitimately be.
