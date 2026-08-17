@@ -807,17 +807,47 @@ public class ChatMediaActivity extends BaseActivity {
         return (name == null || name.isEmpty()) ? "?" : String.valueOf(name.charAt(0)).toUpperCase();
     }
 
+    /**
+     * UX-5 fix: the encrypted state used to render a "🔒" emoji inline in this trust-critical
+     * status line. Emoji glyphs vary per OEM emoji font and TalkBack announces them awkwardly
+     * ("lock" mid-sentence), so the lock is now a real tinted vector drawn as a compound
+     * drawable on the same TextView. Using a compound drawable keeps the single-TextView
+     * header layout intact, and the explicit reset in the other two branches matters because
+     * this method is called repeatedly on presence updates — without it a recycled "encrypted"
+     * icon would stick around next to "online" or "last seen ...".
+     */
     private void updateOnlineStatus(boolean online, long lastSeenMs) {
         headerOnlineDot.setVisibility(online ? View.VISIBLE : View.GONE);
         if (online) {
             tvOnlineStatus.setText("online");
             tvOnlineStatus.setTextColor(0xFF6BBF8A);
+            tvOnlineStatus.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
+            tvOnlineStatus.setContentDescription(null);
         } else if (lastSeenMs > 0) {
             tvOnlineStatus.setText("last seen " + formatLastSeen(lastSeenMs));
             tvOnlineStatus.setTextColor(0xFF9A8FB0);
+            tvOnlineStatus.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
+            tvOnlineStatus.setContentDescription(null);
         } else {
-            tvOnlineStatus.setText("🔒 end-to-end encrypted");
+            tvOnlineStatus.setText(R.string.encrypted_badge_desc);
             tvOnlineStatus.setTextColor(0xFF9A8FB0);
+            // ic_lock is a 24dp vector with a baked-in accent tint, which is far too large
+            // and the wrong colour beside this 12sp secondary-text line. Size it down to
+            // ~13dp explicitly (so setBounds, not the 24dp intrinsic bounds, wins) and
+            // re-tint it to match the status text.
+            android.graphics.drawable.Drawable lock =
+                    androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_lock);
+            if (lock != null) {
+                lock = lock.mutate();
+                int px = (int) (13 * getResources().getDisplayMetrics().density);
+                lock.setBounds(0, 0, px, px);
+                androidx.core.graphics.drawable.DrawableCompat.setTint(lock, 0xFF9A8FB0);
+                tvOnlineStatus.setCompoundDrawablesRelative(lock, null, null, null);
+                tvOnlineStatus.setCompoundDrawablePadding(
+                        (int) (5 * getResources().getDisplayMetrics().density));
+            }
+            // The label text already reads "End-to-end encrypted", so the icon needs no
+            // separate announcement and the default TextView reading is correct as-is.
         }
     }
 

@@ -199,6 +199,9 @@
 
     <!-- Decorative-adjacent lock marks replaced with real icons (UX-5) -->
     <string name="encrypted_badge_desc">End-to-end encrypted</string>
+    <!-- UX-5: was an inline "⚠" emoji in SeedPhraseDisplayActivity's QR dialog; the glyph is
+         now a real ic_warning vector so this text carries no emoji of its own. -->
+    <string name="seed_qr_private_warning">Keep this QR private. Anyone who scans it can restore your account.</string>
 
     <!-- Search -->
     <string name="search_messages">Search messages</string>

@@ -180,11 +180,27 @@ public class SeedPhraseDisplayActivity extends AppCompatActivity {
             container.setOrientation(LinearLayout.VERTICAL);
             container.setPadding(dp16, dp8, dp16, dp8);
 
+            // UX-5 fix: this warning led with a "⚠" emoji, which renders inconsistently across
+            // OEM emoji fonts and is announced awkwardly by TalkBack mid-sentence. It is now the
+            // real ic_warning vector as a compound drawable, tinted to match the warning text.
+            // Bounds are set explicitly (ic_warning's intrinsic size is meant for banner use)
+            // and the instance is mutate()d so this tint cannot leak to other ic_warning users
+            // sharing the same cached constant state.
             TextView warning = new TextView(this);
-            warning.setText("⚠ Keep this QR private. Anyone who scans it can restore your account.");
+            warning.setText(R.string.seed_qr_private_warning);
             warning.setTextSize(13f);
             warning.setTextColor(0xFFE7B15D);
             warning.setPadding(0, 0, 0, dp16);
+            android.graphics.drawable.Drawable warnIcon =
+                    androidx.core.content.ContextCompat.getDrawable(this, R.drawable.ic_warning);
+            if (warnIcon != null) {
+                warnIcon = warnIcon.mutate();
+                int wpx = dp(15);
+                warnIcon.setBounds(0, 0, wpx, wpx);
+                androidx.core.graphics.drawable.DrawableCompat.setTint(warnIcon, 0xFFE7B15D);
+                warning.setCompoundDrawablesRelative(warnIcon, null, null, null);
+                warning.setCompoundDrawablePadding(dp8);
+            }
             container.addView(warning);
 
             ImageView qrView = new ImageView(this);
