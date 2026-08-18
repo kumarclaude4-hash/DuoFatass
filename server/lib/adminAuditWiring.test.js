@@ -175,44 +175,51 @@ test("S05-M1: waitlist requestId is never logged to stdout in the clear", () => 
 
 // ── S05-H2 wiring test ────────────────────────────────────────────────────────
 //
-// Same "wiring, not existence" caveat as above: this proves the deny route,
+// Same "wiring, not existence" caveat as above: this proves the revoke route,
 // admin-auth gate, status transition, and audit call are all present and in
 // the right order, as text. It does not prove a request reaches Firestore
 // (BLOCKED here — no emulator/credentials).
+//
+// NOTE: the original waitlist request/approve/deny flow this test was written
+// against was removed in the migration to the invite system (commit 042c414,
+// "migrate from waitlist to invite system"). POST /admin/api/invites/revoke is
+// its structural successor — an admin-gated, audited status transition on a
+// single doc that must reject a non-active invite — so the identical wiring
+// properties (auth-before-body, status guard, terminal status, audit) are
+// asserted against it here.
 
-test("S05-H2: POST /admin/api/waitlist/deny exists, is admin-gated, and sets status: denied", () => {
-  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/waitlist/deny"');
-  assert.ok(routeStart > 0, "no POST /admin/api/waitlist/deny route found — the deny path is missing");
+test("S05-H2: POST /admin/api/invites/revoke exists, is admin-gated, and sets status: revoked", () => {
+  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"');
+  assert.ok(routeStart > 0, "no POST /admin/api/invites/revoke route found — the revoke path is missing");
 
-  // Bound the slice to this handler only, so matches from /approve above it
-  // (or /admin/api/locked below it) cannot make these assertions pass
+  // Bound the slice to this handler only, so matches from /invites/create above
+  // it (or /admin/api/locked below it) cannot make these assertions pass
   // spuriously.
   const nextRouteStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/locked"', routeStart);
-  assert.ok(nextRouteStart > routeStart, "could not bound the deny handler");
+  assert.ok(nextRouteStart > routeStart, "could not bound the revoke handler");
   const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
 
-  // S05-L2: the deny route (like every other admin POST route) now runs
+  // S05-L2: the revoke route (like every other admin POST route) runs
   // requireAdminAuth() via requireAdminAuthThenBody() BEFORE the body is
   // read, rather than inside the body's "end" callback — asserting the
   // wrapper call here is how this test proves that ordering, not just that
   // auth happens somewhere in the handler.
   assert.ok(
     handler.includes("requireAdminAuthThenBody(req, res"),
-    "the deny endpoint must be gated by requireAdminAuth *before* its body is read " +
+    "the revoke endpoint must be gated by requireAdminAuth *before* its body is read " +
     "(via requireAdminAuthThenBody), same as every other /admin/api POST route"
   );
   assert.ok(
-    /status\s*!==\s*"pending"/.test(handler),
-    "deny must reject a requestId that is not currently pending (no re-denying approved/denied docs)"
+    /!==\s*"active"/.test(handler),
+    "revoke must reject an invite that is not currently active (no re-revoking used/revoked/expired invites)"
   );
   assert.ok(
-    /status:\s*"denied"/.test(handler),
-    "deny must set status: \"denied\" — the finding's fix explicitly asks for a denied status " +
-    "distinct from pending/approved/used"
+    /status:\s*"revoked"/.test(handler),
+    "revoke must set status: \"revoked\" — a terminal revoked status distinct from active/used/expired"
   );
   assert.ok(
-    handler.includes('auditAdminEvent("waitlist_denied"'),
-    "a denial must leave a durable audit trail, same as approval"
+    handler.includes('auditAdminEvent("invite_revoked"'),
+    "a revocation must leave a durable audit trail, same as creation"
   );
 });
 
