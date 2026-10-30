@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- Picture-in-Picture for video calls — back / Home / Recents shrinks the call to a floating window showing the remote video, with Mute and End actions; tapping the window expands it back to the full call screen. Android 12+ uses `setAutoEnterEnabled`; Android 8–11 enters PiP from `onUserLeaveHint()`. See `docs/CALL_MINIMIZE_PIP.md`
+
+### Fixed
+- Pressing back (system button, gesture, or the on-screen arrow) on the call screen ended the call. Back now minimises the call and keeps it running; only the End button (or the End action in the notification / PiP window) hangs up
+- Proximity wake lock stayed held while a voice call was in the background, which could blank the screen in other apps; it is now released on minimise/Home and re-acquired on return
+- Tapping the ongoing-call notification now sets `FLAG_ACTIVITY_NEW_TASK` so the call reliably returns to the front from the background
+
+### Changed
+- `CallActivity` back handling uses `OnBackPressedCallback` — the manifest opts in to predictive back (`enableOnBackInvokedCallback`), which bypasses `Activity.onBackPressed()` on Android 13+
+- `CallActivity` manifest entry declares `supportsPictureInPicture`, `resizeableActivity` and `configChanges` (so PiP resizing does not recreate the activity and its WebRTC renderers)
+
+---
+
 ## [1.4.0] — 2026-07-29
 
 ### Added

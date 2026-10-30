@@ -111,6 +111,12 @@ app/src/main/java/com/duoshield/app/
 │   ├── GroupMember.java
 │   └── Message.java
 │
+├── call/                               # voice/video calling — see docs/CALL_MINIMIZE_PIP.md
+│   ├── CallActivity.java               # call screen; back/Home minimise (PiP for video)
+│   ├── CallForegroundService.java      # ongoing-call notification, keeps process alive
+│   ├── CallManager.java                # WebRTC peer connection + signalling
+│   └── InCallChatActivity.java         # in-call text chat
+│
 ├── ui/
 │   ├── AddContactActivity.java
 │   ├── CreateGroupActivity.java

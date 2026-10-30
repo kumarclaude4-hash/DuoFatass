@@ -1,6 +1,12 @@
 package com.duoshield.app.call;
 
+import android.app.PendingIntent;
+import android.app.PictureInPictureParams;
+import android.app.RemoteAction;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.graphics.drawable.Icon;
+import android.util.Rational;
 import android.graphics.Color;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -19,6 +25,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.duoshield.app.R;
@@ -50,7 +57,9 @@ import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import org.webrtc.RendererCommon;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -109,6 +118,8 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     private ImageView           btnFlipCamera;     // inside PiP
     private View                btnFlipLayout;
     private View                btnBack;
+    private View                callHeader;
+    private View                callControlsBar;
     private ImageView           btnChat;
 
     // TURN quota warning banner
@@ -144,6 +155,13 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
 
     /** Banner delivery state — a banner shown while the screen is not visible is invisible. */
     private boolean isActivityVisible = false;
+
+    // ── Picture-in-Picture (Meet-style: video calls shrink to a floating window) ──
+    /** True while a sub-screen (in-call chat, permission dialog) is launching: must not trigger PiP. */
+    private boolean suppressAutoPip   = false;
+    /** Visibility of the self-view tile / TURN banner to restore when leaving PiP. */
+    private int     pipSavedLocalVis  = View.GONE;
+    private int     pipSavedTurnVis   = View.GONE;
     private boolean chatScreenOpen    = false;
     private String  pendingBannerPreview;
 
@@ -201,6 +219,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
                     btnMute.setImageResource(isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic);
                     btnMute.setAlpha(isMuted ? 0.5f : 1f);
                 }
+                updatePipParams();
             }
         }
     };
@@ -472,13 +491,22 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     protected void onResume() {
         super.onResume();
         isActivityVisible = true;
-        // Returning here means the in-call chat was dismissed.
+        // Coming back from a minimised call: the proximity lock was released on the way out.
+        if (proximityWakeLock == null && !isFinishing() && callManager != null) {
+            CallManager.CallState st = callManager.getCurrentState();
+            if (st != CallManager.CallState.ENDED && st != CallManager.CallState.FAILED) {
+                acquireProximityWakeLock();
+            }
+        }
+        // Returning here means the in-call chat / permission dialog was dismissed.
         chatScreenOpen = false;
+        suppressAutoPip = false;
+        updatePipParams();
         // Coming back to the call from Home/Recents (the middle button) or another screen:
         // re-show the self-view PiP so it behaves like Google Meet. The SurfaceViewRenderer
         // itself recovers its frames automatically once the surface is recreated; we just have
         // to make sure the tile is visible again for a video call whose camera is still on.
-        if (isVideo && !isCameraOff && localVideoPip != null) {
+        if (isVideo && !isCameraOff && localVideoPip != null && !isInPictureInPictureMode()) {
             localVideoPip.setVisibility(View.VISIBLE);
         }
         // Re-attach if a listener error killed the registration while we were away.
@@ -495,6 +523,137 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     protected void onPause() {
         super.onPause();
         isActivityVisible = false;
+    }
+
+    /**
+     * Fires on Home / Recents (and whenever this activity launches another one, which is why
+     * {@link #suppressAutoPip} exists). Releases the proximity lock so it can't black out the
+     * screen while another app is in front, and on Android 8-11 enters PiP for video calls.
+     * Android 12+ does the same through {@code setAutoEnterEnabled} in {@link #buildPipParams()}.
+     */
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        releaseProximityWakeLock();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && !suppressAutoPip) {
+            enterPip();
+        }
+    }
+
+    /**
+     * Back behaviour (Google Meet style): the call keeps running. Video calls shrink to a
+     * Picture-in-Picture window; voice calls (or devices without PiP) go to the background and
+     * the ongoing-call notification is the way back in. Only End hangs up. If the call has
+     * already finished there is nothing to keep alive, so just close.
+     */
+    private void minimizeCall() {
+        if (!isCallActive()) {
+            finish();
+            return;
+        }
+        if (enterPip()) return;
+        releaseProximityWakeLock();
+        moveTaskToBack(true);
+    }
+
+    private boolean isCallActive() {
+        if (callManager == null) return false;
+        CallManager.CallState st = callManager.getCurrentState();
+        return st != CallManager.CallState.ENDED && st != CallManager.CallState.FAILED;
+    }
+
+    // ── Picture-in-Picture ────────────────────────────────────────────────────
+
+    private boolean canUsePip() {
+        return isVideo
+                && getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE);
+    }
+
+    private boolean enterPip() {
+        if (!canUsePip() || !isCallActive() || isInPictureInPictureMode()) return false;
+        try {
+            return enterPictureInPictureMode(buildPipParams());
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            // PiP disabled by the user in system settings, or not allowed right now.
+            Log.w(TAG, "enterPictureInPictureMode failed — falling back to background", e);
+            return false;
+        }
+    }
+
+    private PictureInPictureParams buildPipParams() {
+        PictureInPictureParams.Builder b = new PictureInPictureParams.Builder()
+                .setAspectRatio(new Rational(9, 16))
+                .setActions(buildPipActions());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            b.setAutoEnterEnabled(isCallActive() && !suppressAutoPip);
+        }
+        return b.build();
+    }
+
+    /** Pushes fresh PiP params (mute icon, auto-enter on/off). Safe to call at any time. */
+    private void updatePipParams() {
+        if (!canUsePip() || isFinishing() || isDestroyed()) return;
+        try {
+            setPictureInPictureParams(buildPipParams());
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            Log.w(TAG, "setPictureInPictureParams failed", e);
+        }
+    }
+
+    /** Mute + End buttons shown on the PiP window. They reuse the notification broadcasts. */
+    private List<RemoteAction> buildPipActions() {
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent mutePi = PendingIntent.getBroadcast(this, 20,
+                new Intent(CallForegroundService.BROADCAST_TOGGLE_MUTE).setPackage(getPackageName()),
+                flags);
+        PendingIntent endPi = PendingIntent.getBroadcast(this, 21,
+                new Intent(CallForegroundService.BROADCAST_END_CALL).setPackage(getPackageName()),
+                flags);
+        List<RemoteAction> actions = new ArrayList<>();
+        actions.add(new RemoteAction(
+                Icon.createWithResource(this, isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic),
+                isMuted ? "Unmute" : "Mute", "Toggle microphone", mutePi));
+        actions.add(new RemoteAction(
+                Icon.createWithResource(this, R.drawable.ic_call_end),
+                "End", "End call", endPi));
+        return actions;
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean inPip, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(inPip, newConfig);
+        applyPipUi(inPip);
+    }
+
+    /** In PiP only the remote video is shown; the full UI comes back when the window expands. */
+    private void applyPipUi(boolean inPip) {
+        if (inPip) {
+            if (localVideoPip != null) pipSavedLocalVis = localVideoPip.getVisibility();
+            if (bannerTurnWarning != null) pipSavedTurnVis = bannerTurnWarning.getVisibility();
+            bannerDismissHandler.removeCallbacksAndMessages(null);
+            if (bannerNewMessage != null) {
+                bannerNewMessage.animate().cancel();
+                bannerNewMessage.setVisibility(View.GONE);
+            }
+            if (callHeader != null)         callHeader.setVisibility(View.GONE);
+            if (callControlsBar != null)    callControlsBar.setVisibility(View.GONE);
+            if (localVideoPip != null)      localVideoPip.setVisibility(View.GONE);
+            if (bannerTurnWarning != null)  bannerTurnWarning.setVisibility(View.GONE);
+        } else {
+            if (callHeader != null)         callHeader.setVisibility(View.VISIBLE);
+            if (callControlsBar != null)    callControlsBar.setVisibility(View.VISIBLE);
+            if (localVideoPip != null) {
+                localVideoPip.setVisibility(isCameraOff ? View.GONE : pipSavedLocalVis);
+            }
+            if (bannerTurnWarning != null)  bannerTurnWarning.setVisibility(pipSavedTurnVis);
+            // Surface a chat message that arrived while in PiP (onResume() also does this when
+            // it fires; the null-out below makes the two paths idempotent).
+            if (pendingBannerPreview != null && !chatScreenOpen) {
+                String preview = pendingBannerPreview;
+                pendingBannerPreview = null;
+                showNewMessageBanner(preview);
+            }
+        }
     }
 
     @Override
@@ -574,6 +733,8 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         btnFlipCamera         = findViewById(R.id.btnFlipCamera);
         btnFlipLayout         = findViewById(R.id.btnFlipLayout);
         btnBack               = findViewById(R.id.btnBack);
+        callHeader            = findViewById(R.id.callHeader);
+        callControlsBar       = findViewById(R.id.callControlsBar);
         btnChat               = findViewById(R.id.btnChat);
 
         // TURN banner
@@ -611,13 +772,20 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     // ── Button listeners ─────────────────────────────────────────────────────��
 
     private void setupButtons() {
-        // Back (ends the call)
+        // Back arrow: minimise the call (keeps it alive). Only the End button hangs up.
         if (btnBack != null) {
-            btnBack.setOnClickListener(v -> {
-                callManager.hangup();
-                finish();
-            });
+            btnBack.setOnClickListener(v -> minimizeCall());
         }
+
+        // System back (button / gesture / predictive back): same behaviour as the arrow.
+        // OnBackPressedCallback is required because the manifest opts in to predictive back,
+        // which bypasses Activity.onBackPressed() on Android 13+.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                minimizeCall();
+            }
+        });
 
         // Mute microphone
         btnMute.setOnClickListener(v -> {
@@ -625,6 +793,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
             callManager.setMuted(isMuted);
             btnMute.setImageResource(isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic);
             btnMute.setAlpha(isMuted ? 0.5f : 1f);
+            updatePipParams();
         });
 
         // Camera toggle (video calls only) — turns camera on/off
@@ -875,11 +1044,15 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
                 == PackageManager.PERMISSION_GRANTED) return;
         try {
+            suppressAutoPip = true;
+            updatePipParams();
             requestPermissions(
                     new String[]{Manifest.permission.BLUETOOTH_CONNECT},
                     REQ_BLUETOOTH_CONNECT);
         } catch (Exception e) {
             Log.w(TAG, "BLUETOOTH_CONNECT request failed", e);
+            suppressAutoPip = false;
+            updatePipParams();
         }
     }
 
@@ -888,6 +1061,10 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
                                            int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != REQ_BLUETOOTH_CONNECT) return;
+        // A request that resolves without showing a dialog never pauses the activity, so
+        // onResume() would not clear this. Always release the PiP hold here.
+        suppressAutoPip = false;
+        updatePipParams();
         // Reopen the sheet on grant so the user immediately sees the named device rather than
         // having to tap the button a second time.
         if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED
@@ -1158,7 +1335,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
      */
     private void deliverNewMessageBanner(String preview) {
         if (chatScreenOpen) return;
-        if (!isActivityVisible) { pendingBannerPreview = preview; return; }
+        if (!isActivityVisible || isInPictureInPictureMode()) { pendingBannerPreview = preview; return; }
         showNewMessageBanner(preview);
     }
 
@@ -1208,6 +1385,9 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         // onResume() when the user comes back to the call.
         chatScreenOpen       = true;
         pendingBannerPreview = null;
+        // Opening chat is not "leaving the call": keep it out of PiP.
+        suppressAutoPip      = true;
+        updatePipParams();
 
         Intent intent = new Intent(this, InCallChatActivity.class);
         intent.putExtra(InCallChatActivity.EXTRA_CALL_ID,      callId);
@@ -1231,6 +1411,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
      */
     private void checkAndShowTurnWarning() {
         if (bannerTurnWarning == null || tvTurnWarningText == null) return;
+        if (isInPictureInPictureMode()) return;
         TurnBandwidthTracker tracker = TurnBandwidthTracker.get(this);
 
         if (tracker.isLimitReached()) {
@@ -1262,6 +1443,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         }
         runOnUiThread(() -> {
             updateStatusUi(state);
+            updatePipParams();
             // Refresh TURN banner on CONNECTED (relay may have been skipped due to cap).
             if (state == CallManager.CallState.CONNECTED) {
                 checkAndShowTurnWarning();
@@ -1282,7 +1464,11 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     @Override
     public void onLocalVideoTrack(VideoTrack track) {
         runOnUiThread(() -> {
-            localVideoPip.setVisibility(View.VISIBLE);
+            if (isInPictureInPictureMode()) {
+                pipSavedLocalVis = View.VISIBLE;   // shown when the window expands
+            } else {
+                localVideoPip.setVisibility(View.VISIBLE);
+            }
             track.addSink(localVideoView);
         });
     }
