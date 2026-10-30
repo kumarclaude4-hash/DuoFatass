@@ -1,6 +1,5 @@
 package com.duoshield.app.ui;
 
-import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
@@ -20,6 +19,7 @@ import com.duoshield.app.SignInActivity;
 import com.duoshield.app.util.ButtonPressAnimator;
 import com.duoshield.app.util.HapticHelper;
 import com.duoshield.app.util.PinManager;
+import com.duoshield.app.util.BackPressGuard;
 
 /**
  * Device-level PIN gate — the very first screen a fresh install must pass
@@ -72,6 +72,7 @@ public class DevicePinGateActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        BackPressGuard.block(this); // no skipping — the gate must be satisfied
 
         setupMode = !PinManager.hasDevicePinSet(this);
 
@@ -281,12 +282,5 @@ public class DevicePinGateActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
         finish();
-    }
-
-    // No skipping — the raw app must never be reachable without this gate.
-    @SuppressLint("MissingSuperCall")
-    @Override
-    public void onBackPressed() {
-        // Block back navigation.
     }
 }

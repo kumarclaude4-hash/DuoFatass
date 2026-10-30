@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Security
+- **App-lock bypass on Android 13+** — `LockScreenActivity` blocked the back button by overriding `onBackPressed()`, which predictive back (`enableOnBackInvokedCallback="true"`) bypasses. Back could finish the lock screen without unlocking, and because `BaseActivity.lockScreenActive` stayed `true` the lock was never re-shown. The same bypass affected the device-PIN gate, PIN setup, forced PIN/duress rotation screens, permissions onboarding and the offline screen. All seven now use `BackPressGuard` (an `OnBackPressedCallback`); a regression test fails if an `onBackPressed()` override is reintroduced. Tracked as `S11-H1` in `BUG_TRACKER.md`
+
+---
+
 ## [1.4.0] — 2026-07-29
 
 ### Added

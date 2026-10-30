@@ -19,6 +19,7 @@ import com.duoshield.app.SignInActivity;
 import com.duoshield.app.security.DuressManager;
 import com.duoshield.app.security.PendingLockStore;
 import com.duoshield.app.util.PinManager;
+import com.duoshield.app.util.BackPressGuard;
 import com.google.android.material.button.MaterialButton;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -113,6 +114,7 @@ public class ForcedDuressRotationActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        BackPressGuard.block(this); // locked out until the server confirms rotation
         setContentView(R.layout.activity_forced_duress_rotation);
 
         panelEntry    = findViewById(R.id.panelEntry);
@@ -491,11 +493,6 @@ public class ForcedDuressRotationActivity extends AppCompatActivity {
         finish();
     }
 
-    @Override
-    public void onBackPressed() {
-        // No skipping — the account is locked out of the app until the server
-        // confirms the rotation.
-    }
 
     @Override
     protected void onDestroy() {
