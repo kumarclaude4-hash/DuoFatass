@@ -22,6 +22,7 @@
         android:background="#0D1118">
 
         <FrameLayout
+            android:id="@+id/avatarFrame"
             android:layout_width="128dp"
             android:layout_height="128dp">
             <TextView
@@ -35,6 +36,19 @@
                 android:background="@drawable/bg_avatar_circle"
                 android:text="?" />
         </FrameLayout>
+
+        <!-- Shown only in Picture-in-Picture, where the header (which holds the name) is hidden. -->
+        <TextView
+            android:id="@+id/tvPipPartnerName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/tvCallStatus"

@@ -5,8 +5,10 @@ import android.app.PictureInPictureParams;
 import android.app.RemoteAction;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.graphics.Rect;
 import android.graphics.drawable.Icon;
 import android.util.Rational;
+import android.util.TypedValue;
 import android.graphics.Color;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -17,6 +19,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
@@ -119,6 +122,8 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     private View                btnFlipLayout;
     private View                btnBack;
     private View                callHeader;
+    private View                avatarFrame;
+    private TextView            tvPipPartnerName;
     private View                callControlsBar;
     private ImageView           btnChat;
 
@@ -210,8 +215,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         @Override
         public void onReceive(Context context, Intent intent) {
             if (CallForegroundService.BROADCAST_END_CALL.equals(intent.getAction())) {
-                if (callManager != null) callManager.hangup();
-                finish();
+                endCall();
             } else if (CallForegroundService.BROADCAST_TOGGLE_MUTE.equals(intent.getAction())) {
                 isMuted = !isMuted;
                 if (callManager != null) callManager.setMuted(isMuted);
@@ -547,13 +551,28 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
      * already finished there is nothing to keep alive, so just close.
      */
     private void minimizeCall() {
-        if (!isCallActive()) {
-            finish();
-            return;
+        switch (CallBackPolicy.onBack(isCallActive(), canUsePip())) {
+            case CLOSE:
+                finish();
+                return;
+            case ENTER_PIP:
+                if (enterPip()) return;
+                // PiP refused (disabled in settings, not allowed right now): fall through.
+            case BACKGROUND:
+            default:
+                releaseProximityWakeLock();
+                moveTaskToBack(true);
         }
-        if (enterPip()) return;
-        releaseProximityWakeLock();
-        moveTaskToBack(true);
+    }
+
+    /**
+     * The one "user ended the call" path: End button, notification End and PiP End all land
+     * here. {@link CallManager#hangup()} is a no-op once the call is already ENDED, so this is
+     * safe to reach more than once. Back / Home never call this.
+     */
+    private void endCall() {
+        if (callManager != null) callManager.hangup();
+        finish();
     }
 
     private boolean isCallActive() {
@@ -584,10 +603,39 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         PictureInPictureParams.Builder b = new PictureInPictureParams.Builder()
                 .setAspectRatio(new Rational(9, 16))
                 .setActions(buildPipActions());
+        Rect hint = pipSourceRectHint();
+        if (hint != null) b.setSourceRectHint(hint);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            b.setAutoEnterEnabled(isCallActive() && !suppressAutoPip);
+            b.setAutoEnterEnabled(
+                    CallBackPolicy.autoEnterPip(isCallActive(), suppressAutoPip, canUsePip()));
         }
         return b.build();
+    }
+
+    /**
+     * Where the PiP window should animate from: the video surface, cropped (centred) to the
+     * PiP aspect ratio so the system doesn't have to stretch it. {@code null} until the view
+     * has been laid out, and while already in PiP.
+     */
+    private Rect pipSourceRectHint() {
+        if (isInPictureInPictureMode()) return null;
+        View src = (remoteVideoView != null && remoteVideoView.getVisibility() == View.VISIBLE)
+                ? remoteVideoView : voiceOnlyBg;
+        if (src == null || src.getWidth() == 0 || src.getHeight() == 0) return null;
+        Rect r = new Rect();
+        if (!src.getGlobalVisibleRect(r) || r.isEmpty()) return null;
+        final float target = 9f / 16f;                       // width / height
+        float have = (float) r.width() / r.height();
+        if (have > target) {                                 // too wide → trim the sides
+            int w = Math.round(r.height() * target);
+            int cut = (r.width() - w) / 2;
+            r.left += cut; r.right = r.left + w;
+        } else {                                             // too tall → trim top/bottom
+            int h = Math.round(r.width() / target);
+            int cut = (r.height() - h) / 2;
+            r.top += cut; r.bottom = r.top + h;
+        }
+        return r;
     }
 
     /** Pushes fresh PiP params (mute icon, auto-enter on/off). Safe to call at any time. */
@@ -625,6 +673,41 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         applyPipUi(inPip);
     }
 
+    /**
+     * The voice-only background (shown while the partner's video is off or not yet arrived) is
+     * sized for a full screen. In the small PiP window shrink the avatar and add the partner's
+     * name, since the header that normally carries it is hidden.
+     */
+    private void setCompactAvatar(boolean compact) {
+        if (avatarFrame != null) {
+            int size = dp(compact ? 56 : 128);
+            ViewGroup.LayoutParams lp = avatarFrame.getLayoutParams();
+            lp.width = size; lp.height = size;
+            avatarFrame.setLayoutParams(lp);
+        }
+        if (tvCallAvatarInitial != null) {
+            int size = dp(compact ? 56 : 128);
+            ViewGroup.LayoutParams lp = tvCallAvatarInitial.getLayoutParams();
+            lp.width = size; lp.height = size;
+            tvCallAvatarInitial.setLayoutParams(lp);
+            tvCallAvatarInitial.setTextSize(TypedValue.COMPLEX_UNIT_SP, compact ? 24 : 52);
+        }
+        if (tvPipPartnerName != null) {
+            tvPipPartnerName.setText(partnerName);
+            tvPipPartnerName.setVisibility(compact ? View.VISIBLE : View.GONE);
+        }
+        if (tvCallStatus != null) {
+            tvCallStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, compact ? 12 : 15);
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) tvCallStatus.getLayoutParams();
+            lp.topMargin = dp(compact ? 4 : 20);
+            tvCallStatus.setLayoutParams(lp);
+        }
+    }
+
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
     /** In PiP only the remote video is shown; the full UI comes back when the window expands. */
     private void applyPipUi(boolean inPip) {
         if (inPip) {
@@ -635,11 +718,13 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
                 bannerNewMessage.animate().cancel();
                 bannerNewMessage.setVisibility(View.GONE);
             }
+            setCompactAvatar(true);
             if (callHeader != null)         callHeader.setVisibility(View.GONE);
             if (callControlsBar != null)    callControlsBar.setVisibility(View.GONE);
             if (localVideoPip != null)      localVideoPip.setVisibility(View.GONE);
             if (bannerTurnWarning != null)  bannerTurnWarning.setVisibility(View.GONE);
         } else {
+            setCompactAvatar(false);
             if (callHeader != null)         callHeader.setVisibility(View.VISIBLE);
             if (callControlsBar != null)    callControlsBar.setVisibility(View.VISIBLE);
             if (localVideoPip != null) {
@@ -717,6 +802,10 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
 
     private void bindViews() {
         remoteVideoView     = findViewById(R.id.remoteVideoView);
+        // The very first onResume() can run before layout, when there is no rect to hint yet.
+        remoteVideoView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) updatePipParams();
+        });
         localVideoView      = findViewById(R.id.localVideoView);
         localVideoPip       = findViewById(R.id.localVideoPip);
         voiceOnlyBg         = findViewById(R.id.voiceOnlyBg);
@@ -734,6 +823,8 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         btnFlipLayout         = findViewById(R.id.btnFlipLayout);
         btnBack               = findViewById(R.id.btnBack);
         callHeader            = findViewById(R.id.callHeader);
+        avatarFrame           = findViewById(R.id.avatarFrame);
+        tvPipPartnerName      = findViewById(R.id.tvPipPartnerName);
         callControlsBar       = findViewById(R.id.callControlsBar);
         btnChat               = findViewById(R.id.btnChat);
 
@@ -806,10 +897,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         });
 
         // End call
-        btnEndCall.setOnClickListener(v -> {
-            callManager.hangup();
-            finish();
-        });
+        btnEndCall.setOnClickListener(v -> endCall());
 
         // Audio output — opens a bottom-sheet picker instead of simple toggle
         btnSpeaker.setOnClickListener(v -> showAudioOutputPicker());

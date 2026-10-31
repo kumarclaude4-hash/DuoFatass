@@ -32,10 +32,14 @@ on-screen arrow at the same `minimizeCall()`. **`onBackPressed()` is not used** 
 `android:enableOnBackInvokedCallback="true"`; with predictive back opted in, overrides of
 `Activity.onBackPressed()` are not invoked on Android 13+.
 
-`minimizeCall()`:
-1. call not active → `finish()`
-2. `enterPip()` succeeded → done
-3. otherwise release the proximity lock and `moveTaskToBack(true)`
+`minimizeCall()` asks `CallBackPolicy.onBack(callActive, pipAvailable)` (pure Java, unit-tested):
+1. call not active → `CLOSE` → `finish()`
+2. live video call on a PiP-capable device → `ENTER_PIP` (falls through to 3 if the system refuses)
+3. otherwise `BACKGROUND` → release the proximity lock and `moveTaskToBack(true)`
+
+Only `endCall()` hangs up. The End button, the notification **End** action and the PiP **End** action all
+funnel into it; back / Home never do. (`CallManager.hangup()` is a no-op once the call is `ENDED`, so
+reaching it more than once is safe — the cleanup merely replaced three copies of the same two lines.)
 
 ### Picture-in-Picture
 - Manifest (`CallActivity`): `supportsPictureInPicture`, `resizeableActivity`, and
@@ -52,6 +56,14 @@ on-screen arrow at the same `minimizeCall()`. **`onBackPressed()` is not used** 
 - `applyPipUi(boolean)` hides the header, controls bar, self-view tile and banners in PiP and restores them
   on expand. The self-view and TURN-banner visibility are saved/restored rather than forced, so a camera-off
   or dismissed banner stays that way.
+
+### PiP polish
+- **No remote video yet / partner's camera off:** the full-screen avatar (128 dp) would overflow a PiP
+  window, so `setCompactAvatar(true)` shrinks it to 56 dp, adds the partner's name (the header that normally
+  carries it is hidden in PiP) and tightens the status line. Everything is restored on expand.
+- **Smooth shrink animation:** `pipSourceRectHint()` supplies the video surface's on-screen rect, cropped
+  (centred) to the 9:16 PiP ratio. It is refreshed when the surface is first laid out — the very first
+  `onResume()` can run before layout, when there is no rect yet.
 
 ### `suppressAutoPip`
 `onUserLeaveHint()` also fires when this activity starts another one, and Android 12+ auto-enter can trigger
@@ -79,6 +91,40 @@ Checked during review and deliberately left as-is:
   resumed, so `onResume()` may not fire). The null-out makes the two paths idempotent.
 - **TURN warning banner** is not shown while in PiP; the state is restored on expand.
 - `notifActionReceiver` is `RECEIVER_NOT_EXPORTED`; PiP `PendingIntent`s run as this app, so delivery works.
+
+## Automated tests
+
+`CallBackPolicyTest` (plain JVM, no Android SDK — same style as `LockScreenManifestTest`):
+- the decision table for `onBack(...)` and `autoEnterPip(...)`
+- structural guards on `CallActivity.java`: `minimizeCall()` decides through `CallBackPolicy` and contains no
+  `hangup(` / `endCall(`; system back is an `OnBackPressedCallback` (not an `onBackPressed()` override);
+  the arrow routes to `minimizeCall()`; only `endCall()` hangs up and the End button + notification End use it
+
+Robolectric was not used: `CallActivity.onCreate` initialises libwebrtc and Firebase, which cannot load on the JVM.
+The structural tests were checked against bug-shaped variants (back calling `hangup()`; no back callback) and fail
+as intended.
+
+## App-lock interaction (`BaseActivity`) — analysis, not changed
+
+`CallActivity` extends `AppCompatActivity`, not `BaseActivity`, so it skips everything `BaseActivity.onStart()`
+does: session check, auto sign-out, the PIN lock, the offline wall, and the `AppLockManager.onActivityStarted()`
+reference count. Consequences, given that back/Home now leave a live call running:
+
+1. **Return to a minimised call is not lock-checked.** Tapping the ongoing-call notification or the PiP window
+   shows the call (and the in-call chat) even if the app-lock timeout has elapsed. Before this change a user
+   could already do this via Home; back previously ended the call, so it wasn't reachable that way.
+2. **The lock timer appears to run during a call** (the call screen isn't counted as a foreground activity), so a
+   long call can be followed by an immediate PIN prompt when the user returns to a chat screen. That direction is
+   fail-safe, only mildly surprising.
+
+Why `CallActivity` was **not** simply switched to `BaseActivity`: its `onStart()` would (a) launch
+`LockScreenActivity` over an incoming/connecting call, (b) route to `NoInternetActivity` mid-call via the offline
+wall, and (c) can sign the user out and `finish()` the call screen. Those are product decisions, not a refactor.
+
+Suggested follow-up if (1) matters for your threat model: in `CallActivity`, only when returning from a minimise/PiP
+(not on first start), check `AppLockManager.shouldLock(this)` and launch `LockScreenActivity` over the call the way
+`BaseActivity` does. Needs a device test with the lock timeout set short. (I did not read `AppLockManager`'s
+timeout logic in full, so confirm the semantics before relying on point 2.)
 
 ## Manual test plan
 
@@ -112,11 +158,10 @@ Regression:
 - **Closing the PiP window with the X** — behaviour is OEM/OS-version dependent. If the system destroys the
   activity, `onDestroy()` hangs up. Verify on device; if the call should survive, decouple `CallManager`
   from the activity lifecycle.
-- Home from the **in-call chat screen** does not enter PiP (only `CallActivity` supports it).
+- Home from the **in-call chat screen** does not enter PiP. Deliberately not done: PiP is per-activity, so it would
+  mean duplicating the PiP wiring in `InCallChatActivity` (and handing the video surface across) for little gain —
+  the call keeps running behind its notification.
 - Back lands on the home screen / previous app, not this app's chat list, and there is no in-app "return to
   call" bar. Doing that properly needs `CallManager` owned by a service rather than `CallActivity`.
-- Other screens override `onBackPressed()` (`LockScreenActivity`, `DevicePinGateActivity`, `SetupPinActivity`,
-  `ForcedPrimaryPinRotationActivity`, `ForcedDuressRotationActivity`, `PermissionsOnboardingActivity`,
-  `NoInternetActivity`). With predictive back enabled these overrides are likely not invoked on Android 13+.
-  `LockScreenActivity` intentionally blocks back, so it is worth verifying on a device and migrating to
-  `OnBackPressedCallback` in a separate change. Out of scope here.
+- Other screens that overrode `onBackPressed()` (incl. `LockScreenActivity`) were bypassed by predictive back on
+  Android 13+. That is a separate security fix: `fix/predictive-back-overrides` (`BUG_TRACKER` S11-H1).

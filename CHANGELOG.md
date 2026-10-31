@@ -9,6 +9,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - Picture-in-Picture for video calls — back / Home / Recents shrinks the call to a floating window showing the remote video, with Mute and End actions; tapping the window expands it back to the full call screen. Android 12+ uses `setAutoEnterEnabled`; Android 8–11 enters PiP from `onUserLeaveHint()`. See `docs/CALL_MINIMIZE_PIP.md`
+- PiP window with no remote video shows a compact avatar and the partner's name; PiP shrink animation uses a source-rect hint
+- `CallBackPolicy` + `CallBackPolicyTest`: the back/auto-PiP decision is pure, unit-tested logic, with structural guards that back can never reach `hangup()`
 
 ### Fixed
 - Pressing back (system button, gesture, or the on-screen arrow) on the call screen ended the call. Back now minimises the call and keeps it running; only the End button (or the End action in the notification / PiP window) hangs up
@@ -16,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Tapping the ongoing-call notification now sets `FLAG_ACTIVITY_NEW_TASK` so the call reliably returns to the front from the background
 
 ### Changed
+- `CallActivity` ends the call through a single `endCall()` path (End button, notification End, PiP End)
 - `CallActivity` back handling uses `OnBackPressedCallback` — the manifest opts in to predictive back (`enableOnBackInvokedCallback`), which bypasses `Activity.onBackPressed()` on Android 13+
 - `CallActivity` manifest entry declares `supportsPictureInPicture`, `resizeableActivity` and `configChanges` (so PiP resizing does not recreate the activity and its WebRTC renderers)
 
