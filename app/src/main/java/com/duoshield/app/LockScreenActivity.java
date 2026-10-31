@@ -1,6 +1,5 @@
 package com.duoshield.app;
 
-import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.view.View;
 import android.view.animation.Animation;
@@ -16,6 +15,7 @@ import com.duoshield.app.util.AppLockManager;
 import com.duoshield.app.util.ButtonPressAnimator;
 import com.duoshield.app.util.HapticHelper;
 import com.duoshield.app.util.PinManager;
+import com.duoshield.app.util.BackPressGuard;
 
 /**
  * Lock screen shown after the background timeout.
@@ -73,6 +73,7 @@ public class LockScreenActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        BackPressGuard.block(this); // user must authenticate
 
         // S08-H2: honor the "Allow screenshots" preference (secure by default) on the
         // PIN-entry screen instead of unconditionally allowing screenshots here too.
@@ -316,13 +317,5 @@ public class LockScreenActivity extends AppCompatActivity {
         BaseActivity.lockScreenActive = false;
         AppLockManager.onAppForegrounded(this);
         finish();
-    }
-
-    // Intentionally does NOT call super.onBackPressed() — the lock screen must block
-    // back navigation until the user authenticates, so the default finish() behavior
-    // is deliberately suppressed here.
-    @SuppressLint("MissingSuperCall")
-    @Override public void onBackPressed() {
-        // Block back — user must authenticate
     }
 }

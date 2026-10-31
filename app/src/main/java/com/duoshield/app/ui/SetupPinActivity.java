@@ -15,6 +15,7 @@ import com.duoshield.app.security.DuressManager;
 import com.duoshield.app.ui.AddContactActivity;
 import com.duoshield.app.util.ButtonPressAnimator;
 import com.duoshield.app.util.PinManager;
+import com.duoshield.app.util.BackPressGuard;
 import com.google.android.material.button.MaterialButton;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -55,6 +56,7 @@ public class SetupPinActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        BackPressGuard.block(this); // a new account must leave this screen with a PIN set
         setContentView(R.layout.activity_setup_pin);
 
         EditText etNewPin     = findViewById(R.id.etNewPin);
@@ -150,10 +152,6 @@ public class SetupPinActivity extends AppCompatActivity {
         tvError.setVisibility(View.VISIBLE);
     }
 
-    @Override
-    public void onBackPressed() {
-        // No skipping — a new account must leave this screen with a PIN set.
-    }
 
     @Override
     protected void onDestroy() {

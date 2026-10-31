@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security
+- **App-lock bypass on Android 13+** — `LockScreenActivity` blocked the back button by overriding `onBackPressed()`, which predictive back (`enableOnBackInvokedCallback="true"`) bypasses. Back could finish the lock screen without unlocking, and because `BaseActivity.lockScreenActive` stayed `true` the lock was never re-shown. The same bypass affected the device-PIN gate, PIN setup, forced PIN/duress rotation screens, permissions onboarding and the offline screen. All seven now use `BackPressGuard` (an `OnBackPressedCallback`); a regression test fails if an `onBackPressed()` override is reintroduced. Tracked as `S11-H1` in `BUG_TRACKER.md`
+
 ### Added
 - Picture-in-Picture for video calls — back / Home / Recents shrinks the call to a floating window showing the remote video, with Mute and End actions; tapping the window expands it back to the full call screen. Android 12+ uses `setAutoEnterEnabled`; Android 8–11 enters PiP from `onUserLeaveHint()`. See `docs/CALL_MINIMIZE_PIP.md`
 - PiP window with no remote video shows a compact avatar and the partner's name; PiP shrink animation uses a source-rect hint

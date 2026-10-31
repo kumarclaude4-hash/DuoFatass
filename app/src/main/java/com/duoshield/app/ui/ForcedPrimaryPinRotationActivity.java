@@ -13,6 +13,7 @@ import com.duoshield.app.security.DuressManager;
 import com.duoshield.app.security.PendingLockStore;
 import com.duoshield.app.util.ButtonPressAnimator;
 import com.duoshield.app.util.PinManager;
+import com.duoshield.app.util.BackPressGuard;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.concurrent.ExecutorService;
@@ -42,6 +43,7 @@ public class ForcedPrimaryPinRotationActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        BackPressGuard.block(this); // locked out until rotation completes
         setContentView(R.layout.activity_forced_primary_pin_rotation);
 
         EditText etNewPin     = findViewById(R.id.etNewPin);
@@ -121,11 +123,6 @@ public class ForcedPrimaryPinRotationActivity extends AppCompatActivity {
         tvError.setVisibility(View.VISIBLE);
     }
 
-    @Override
-    public void onBackPressed() {
-        // No skipping — the account is locked out of the app until both rotation
-        // screens complete and the server confirms.
-    }
 
     @Override
     protected void onDestroy() {
