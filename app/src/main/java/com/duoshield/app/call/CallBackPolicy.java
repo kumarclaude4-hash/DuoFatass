@@ -15,7 +15,11 @@ final class CallBackPolicy {
         CLOSE,
         /** Shrink the live call into a Picture-in-Picture window. */
         ENTER_PIP,
-        /** Send the app to the background; the call keeps running behind its notification. */
+        /**
+         * Send the call's task to the back. CallActivity has its own task, so this reveals the
+         * screen the user came from (or Home if there is none); the call keeps running behind its
+         * ongoing notification and can be resumed from it or from Recents.
+         */
         BACKGROUND
     }
 

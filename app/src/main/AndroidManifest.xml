@@ -256,6 +256,7 @@
             android:name=".call.CallActivity"
             android:exported="false"
             android:launchMode="singleTop"
+            android:taskAffinity="${applicationId}.call"
             android:screenOrientation="portrait"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
