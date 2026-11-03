@@ -8,14 +8,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Security
+- **Call screens were outside the app lock** (`BUG_TRACKER` `S11-M1`): the lock timer ran for the whole call and returning to a minimised call was never lock-checked. The call screens now count as foreground activities (without overwriting a pending background timestamp), the call screen checks the lock on *return* (never on first start) and raises the lock over the call, and a successful unlock returns to the call
 - **App-lock bypass on Android 13+** — `LockScreenActivity` blocked the back button by overriding `onBackPressed()`, which predictive back (`enableOnBackInvokedCallback="true"`) bypasses. Back could finish the lock screen without unlocking, and because `BaseActivity.lockScreenActive` stayed `true` the lock was never re-shown. The same bypass affected the device-PIN gate, PIN setup, forced PIN/duress rotation screens, permissions onboarding and the offline screen. All seven now use `BackPressGuard` (an `OnBackPressedCallback`); a regression test fails if an `onBackPressed()` override is reintroduced. Tracked as `S11-H1` in `BUG_TRACKER.md`
 
 ### Added
+- **A call now outlives its screen.** New process-wide `CallSession` owns the call (history row, audio focus, headset and notification-action receivers, teardown); `CallActivity` is a UI that attaches, detaches and adopts. Closing the PiP window with the X, the system reclaiming the screen, or a night-mode change no longer hangs up a connected call; the next screen (notification, PiP, return bar) adopts it
+- **"Tap to return to call" bar** on every in-app screen while a call is live (content is pushed down, not covered; image/media viewers opt out). `docs/CALL_MINIMIZE_PIP.md`
+- Picture-in-Picture from the **in-call chat** screen (Home on a video call shows the partner's video); shared `CallPip` params for both call screens
 - Picture-in-Picture for video calls — back / Home / Recents shrinks the call to a floating window showing the remote video, with Mute and End actions; tapping the window expands it back to the full call screen. Android 12+ uses `setAutoEnterEnabled`; Android 8–11 enters PiP from `onUserLeaveHint()`. See `docs/CALL_MINIMIZE_PIP.md`
 - PiP window with no remote video shows a compact avatar and the partner's name; PiP shrink animation uses a source-rect hint
 - `CallBackPolicy` + `CallBackPolicyTest`: the back/auto-PiP decision is pure, unit-tested logic, with structural guards that back can never reach `hangup()`
 
 ### Fixed
+- Swiping away / system-destroying the call screen, or a dark-mode change mid-call, used to hang up the call (connected calls now survive)
+- Notification Mute/End and headset re-routing now work when no call screen exists
 - Pressing back (system button, gesture, or the on-screen arrow) on the call screen ended the call. Back now minimises the call and keeps it running; only the End button (or the End action in the notification / PiP window) hangs up
 - Proximity wake lock stayed held while a voice call was in the background, which could blank the screen in other apps; it is now released on minimise/Home and re-acquired on return
 - Tapping the ongoing-call notification now sets `FLAG_ACTIVITY_NEW_TASK` so the call reliably returns to the front from the background

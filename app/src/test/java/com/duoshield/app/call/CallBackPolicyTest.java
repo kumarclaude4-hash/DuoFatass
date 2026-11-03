@@ -75,10 +75,22 @@ public class CallBackPolicyTest {
     @Test public void onlyEndCallPathsHangUp() throws IOException {
         String src = activitySource();
         String endCall = methodBody(src, "private void endCall()");
-        assertTrue(endCall.contains("hangup("));
-        // btnEndCall and the notification/PiP End receiver both go through endCall().
+        assertTrue("endCall() must end the call through the session",
+                endCall.contains("session.endCall()"));
         assertTrue(src.contains("btnEndCall.setOnClickListener(v -> endCall())"));
-        assertTrue(src.contains("BROADCAST_END_CALL.equals(intent.getAction())) {\n                endCall();"));
+        // The notification / PiP "End" action is handled by CallSession's receiver, which uses the
+        // same single path; the screen must no longer register its own receivers.
+        assertFalse("CallActivity must not register broadcast receivers (CallSession owns them)",
+                src.contains("registerReceiver("));
+        String session = sessionSource();
+        assertTrue(session.contains("BROADCAST_END_CALL.equals(action)) {\n                endCall();"));
+    }
+
+    private static String sessionSource() throws IOException {
+        File f = new File("src/main/java/com/duoshield/app/call/CallSession.java");
+        if (!f.isFile()) f = new File("app/src/main/java/com/duoshield/app/call/CallSession.java");
+        assertTrue("CallSession.java not found", f.isFile());
+        return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

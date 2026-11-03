@@ -10,6 +10,7 @@
     android:background="@color/ds_background">
 
 <LinearLayout
+    android:id="@+id/chatColumn"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">

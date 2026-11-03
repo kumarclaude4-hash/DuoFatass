@@ -1,10 +1,14 @@
 package com.duoshield.app.call;
 
+import android.app.PictureInPictureParams;
+import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -75,6 +79,15 @@ public class InCallChatActivity extends AppCompatActivity {
     private TextView            tvPipLabel;
     private TextView            tvPipPartnerLabel;
 
+    // ── System Picture-in-Picture (Home from this screen on a video call) ─────
+    private View                    chatColumn;
+    private View                    pipLocalContainer;
+    private FrameLayout.LayoutParams savedPipLp;
+    private float                   savedPipTx, savedPipTy, savedPipElevation;
+    private boolean                 lastMutedForPip = false;
+    /** Counted by AppLockManager while visible (see onStart) — keeps the lock timer honest. */
+    private boolean                 countsForLock   = false;
+
     /** True once {@link SurfaceViewRenderer#init} ran — guards a double release(). */
     private boolean pipInitialised = false;
     /**
@@ -100,7 +113,13 @@ public class InCallChatActivity extends AppCompatActivity {
             new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable pipRefresh = new Runnable() {
         @Override public void run() {
+            if (isInPictureInPictureMode() && !CallSession.isLive()) {
+                finish();                      // call ended while floating — close the window
+                return;
+            }
             syncPip();
+            CallSession s = CallSession.current();
+            if (s != null && s.isMuted() != lastMutedForPip) updatePipParams();
             pipHandler.postDelayed(this, 1_000L);
         }
     };
@@ -136,7 +155,29 @@ public class InCallChatActivity extends AppCompatActivity {
 
         bindViews();
         initPip();
+        chatColumn        = findViewById(R.id.chatColumn);
+        pipLocalContainer = findViewById(R.id.pipLocalContainer);
         listenForMessages();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // This screen sits inside the call task and is not a BaseActivity. Without counting it,
+        // opening the chat would drop the foreground count to zero and start the lock timer
+        // while the user is looking at the screen. Skipped when a background timestamp is already
+        // pending, so an older timestamp is never overwritten (same rule as CallActivity).
+        countsForLock = !com.duoshield.app.util.AppLockManager.hasBackgroundTimestamp(this);
+        if (countsForLock) com.duoshield.app.util.AppLockManager.onActivityStarted();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (countsForLock) {
+            countsForLock = false;
+            com.duoshield.app.util.AppLockManager.onActivityStopped(this);
+        }
     }
 
     @Override
@@ -145,6 +186,7 @@ public class InCallChatActivity extends AppCompatActivity {
         // Attach the sink only while visible: a backgrounded renderer would keep decoding
         // frames into a surface nobody can see.
         syncPip();
+        updatePipParams();
         pipHandler.removeCallbacks(pipRefresh);
         pipHandler.postDelayed(pipRefresh, 1_000L);
     }
@@ -153,12 +195,107 @@ public class InCallChatActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         pipHandler.removeCallbacks(pipRefresh);
-        detachPipSink();
+        // In the system PiP window the activity is paused but its video must keep playing.
+        if (!isInPictureInPictureMode()) detachPipSink();
+    }
+
+    // ── System Picture-in-Picture ─────────────────────────────────────────────
+
+    private boolean canUsePip() {
+        return isVideo && pipInitialised && CallPip.isSupported(this);
+    }
+
+    private PictureInPictureParams buildPipParams() {
+        CallSession s = CallSession.current();
+        boolean muted = s != null && s.isMuted();
+        lastMutedForPip = muted;
+        return CallPip.params(this, muted, CallSession.isLive(), null);
+    }
+
+    /** Pushes fresh params (auto-enter on Android 12+, mute icon on the window's action). */
+    private void updatePipParams() {
+        if (!canUsePip() || isFinishing() || isDestroyed()) return;
+        try {
+            setPictureInPictureParams(buildPipParams());
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            Log.w(TAG, "setPictureInPictureParams failed", e);
+        }
+    }
+
+    /**
+     * Home from the chat on a live video call: float the remote video, like the call screen.
+     * Android 12+ does this itself through auto-enter; 8–11 enter here.
+     */
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                && canUsePip() && CallSession.isLive() && !isInPictureInPictureMode()) {
+            try {
+                enterPictureInPictureMode(buildPipParams());
+            } catch (IllegalStateException | IllegalArgumentException e) {
+                Log.w(TAG, "enterPictureInPictureMode failed", e);
+            }
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean inPip, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(inPip, newConfig);
+        applyPipUi(inPip);
+    }
+
+    /**
+     * In the system window only the partner's video is shown: the chat column is hidden and the
+     * floating call tile is stretched over the whole window with the local half removed. All of
+     * it is put back when the window expands.
+     */
+    private void applyPipUi(boolean inPip) {
+        if (pipContainer == null) return;
+        if (inPip) {
+            // Keyboard would otherwise cover the little window.
+            View focus = getCurrentFocus();
+            if (focus != null) {
+                android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager)
+                        getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+            }
+            ViewGroup.LayoutParams cur = pipContainer.getLayoutParams();
+            if (cur instanceof FrameLayout.LayoutParams) {
+                savedPipLp        = new FrameLayout.LayoutParams((FrameLayout.LayoutParams) cur);
+                savedPipTx        = pipContainer.getTranslationX();
+                savedPipTy        = pipContainer.getTranslationY();
+                savedPipElevation = pipContainer.getElevation();
+                FrameLayout.LayoutParams fill = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+                pipContainer.setLayoutParams(fill);
+            }
+            pipContainer.setTranslationX(0f);
+            pipContainer.setTranslationY(0f);
+            pipContainer.setElevation(0f);
+            if (chatColumn != null)        chatColumn.setVisibility(View.GONE);
+            if (pipLocalContainer != null) pipLocalContainer.setVisibility(View.GONE);
+            syncPip();                                   // make sure the remote sink is attached
+            pipHandler.removeCallbacks(pipRefresh);
+            pipHandler.postDelayed(pipRefresh, 1_000L);  // notice the call ending while floating
+        } else {
+            if (savedPipLp != null) {
+                pipContainer.setLayoutParams(savedPipLp);
+                pipContainer.setTranslationX(savedPipTx);
+                pipContainer.setTranslationY(savedPipTy);
+                pipContainer.setElevation(savedPipElevation);
+                savedPipLp = null;
+            }
+            if (chatColumn != null)        chatColumn.setVisibility(View.VISIBLE);
+            if (pipLocalContainer != null) pipLocalContainer.setVisibility(View.VISIBLE);
+            syncPip();
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        pipHandler.removeCallbacksAndMessages(null);
         retryHandler.removeCallbacksAndMessages(null);
         if (chatListener != null) { chatListener.remove(); chatListener = null; }
 

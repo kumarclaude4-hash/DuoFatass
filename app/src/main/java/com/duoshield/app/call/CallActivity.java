@@ -1,17 +1,11 @@
 package com.duoshield.app.call;
 
-import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
-import android.app.RemoteAction;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Rect;
-import android.graphics.drawable.Icon;
-import android.util.Rational;
 import android.util.TypedValue;
 import android.graphics.Color;
-import android.media.AudioFocusRequest;
-import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -31,14 +25,12 @@ import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.duoshield.app.BaseActivity;
+import com.duoshield.app.LockScreenActivity;
+import com.duoshield.app.util.AppLockManager;
 import com.duoshield.app.R;
-import com.duoshield.app.db.AppDatabase;
-import com.duoshield.app.db.CallRecord;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 
-import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import org.webrtc.EglBase;
 import org.webrtc.SurfaceViewRenderer;
@@ -48,21 +40,15 @@ import org.webrtc.VideoTrack;
     import com.duoshield.app.call.TurnCredentialFetcher;
 
 import android.Manifest;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.PowerManager;
 import androidx.core.content.ContextCompat;
 
 import com.google.firebase.firestore.DocumentChange;
-import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import org.webrtc.RendererCommon;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -83,10 +69,9 @@ import java.util.Set;
  *   <li>A gradient controls bar (bottom) holds Camera, Mute, Chat, and End-call buttons.</li>
  * </ul>
  */
-public class CallActivity extends AppCompatActivity implements CallManager.CallListener {
+public class CallActivity extends AppCompatActivity implements CallSession.UiHooks {
 
     private static final String TAG = "CallActivity";
-    private final ExecutorService historyExecutor = Executors.newSingleThreadExecutor();
 
     public static final String EXTRA_CALL_ID      = "call_id";
     public static final String EXTRA_CALLEE_ID    = "callee_id";
@@ -97,11 +82,29 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     public static final String EXTRA_MY_UID       = "my_uid";
     /** F6: deterministic chatId for bilateral contact gate in Firestore rules. */
     public static final String EXTRA_CHAT_ID      = "chat_id";
+    /**
+     * "Return to the live call" rather than "start a call" — set by the notification, the
+     * return-to-call bar and the post-unlock redirect. The screen adopts the live
+     * {@link CallSession} instead of creating a new call.
+     */
+    public static final String EXTRA_RESUME       = "resume_session";
 
     private CallManager callManager;
 
-    /** Prevents duplicate history rows when both peers report the same call termination. */
-    private String savedRecordId = null;
+    /**
+     * Owns the call; this screen is just one UI attached to it. See {@link CallSession} for why:
+     * the call must outlive this activity (PiP closed with the X, system reclaim, recreation).
+     */
+    private CallSession session;
+
+    /** The user pressed End: the one case where destroying this screen must hang up. */
+    private boolean endedByUser = false;
+    /** This instance picked up an already-running call (as opposed to starting one). */
+    private boolean adopted = false;
+    /** onStop has run at least once — the next onStart is a return, not a first start. */
+    private boolean hasBeenStopped = false;
+    /** This screen is counted by AppLockManager (see onStart). */
+    private boolean countsForLock = false;
 
     // ── Views ─────────────────────────────────────────────────────────────────
     private SurfaceViewRenderer remoteVideoView;
@@ -170,63 +173,9 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     private boolean chatScreenOpen    = false;
     private String  pendingBannerPreview;
 
-    // ── Audio focus ───────────────────────────────────────────────────────────
-    private AudioFocusRequest audioFocusRequest; // API 26+
-
     // ── Proximity screen-off (voice calls only) ───────────────────────────────
     /** Turns the screen off when the phone is held to the user's ear during voice calls. */
     private PowerManager.WakeLock proximityWakeLock;
-
-    // ── Wired headset routing ─────────────────────────────────────────────────
-    /**
-     * Re-routes audio when the user plugs/unplugs wired earphones mid-call.
-     *
-     * <p>This used to call {@code AudioManager.setSpeakerphoneOn()} itself <em>and</em> ask
-     * {@link CallManager} to route as well, so two code paths fought over the route and the
-     * legacy call was silently ignored on API 31+ anyway. Everything now goes through the one
-     * {@link AudioRouteController} owned by the call session.
-     */
-    private final BroadcastReceiver headsetReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (!AudioManager.ACTION_HEADSET_PLUG.equals(intent.getAction())) return;
-            int state = intent.getIntExtra("state", -1);
-            AudioRouteController routes = audioRoutes();
-            if (routes == null) return;
-
-            if (state == 1) {
-                // Headset plugged in — prefer it over the speaker.
-                applyRouteKind(AudioRouteController.Kind.WIRED);
-                isSpeakerOn = false;
-            } else if (state == 0) {
-                // Headset unplugged — fall back to the speaker state from before it was in.
-                applyRouteKind(isSpeakerOn
-                        ? AudioRouteController.Kind.SPEAKER
-                        : AudioRouteController.Kind.EARPIECE);
-            }
-            // Reflect the new audio route on the speaker button.
-            runOnUiThread(CallActivity.this::updateSpeakerButtonIcon);
-        }
-    };
-
-    // ── Notification quick-action receiver ────────────────────────────────────
-    /** Handles "End" and "Mute" taps on the ongoing call notification. */
-    private final BroadcastReceiver notifActionReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (CallForegroundService.BROADCAST_END_CALL.equals(intent.getAction())) {
-                endCall();
-            } else if (CallForegroundService.BROADCAST_TOGGLE_MUTE.equals(intent.getAction())) {
-                isMuted = !isMuted;
-                if (callManager != null) callManager.setMuted(isMuted);
-                if (btnMute != null) {
-                    btnMute.setImageResource(isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic);
-                    btnMute.setAlpha(isMuted ? 0.5f : 1f);
-                }
-                updatePipParams();
-            }
-        }
-    };
 
     // ── Audio output picker ───────────────────────────────────────────────────
     /** Runtime request for BLUETOOTH_CONNECT, needed only to read Bluetooth device names. */
@@ -266,7 +215,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         Toast.makeText(CallActivity.this, "No answer", Toast.LENGTH_SHORT).show();
         // timeoutCall writes status:"timeout" to Firestore, deletes the call doc,
         // and calls setState(ENDED) → onCallStateChanged(ENDED) →
-        // updateStatusUi(ENDED) → saveCallRecord(OUTCOME_MISSED) + finish().
+        // updateStatusUi(ENDED) → finish(); CallSession writes the MISSED history row.
         callManager.timeoutCall(callId);
     };
 
@@ -283,12 +232,6 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
      * would visibly tick several times per second.
      */
     private boolean        durationTickScheduled = false;
-    /**
-     * True once CONNECTED has been reached at least once. Tracked separately from
-     * {@code callStartMs} because the shared anchor arrives asynchronously — a call that ends
-     * before it lands is still an answered call, not a missed one.
-     */
-    private boolean        wasConnected    = false;
     private final Runnable durationTick    = new Runnable() {
         @Override
         public void run() {
@@ -328,16 +271,37 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
 
         if (partnerName == null) partnerName = "Unknown";
 
+        // Only one call can exist. If one is already live, this launch is either a request to
+        // return to it (notification, return-to-call bar, PiP, recreation) or an attempt to
+        // start a second call — in both cases show the live call, never a second one.
+        CallSession live = CallSession.current();
+        if (live != null && live.isActive()) {
+            String calleeExtra = getIntent().getStringExtra(EXTRA_CALLEE_ID);
+            boolean samePartner = isCaller && calleeExtra != null && calleeExtra.equals(live.partnerId);
+            boolean resume = CallSessionPolicy.isResumeRequest(
+                    getIntent().getBooleanExtra(EXTRA_RESUME, false),
+                    savedInstanceState != null, callId, live.callId(), samePartner);
+            if (!resume) {
+                Toast.makeText(this, "You're already in a call", Toast.LENGTH_SHORT).show();
+            }
+            adoptSession(live);
+            return;
+        }
+
         bindViews();
         setupButtons();
 
-        // The manager must exist before setupAudio(): the route controller it owns is the
-        // single source of truth for audio routing, and setupAudio() picks the opening route
-        // through it.
+        // The manager must exist before the session starts its audio: the route controller it
+        // owns is the single source of truth for audio routing, and the session picks the
+        // opening route through it.
         callManager = new CallManager(this);
-        callManager.setListener(this);
-
-        setupAudio();
+        session = CallSession.begin(this, callManager, isCaller, isVideo,
+                partnerId, partnerName, myUid, callId);
+        session.attach(this);
+        session.beginAudio();
+        updateSpeakerButtonIcon();
+        isSpeakerOn = audioRoutes() != null
+                && audioRoutes().currentKind() == AudioRouteController.Kind.SPEAKER;
 
         // Attach the in-call chat banner listener as early as we possibly can.
         //
@@ -361,15 +325,8 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         // held to the user's ear during a voice call (same behaviour as WhatsApp).
         acquireProximityWakeLock();
 
-        // Register receivers: (a) wired headset plug/unplug for auto audio-routing,
-        // (b) End/Mute actions from the ongoing call notification.
-        IntentFilter headsetFilter = new IntentFilter(AudioManager.ACTION_HEADSET_PLUG);
-        registerReceiver(headsetReceiver, headsetFilter);
-        IntentFilter notifFilter = new IntentFilter();
-        notifFilter.addAction(CallForegroundService.BROADCAST_END_CALL);
-        notifFilter.addAction(CallForegroundService.BROADCAST_TOGGLE_MUTE);
-        ContextCompat.registerReceiver(this, notifActionReceiver, notifFilter,
-                ContextCompat.RECEIVER_NOT_EXPORTED);
+        // The headset and notification-action receivers belong to CallSession, so they keep
+        // working when no call screen exists.
 
         // ── TURN credential warm-up ───────────────────────────────────────────
         // ROOT CAUSE OF 20-SECOND LAG (fixed here):
@@ -428,6 +385,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
                     Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 Log.w(TAG, "Camera permission not granted — falling back to audio-only");
                 isVideo = false;
+                session.setVideo(false);
                 runOnUiThread(() -> Toast.makeText(CallActivity.this,
                         "Camera unavailable — starting voice-only call",
                         Toast.LENGTH_LONG).show());
@@ -440,6 +398,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
                 // ChatMediaActivity never puts EXTRA_CALL_ID).  The real callId is generated
                 // inside CallManager.startCall(), so we sync it back here immediately.
                 callId = callManager.getCallId();
+                session.setCallId(callId);
 
                 // Start the no-answer watchdog.  If the callee is offline (no FCM delivery)
                 // or simply doesn't respond, the call doc stays "ringing" indefinitely.
@@ -571,7 +530,9 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
      * safe to reach more than once. Back / Home never call this.
      */
     private void endCall() {
-        if (callManager != null) callManager.hangup();
+        endedByUser = true;      // tells onDestroy() this is a hang-up, not a detach
+        if (session != null) session.endCall();
+        else if (callManager != null) callManager.hangup();
         finish();
     }
 
@@ -584,8 +545,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     // ── Picture-in-Picture ────────────────────────────────────────────────────
 
     private boolean canUsePip() {
-        return isVideo
-                && getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE);
+        return isVideo && CallPip.isSupported(this);
     }
 
     private boolean enterPip() {
@@ -600,16 +560,9 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     }
 
     private PictureInPictureParams buildPipParams() {
-        PictureInPictureParams.Builder b = new PictureInPictureParams.Builder()
-                .setAspectRatio(new Rational(9, 16))
-                .setActions(buildPipActions());
-        Rect hint = pipSourceRectHint();
-        if (hint != null) b.setSourceRectHint(hint);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            b.setAutoEnterEnabled(
-                    CallBackPolicy.autoEnterPip(isCallActive(), suppressAutoPip, canUsePip()));
-        }
-        return b.build();
+        return CallPip.params(this, isMuted,
+                CallBackPolicy.autoEnterPip(isCallActive(), suppressAutoPip, canUsePip()),
+                pipSourceRectHint());
     }
 
     /**
@@ -624,18 +577,8 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         if (src == null || src.getWidth() == 0 || src.getHeight() == 0) return null;
         Rect r = new Rect();
         if (!src.getGlobalVisibleRect(r) || r.isEmpty()) return null;
-        final float target = 9f / 16f;                       // width / height
-        float have = (float) r.width() / r.height();
-        if (have > target) {                                 // too wide → trim the sides
-            int w = Math.round(r.height() * target);
-            int cut = (r.width() - w) / 2;
-            r.left += cut; r.right = r.left + w;
-        } else {                                             // too tall → trim top/bottom
-            int h = Math.round(r.width() / target);
-            int cut = (r.height() - h) / 2;
-            r.top += cut; r.bottom = r.top + h;
-        }
-        return r;
+        int[] c = CallPip.cropToPipAspect(r.left, r.top, r.right, r.bottom);
+        return c == null ? null : new Rect(c[0], c[1], c[2], c[3]);
     }
 
     /** Pushes fresh PiP params (mute icon, auto-enter on/off). Safe to call at any time. */
@@ -646,25 +589,6 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         } catch (IllegalStateException | IllegalArgumentException e) {
             Log.w(TAG, "setPictureInPictureParams failed", e);
         }
-    }
-
-    /** Mute + End buttons shown on the PiP window. They reuse the notification broadcasts. */
-    private List<RemoteAction> buildPipActions() {
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent mutePi = PendingIntent.getBroadcast(this, 20,
-                new Intent(CallForegroundService.BROADCAST_TOGGLE_MUTE).setPackage(getPackageName()),
-                flags);
-        PendingIntent endPi = PendingIntent.getBroadcast(this, 21,
-                new Intent(CallForegroundService.BROADCAST_END_CALL).setPackage(getPackageName()),
-                flags);
-        List<RemoteAction> actions = new ArrayList<>();
-        actions.add(new RemoteAction(
-                Icon.createWithResource(this, isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic),
-                isMuted ? "Unmute" : "Mute", "Toggle microphone", mutePi));
-        actions.add(new RemoteAction(
-                Icon.createWithResource(this, R.drawable.ic_call_end),
-                "End", "End call", endPi));
-        return actions;
     }
 
     @Override
@@ -745,17 +669,11 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
     protected void onDestroy() {
         super.onDestroy();
 
-        // Stop the foreground service (removes the ongoing notification).
-        stopForegroundCallService();
+        // Everything below is this SCREEN's own state. The call itself belongs to CallSession.
 
         // Release the proximity wake lock — screen can turn back on normally.
         releaseProximityWakeLock();
 
-        // Unregister dynamic broadcast receivers.
-        try { unregisterReceiver(headsetReceiver);   } catch (Exception ignored) {}
-        try { unregisterReceiver(notifActionReceiver); } catch (Exception ignored) {}
-
-        historyExecutor.shutdownNow();
         durationHandler.removeCallbacksAndMessages(null);
         bannerDismissHandler.removeCallbacksAndMessages(null);
         noAnswerHandler.removeCallbacksAndMessages(null);
@@ -764,9 +682,11 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         // Cancel the TURN-credential wait if it hasn't fired yet.
         if (turnTimeoutHandler != null) turnTimeoutHandler.removeCallbacksAndMessages(null);
 
-        // Release SurfaceViewRenderers FIRST — this removes the video sink from the tracks
-        // so the tracks can be safely disposed by hangup()/release() without rendering to a
-        // released surface (which can crash the GL thread in libwebrtc).
+        // Drop our sinks from the (still live) tracks, THEN release the renderers — FIRST,
+        // before any teardown, so tracks can be disposed without a surface still rendering
+        // them (which can crash the GL thread in libwebrtc). Also required for a detached call:
+        // the tracks outlive this screen and must not keep feeding a released renderer.
+        detachVideoSinks();
         releaseVideoRenderers();
 
         if (audioOutputSheet != null) {
@@ -774,28 +694,167 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
             audioOutputSheet = null;
         }
 
-        // Release the route selection and restore the call volume *before* the tracks go away,
-        // while the controller can still unmute the remote audio track it disabled.
-        AudioRouteController routes = audioRoutes();
-        if (routes != null) routes.endSession();
+        if (session == null) return;   // onCreate bailed out before a call was started
 
-        if (callManager != null) {
-            CallManager.CallState state = callManager.getCurrentState();
-            if (state != CallManager.CallState.ENDED && state != CallManager.CallState.FAILED) {
-                // Normal teardown: write "ended" to Firestore, then free native resources.
-                callManager.hangup();
-            } else {
-                // Remote side ended the call: Firestore was already updated; we still must
-                // free the PeerConnection, tracks, camera, EglBase, and factory — if we skip
-                // this the process holds the camera open indefinitely and the GC cannot
-                // collect the native peer-connection allocation.
-                callManager.release();
+        if (CallSessionPolicy.shouldDetachOnDestroy(endedByUser, session.wasConnected(), session.isActive())) {
+            // The screen is going away but nobody asked to hang up (PiP window closed with the
+            // X, system reclaimed us, night-mode change recreated us): the call carries on
+            // behind its notification and the next screen adopts it.
+            Log.i(TAG, "Call screen destroyed with a live call — detaching, call continues");
+            session.detach(this);
+        } else {
+            // User hung up, the call ended, or it never connected: free everything — route,
+            // PeerConnection/tracks/camera/EGL, audio focus, the notification.
+            session.teardown();
+        }
+    }
+
+    /** Removes this screen's renderers from the live tracks without touching the tracks. */
+    private void detachVideoSinks() {
+        if (callManager == null) return;
+        try {
+            VideoTrack remote = callManager.getRemoteVideoTrack();
+            if (remote != null && remoteVideoView != null) remote.removeSink(remoteVideoView);
+            VideoTrack local = callManager.getLocalVideoTrack();
+            if (local != null && localVideoView != null) local.removeSink(localVideoView);
+        } catch (IllegalStateException e) {
+            // Track already disposed (call ended underneath us) — nothing left to detach from.
+            Log.d(TAG, "detachVideoSinks: track already disposed");
+        }
+    }
+
+    // ── Lock participation ────────────────────────────────────────────────────
+    //
+    // This screen is not a BaseActivity (a lock screen or offline wall over a connecting call
+    // would be worse than no check), so it used to be invisible to AppLockManager: the lock
+    // timer ran for the whole call, and returning to a minimised call from the notification was
+    // never lock-checked. It now counts as a foreground activity — and checks the lock on a
+    // *return*, never on the first start.
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        boolean returning = hasBeenStopped || adopted;
+        adopted = false;
+
+        if (returning) {
+            boolean lock = AppLockManager.shouldLock(this);
+            if (CallSessionPolicy.shouldLockOnReturn(true, lock, BaseActivity.lockScreenActive)) {
+                launchLockOverCall();
+            } else if (!lock) {
+                AppLockManager.onAppForegrounded(this);   // within the timeout: user is here
             }
         }
 
-        // Mode reset and device release are handled by endSession() above — doing it again
-        // here with the deprecated calls would be a no-op on API 31+ anyway.
-        abandonAudioFocus();
+        // Count this screen only when the app was foreground when it started. If a background
+        // timestamp is pending (e.g. an incoming call woke a locked app), counting would let
+        // this screen's stop overwrite that older timestamp and quietly extend the lock window.
+        countsForLock = !AppLockManager.hasBackgroundTimestamp(this);
+        if (countsForLock) AppLockManager.onActivityStarted();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        hasBeenStopped = true;
+        if (countsForLock) {
+            countsForLock = false;
+            AppLockManager.onActivityStopped(this);
+        }
+    }
+
+    /**
+     * Shows the lock screen over a call that was minimised past the lock timeout. After
+     * unlocking, {@code LockScreenActivity} sends the user straight back to the call.
+     */
+    private void launchLockOverCall() {
+        // Launching another activity looks like "leaving the call" to the PiP logic — it isn't.
+        suppressAutoPip = true;
+        updatePipParams();
+        BaseActivity.lockScreenActive = true;
+        Intent intent = new Intent(this, LockScreenActivity.class);
+        intent.putExtra(LockScreenActivity.EXTRA_RETURN_TO_CALL, true);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(intent);
+    }
+
+    // ── Adopting a live call ──────────────────────────────────────────────────
+
+    /**
+     * Attaches this new screen to a call that is already running — started by an earlier
+     * instance of this activity that has since gone away, or still alive in another task.
+     * Mirrors what the callbacks would have painted, from the state the session and the
+     * {@link CallManager} kept.
+     */
+    private void adoptSession(CallSession s) {
+        adopted     = true;
+        session     = s;
+        callManager = s.manager;
+        isCaller    = s.isCaller;
+        isVideo     = s.isVideo();
+        partnerName = s.partnerName != null ? s.partnerName : "Unknown";
+        partnerId   = s.partnerId;
+        myUid       = s.myUid;
+        callId      = s.callId();
+        isMuted     = s.isMuted();
+        isCameraOff = s.isCameraOff();
+        callStartMs = s.callStartMs();
+
+        bindViews();
+        setupButtons();
+        initVideoRenderers();      // the EGL context exists: the call is live
+        s.attach(this);
+
+        // Re-render the live tracks into the fresh surfaces.
+        VideoTrack remote = callManager.getRemoteVideoTrack();
+        if (remote != null) onRemoteVideoTrack(remote);
+        VideoTrack local = callManager.getLocalVideoTrack();
+        if (local != null) onLocalVideoTrack(local);
+        if (localVideoView != null) localVideoView.setMirror(callManager.isFrontCamera());
+
+        paintControlState();
+        updateSpeakerButtonIcon();
+        updateStatusUi(callManager.getCurrentState());
+        if (callStartMs > 0 && !durationTickScheduled) {
+            durationTickScheduled = true;
+            durationHandler.post(durationTick);
+        }
+        listenForInCallMessages();
+        acquireProximityWakeLock();
+        checkAndShowTurnWarning();
+        updatePipParams();
+    }
+
+    /** Mute / camera button state from the fields (used when adopting a call). */
+    private void paintControlState() {
+        if (btnMute != null) {
+            btnMute.setImageResource(isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic);
+            btnMute.setAlpha(isMuted ? 0.5f : 1f);
+        }
+        if (btnCamera != null) {
+            btnCamera.setImageResource(isCameraOff ? R.drawable.ic_videocam_off : R.drawable.ic_videocam);
+            btnCamera.setAlpha(isCameraOff ? 0.5f : 1f);
+        }
+        if (isCameraOff && localVideoPip != null) localVideoPip.setVisibility(View.GONE);
+    }
+
+    // ── CallSession.UiHooks ───────────────────────────────────────────────────
+
+    @Override
+    public void onMuteChanged(boolean muted) {
+        runOnUiThread(() -> {
+            isMuted = muted;
+            if (btnMute != null) {
+                btnMute.setImageResource(muted ? R.drawable.ic_mic_off : R.drawable.ic_mic);
+                btnMute.setAlpha(muted ? 0.5f : 1f);
+            }
+            updatePipParams();
+        });
+    }
+
+    @Override
+    public void onAudioRouteChanged() {
+        runOnUiThread(this::updateSpeakerButtonIcon);
     }
 
     // ── View binding ─────────────────────────────────────────────��────────────
@@ -879,17 +938,16 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         });
 
         // Mute microphone
+        // Goes through the session so the notification, the PiP window and this button stay in
+        // sync; onMuteChanged() below repaints the button.
         btnMute.setOnClickListener(v -> {
-            isMuted = !isMuted;
-            callManager.setMuted(isMuted);
-            btnMute.setImageResource(isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic);
-            btnMute.setAlpha(isMuted ? 0.5f : 1f);
-            updatePipParams();
+            if (session != null) session.toggleMute();
         });
 
         // Camera toggle (video calls only) — turns camera on/off
         btnCamera.setOnClickListener(v -> {
             isCameraOff = !isCameraOff;
+            if (session != null) session.setCameraOff(isCameraOff);
             callManager.setCameraEnabled(!isCameraOff);
             btnCamera.setImageResource(isCameraOff ? R.drawable.ic_videocam_off : R.drawable.ic_videocam);
             btnCamera.setAlpha(isCameraOff ? 0.5f : 1f);
@@ -1008,64 +1066,6 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
 
     // ── Audio setup ───────────────────────────────────────────────────────────
 
-    private void setupAudio() {
-        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        if (am == null) return;
-
-        // Opening route: a connected headset (Bluetooth or wired) wins, otherwise speaker for
-        // video and earpiece for voice. The controller does that selection with
-        // setCommunicationDevice() on API 31+, where the legacy setSpeakerphoneOn() /
-        // startBluetoothSco() calls this method used to make were silently ignored — which is
-        // why an already-connected headset was bypassed at call start on modern devices.
-        AudioRouteController routes = audioRoutes();
-        if (routes != null) {
-            routes.beginSession(isVideo);
-            isSpeakerOn = routes.currentKind() == AudioRouteController.Kind.SPEAKER;
-        } else {
-            am.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        }
-        // Sync speaker button icon to reflect the initial audio route.
-        updateSpeakerButtonIcon();
-
-        // Request exclusive audio focus so music / media apps pause automatically
-        // and the OS knows a voice call is in progress (affects Bluetooth routing,
-        // notification ducking, etc.). Mandatory for WhatsApp-quality call behaviour.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(new android.media.AudioAttributes.Builder()
-                            .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build())
-                    .setAcceptsDelayedFocusGain(false)
-                    .setOnAudioFocusChangeListener(focusChange -> {
-                        // LOSS_TRANSIENT: another app briefly grabbed focus (e.g. TTS).
-                        // LOSS: e.g. another call arrived; mute ourselves so the user
-                        // doesn't hear feedback. We don't hang up automatically because
-                        // the user may return to us.
-                        if (focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
-                                || focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-                            if (callManager != null) callManager.setMuted(true);
-                        } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
-                            if (callManager != null) callManager.setMuted(isMuted);
-                        }
-                    })
-                    .build();
-            am.requestAudioFocus(audioFocusRequest);
-        } else {
-            //noinspection deprecation
-            am.requestAudioFocus(null,
-                    AudioManager.STREAM_VOICE_CALL,
-                    AudioManager.AUDIOFOCUS_GAIN);
-        }
-    }
-
-    /**
-     * Updates the speaker/audio-output button icon in the header to reflect the
-     * current routing state: loudspeaker, earpiece, or Bluetooth.
-     *
-     * <p>Called after every audio-route change (picker selection, headset plug/unplug,
-     * initial setup) so the button always matches the active output device.
-     */
     private void updateSpeakerButtonIcon() {
         if (btnSpeaker == null) return;
         AudioRouteController routes = audioRoutes();
@@ -1081,10 +1081,6 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         }
         btnSpeaker.setImageResource(iconRes);
     }
-
-    // ── Audio route plumbing ──────────────────────────────────────────────────
-
-    /** The call session's shared route controller, or {@code null} before the call exists. */
     private AudioRouteController audioRoutes() {
         return callManager != null ? callManager.audioRoute() : null;
     }
@@ -1161,17 +1157,6 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         }
     }
 
-    private void abandonAudioFocus() {
-        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        if (am == null) return;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
-                && audioFocusRequest != null) {
-            am.abandonAudioFocusRequest(audioFocusRequest);
-        } else {
-            //noinspection deprecation
-            am.abandonAudioFocus(null);
-        }
-    }
 
     // ── Video renderer init ───────────────────────────────────────────────────
 
@@ -1253,6 +1238,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
                     checked, () -> {
                         if (routes.apply(route)) {
                             isSpeakerOn = route.kind == AudioRouteController.Kind.SPEAKER;
+                            if (session != null) session.setSpeakerPreferred(isSpeakerOn);
                         } else {
                             // Surfacing this beats leaving a checkmark on a route that the
                             // framework rejected — the exact failure mode this screen had.
@@ -1276,6 +1262,7 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
                                 "Couldn't turn off sound", Toast.LENGTH_SHORT).show();
                     }
                     isSpeakerOn = false;
+                    if (session != null) session.setSpeakerPreferred(false);
                     updateSpeakerButtonIcon();
                     dialog.dismiss();
                 });
@@ -1602,21 +1589,19 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
             case CONNECTED:
                 // The timer is NOT started here: it waits for the shared server anchor in
                 // onCallTimerAnchor() so both devices count from the same instant.
-                statusText   = "";
-                wasConnected = true;
+                statusText = "";
                 break;
             case ENDED:
+                // The history row is written by CallSession (once, with or without a screen).
                 statusText = "Call ended";
                 durationHandler.removeCallbacksAndMessages(null);
                 durationTickScheduled = false;
-                saveCallRecord(wasConnected ? CallRecord.OUTCOME_ANSWERED : CallRecord.OUTCOME_MISSED);
                 finish();
                 return;
             case FAILED:
                 statusText = "Call failed — network unavailable";
                 durationHandler.removeCallbacksAndMessages(null);
                 durationTickScheduled = false;
-                saveCallRecord(CallRecord.OUTCOME_FAILED);
                 Toast.makeText(this, "Call failed — check your network", Toast.LENGTH_LONG).show();
                 new Handler(Looper.getMainLooper()).postDelayed(this::finish, 2000);
                 break;
@@ -1627,39 +1612,6 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
             tvCallStatusOverlay.setText(statusText);
             tvCallStatusOverlay.setVisibility(statusText.isEmpty() ? View.GONE : View.VISIBLE);
         }
-    }
-
-    // ── Call history ──────────────────────────────────────────────────────────
-
-    /**
-     * Writes this call's history row.
-     *
-     * <p>Called from {@code updateStatusUi(ENDED)}, which calls {@code finish()} immediately.
-     * It is guarded because an ENDED status can arrive from both the local hangup and the remote
-     * status write.
-     */
-    private void saveCallRecord(String outcome) {
-        if (partnerId == null || myUid == null) return;
-        if (savedRecordId != null) return;
-        long now         = System.currentTimeMillis();
-        int  durationSec = callStartMs > 0 ? (int) ((now - callStartMs) / 1000) : 0;
-        String direction = isCaller ? CallRecord.DIRECTION_OUTGOING : CallRecord.DIRECTION_INCOMING;
-
-        CallRecord record = new CallRecord();
-        record.id              = UUID.randomUUID().toString();
-        record.partnerId       = partnerId;
-        record.partnerName     = partnerName != null ? partnerName : partnerId;
-        record.isVideo         = isVideo;
-        record.direction       = direction;
-        record.outcome         = outcome;
-        record.startedAt       = callStartMs > 0 ? callStartMs : now;
-        record.durationSeconds = durationSec;
-        savedRecordId          = record.id;
-
-        Context appCtx = getApplicationContext();
-        historyExecutor.execute(() -> {
-            AppDatabase.getInstance(appCtx).callHistoryDao().insert(record);
-        });
     }
 
     // ── Foreground service lifecycle ──────────────────────────────────────────
@@ -1679,13 +1631,6 @@ public class CallActivity extends AppCompatActivity implements CallManager.CallL
         } else {
             startService(svcIntent);
         }
-    }
-
-    /** Stops {@link CallForegroundService} — removes the ongoing notification. */
-    private void stopForegroundCallService() {
-        Intent svcIntent = new Intent(this, CallForegroundService.class);
-        svcIntent.setAction(CallForegroundService.ACTION_STOP);
-        startService(svcIntent);
     }
 
     // ── Proximity wake lock (screen off when held to ear) ─────────────────────

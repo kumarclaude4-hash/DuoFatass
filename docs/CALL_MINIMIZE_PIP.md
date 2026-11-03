@@ -1,205 +1,191 @@
-# Call screen: back-to-minimise and Picture-in-Picture
+# Calls: back keeps the call, Picture-in-Picture, and a call that outlives its screen
 
-Status: implemented in `CallActivity` / `CallForegroundService` / `AndroidManifest.xml`.
-Inspired by Google Meet's behaviour for **video calls and in-call chat only** — not a feature-for-feature copy.
+Inspired by Google Meet's behaviour for **voice/video calls and in-call chat** — not a feature-for-feature copy.
+
+> **Status: built and statically checked, not run on a device.** Work through the
+> [manual test plan](#manual-test-plan) before merging. `BUG_TRACKER` entries `S11-H1` and `S11-M1` are **Partial** for the same reason.
 
 ## Problem
 
-`CallActivity` had no back handling. System back finished the activity, and `onDestroy()` calls
-`CallManager.hangup()` when the call is still live, so **pressing back ended the call**. The
-on-screen back arrow called `hangup()` directly. Users expect back to leave the call screen
-without dropping the call.
+`CallActivity` owned the whole call. It created the `CallManager`, listened to it, wrote the history row, handled the notification's
+End/Mute buttons, held audio focus — and hung up in `onDestroy()`. So **anything that destroyed the screen ended the call**:
+pressing back, closing a PiP window, the system reclaiming the activity, a night-mode or locale change recreating it.
 
 ## Behaviour
 
 | Action | Voice call | Video call |
 |---|---|---|
-| System back / back gesture / on-screen arrow | Call task goes to the back — you land on the screen you came from; call continues | Shrinks to PiP; call continues |
+| Back / back gesture / on-screen arrow | The call's task goes to the back → you land on the screen you came from; call continues | Shrinks to PiP (Mute / End on the window); call continues |
 | Home / Recents | Call goes to the background | Shrinks to PiP (Android 12+ auto-enter; 8–11 via `onUserLeaveHint`) |
-| End button, notification **End**, PiP **End** | Hangs up | Hangs up |
-| Open in-call chat (video calls) | Opens chat, **no PiP** | Opens chat, **no PiP** |
-| Call already `ENDED` / `FAILED` | Back just closes the screen | Back just closes the screen |
-| PiP unavailable (device lacks feature, or disabled by user) | — | Falls back to the voice-call behaviour |
+| Home **from the in-call chat** | Background | Chat shrinks to PiP showing the partner's video |
+| End button · notification **End** · PiP **End** | Hangs up | Hangs up |
+| Open in-call chat | Opens chat, no PiP | Opens chat, no PiP |
+| PiP window closed with the **X**, activity reclaimed, night-mode change | Call **continues** (detached) | Call **continues** (detached) |
+| Swipe the call's card away in Recents | Call **continues** (detached) — same as the PiP X | same |
+| Call already `ENDED` / `FAILED` | Back closes the screen | Back closes the screen |
+| PiP unavailable (no feature / disabled by the user) | — | Falls back to the voice behaviour |
 
-The way back into a minimised call is the ongoing-call notification (`CallForegroundService`),
-the call's card in Recents, or tapping the PiP window.
+Ways back into a minimised call: the ongoing-call **notification**, the **"Tap to return to call"** bar at the top of every in-app screen,
+the call's **Recents** card, or tapping the **PiP** window.
 
-## How it works
+A call that is **still ringing or connecting** is *not* detached when its screen is destroyed — the no-answer watchdog and TURN wait live on
+the screen, so it behaves as before (hangs up).
 
-### Back handling
-`setupButtons()` registers an `OnBackPressedCallback` via `getOnBackPressedDispatcher()` and points the
-on-screen arrow at the same `minimizeCall()`. **`onBackPressed()` is not used** because the manifest sets
-`android:enableOnBackInvokedCallback="true"`; with predictive back opted in, overrides of
-`Activity.onBackPressed()` are not invoked on Android 13+.
+## Architecture
 
-`minimizeCall()` asks `CallBackPolicy.onBack(callActive, pipAvailable)` (pure Java, unit-tested):
-1. call not active → `CLOSE` → `finish()`
-2. live video call on a PiP-capable device → `ENTER_PIP` (falls through to 3 if the system refuses)
-3. otherwise `BACKGROUND` → release the proximity lock and `moveTaskToBack(true)`
+```
+                         ┌────────────────────────────── process ───────────────────────────────┐
+ CallForegroundService ◄─┤ CallSession  (singleton)                                              │
+  (notification,         │   owns: CallManager · identity · history row · audio focus            │
+   keeps process alive)  │         headset + End/Mute receivers · mute/camera/speaker state      │
+                         │   hub ──► forwards CallManager callbacks to the attached screen       │
+                         └──────▲───────────────────────────────▲───────────────────────────────┘
+                       attach/detach/adopt                       │ current()/isLive()
+              CallActivity (UI only)  ·  InCallChatActivity      ReturnToCallBar ◄── BaseActivity
+```
 
-Only `endCall()` hangs up. The End button, the notification **End** action and the PiP **End** action all
-funnel into it; back / Home never do. (`CallManager.hangup()` is a no-op once the call is `ENDED`, so
-reaching it more than once is safe — the cleanup merely replaced three copies of the same two lines.)
+* **`CallSession`** — process-wide owner of the one live call. A call screen **attaches** (`attach`) and receives the same
+  `CallManager.CallListener` callbacks as before; when the screen goes away while the call is *connected* it **detaches** and the call carries on.
+  A new screen **adopts** the live session (`adoptSession`): it re-creates the renderers, re-attaches the live tracks, and repaints mute / camera /
+  speaker / timer from the state the session and `CallManager` kept.
+* **Teardown** (`CallSession.teardown()`, idempotent): stops the notification, ends the audio route, hangs up or releases the `CallManager`, abandons
+  audio focus, clears `current()`. Triggered by the attached screen's `onDestroy()` (after it released its renderers), or by the session itself on
+  `ENDED`/`FAILED` when no screen is attached (posted to the main thread — ENDED is raised from *inside* `CallManager.hangup()`).
+* **History row** — written once by the session (`savedRecordId` guard), with or without a screen.
+* **Decision rules** live in pure, unit-tested `CallSessionPolicy` (`shouldDetachOnDestroy`, `isResumeRequest`, `shouldLockOnReturn`, `formatDuration`)
+  and `CallBackPolicy` (`onBack`, `autoEnterPip`).
+* **One call at a time.** Launching the call screen while a call is live adopts it; if the launch was a request for a *new* call (not a resume of the
+  live one) a toast says "You're already in a call".
 
-### Picture-in-Picture
-- Manifest (`CallActivity`): `supportsPictureInPicture`, `resizeableActivity`, and
-  `configChanges="screenSize|smallestScreenSize|screenLayout|orientation"`. The `configChanges` entry is
-  required: without it the PiP resize recreates the activity, tearing down the `SurfaceViewRenderer`s
-  mid-call.
-- `buildPipParams()` — 9:16 aspect ratio, **Mute** and **End** `RemoteAction`s, and on Android 12+
-  `setAutoEnterEnabled(isCallActive() && !suppressAutoPip)`.
-- The PiP actions fire the **same broadcasts as the notification buttons**
-  (`BROADCAST_TOGGLE_MUTE`, `BROADCAST_END_CALL`) through immutable, package-scoped `PendingIntent`s, so
-  there is one code path for mute/end regardless of where the tap came from.
-- `updatePipParams()` is re-run when mute toggles (icon), on every call-state change (auto-enter must turn
-  off once the call ends), and around sub-screen launches.
-- `applyPipUi(boolean)` hides the header, controls bar, self-view tile and banners in PiP and restores them
-  on expand. The self-view and TURN-banner visibility are saved/restored rather than forced, so a camera-off
-  or dismissed banner stays that way.
+### `onDestroy()` of the call screen
+```
+release screen-owned state → detachVideoSinks() → releaseVideoRenderers()        (always, in this order)
+if shouldDetachOnDestroy(endedByUser, wasConnected, active)  →  session.detach(this)   // call continues
+else                                                         →  session.teardown()     // hang up / free
+```
+`endedByUser` is set only by `endCall()` (End button, notification End, PiP End). `hangup()` is a no-op once the call is `ENDED`.
 
-### PiP polish
-- **No remote video yet / partner's camera off:** the full-screen avatar (128 dp) would overflow a PiP
-  window, so `setCompactAvatar(true)` shrinks it to 56 dp, adds the partner's name (the header that normally
-  carries it is hidden in PiP) and tightens the status line. Everything is restored on expand.
-- **Smooth shrink animation:** `pipSourceRectHint()` supplies the video surface's on-screen rect, cropped
-  (centred) to the 9:16 PiP ratio. It is refreshed when the surface is first laid out — the very first
-  `onResume()` can run before layout, when there is no rect yet.
+## Back handling
+`minimizeCall()` asks `CallBackPolicy.onBack(callActive, pipAvailable)`: `CLOSE` (call over) · `ENTER_PIP` (live video call, PiP supported; falls through
+if the system refuses) · `BACKGROUND` (`moveTaskToBack(true)`). Back never hangs up. System back is an `OnBackPressedCallback` because the manifest
+opts in to predictive back, which bypasses `onBackPressed()` on Android 13+ (see `S11-H1`).
 
-### `suppressAutoPip`
-`onUserLeaveHint()` also fires when this activity starts another one, and Android 12+ auto-enter can trigger
-the same way. Opening in-call chat or the Bluetooth permission dialog must **not** put the call in PiP, so
-those paths set `suppressAutoPip` and push fresh params *before* launching. It is cleared in `onResume()`
-and in `onRequestPermissionsResult()` (a permission request that resolves without a dialog — e.g. "don't
-ask again" — never pauses the activity, so `onResume()` alone would leave PiP suppressed).
+## The call runs in its own task
+`CallActivity` declares `android:taskAffinity="${applicationId}.call"` and every launch site (`ChatMediaActivity`, `ContactDetailActivity`,
+`IncomingCallActivity`, `CallSession.returnToCall`, the notification) uses `FLAG_ACTIVITY_NEW_TASK`. `moveTaskToBack` then sends *only the call* to the
+back, revealing the screen the user came from. The affinity is ignored without `NEW_TASK` — `CallTaskIsolationTest` pins both. In-call chat starts
+from `CallActivity` without `NEW_TASK`, so it stays in the call task. Trade-off: two Recents cards (chats + call) while a call is live.
 
-### Proximity wake lock (voice calls)
-Released in `onUserLeaveHint()` and `minimizeCall()`; re-acquired in `onResume()` if it was dropped. It is
-**not** released in `onPause()`/`onStop()`: the proximity sensor blanking the screen pauses the activity,
-and releasing there would turn the screen back on and loop.
+## Picture-in-Picture
+Shared by both call screens through `CallPip`: 9:16, **Mute** and **End** actions, auto-enter on Android 12+.
 
-### The call runs in its own task
-`CallActivity` declares `android:taskAffinity="${applicationId}.call"`, and every launch site
-(`ChatMediaActivity`, `ContactDetailActivity`, `IncomingCallActivity`, the notification in
-`CallForegroundService`) starts it with `FLAG_ACTIVITY_NEW_TASK`. Effect: `moveTaskToBack(true)` sends *only the
-call* to the back, revealing the screen the user came from (WhatsApp-style) instead of dumping them on the home
-screen, while the call stays alive in its own Recents card. In-call chat is started from `CallActivity` without
-`NEW_TASK`, so it stays inside the call task and back from chat returns to the call.
+* The actions fire the **same broadcasts as the notification buttons**; `CallSession` owns the receiver (application context, `RECEIVER_NOT_EXPORTED`,
+  immutable package-scoped `PendingIntent`s), so Mute/End work with or without a screen.
+* **Call screen:** only remote video is shown; compact avatar + partner name when there is no remote video; source-rect hint (cropped to 9:16 by the
+  unit-tested `CallPip.cropToPipAspect`) for a smooth shrink animation, refreshed once the surface has a size.
+* **In-call chat screen** (video calls): on Home the chat column and the local half of the floating tile are hidden and the tile fills the window
+  (partner video only); everything is restored on expand. The video sink is kept attached across `onPause` while floating, and a 1 s loop closes the
+  window if the call ends.
+* `suppressAutoPip` stops opening in-call chat, the Bluetooth permission dialog, or the lock screen from counting as "leaving the call"; it is cleared in
+  `onResume()` **and** `onRequestPermissionsResult()` (a request that resolves without a dialog never pauses the activity).
+* Manifest: `supportsPictureInPicture`, `resizeableActivity`, and `configChanges` on both screens, so PiP resizing does not recreate the WebRTC renderers.
 
-The affinity is only honoured together with `NEW_TASK` — without the flag the call would silently land in the
-caller's task and "send to back" would hide the whole app. `CallTaskIsolationTest` pins the manifest attribute and
-every launch site so the two cannot drift apart.
+## "Tap to return to call" bar
+`ReturnToCallBar` (shown by `BaseActivity.onResume`, dismissed in `onPause`) adds a green strip with a live duration to the activity's content frame. The
+content is **pushed down** by the bar's height rather than covered, so toolbars and back buttons stay usable; the bar is pulled back to the top with a
+negative margin and `clipToPadding` is switched off while it is shown (both restored on dismiss). If a screen draws under the status bar the overlap is
+added to the bar's own padding. It removes itself when the call ends. `FullScreenImageActivity` and `MediaViewerActivity` opt out
+(`showsReturnToCallBar() == false`): shifting an immersive viewer would break it. Not shown on the lock/PIN/offline gates (they are not `BaseActivity`s).
 
-Trade-off: Recents now shows two cards for the app (chats and the call) while a call is live; both go away when it ends.
+## App lock
+`CallActivity` and `InCallChatActivity` are not `BaseActivity`s, so they used to be invisible to `AppLockManager` (the lock timer ran for the whole
+call; returning to a minimised call was never lock-checked — `S11-M1`). Now:
 
-### Notification
-`CallForegroundService`'s content intent now adds `FLAG_ACTIVITY_NEW_TASK` alongside `SINGLE_TOP |
-REORDER_TO_FRONT` so tapping it reliably brings the call back from the background.
+* They count as foreground activities — **only when no background timestamp is pending** (`AppLockManager.hasBackgroundTimestamp`). Otherwise an
+  incoming call that wakes a locked app would overwrite the older timestamp when the call screen stops and quietly extend the lock window.
+* `CallActivity.onStart()` checks `shouldLock()` on a **return** (stopped before, or a re-adopted instance) — never on the first start, so an incoming
+  call is never blocked behind a lock screen — and raises `LockScreenActivity` over the call.
+* After a **successful** unlock, `LockScreenActivity.unlock()` sends the user back to the call (extra `EXTRA_RETURN_TO_CALL`, only when `CallSession.isLive()`).
+  It runs after `AppLockManager.onAppForegrounded`, i.e. after the credential check; nothing about authentication changed.
+* Deliberately **not** done: making `CallActivity` a `BaseActivity`. Its `onStart()` would put the lock screen or the offline wall over a connecting
+  call and can sign the user out and `finish()` the call.
 
-## Review notes
+## Notification
+`CallForegroundService`'s content intent carries `FLAG_ACTIVITY_NEW_TASK | SINGLE_TOP | REORDER_TO_FRONT` and `EXTRA_RESUME`, so tapping it brings the
+existing screen forward, or a new one adopts the live call. `CallSession.teardown()` asks the service to stop itself (`ACTION_STOP`) and falls back to
+`stopService()` when the app is in the background and may not start services.
 
-Checked during review and deliberately left as-is:
-- **Camera in PiP** keeps running — `CallForegroundService` already declares the camera foreground-service
-  type and is started from `onCreate()` while the app is visible (required on Android 11+).
-- **Chat banner in PiP** — `deliverNewMessageBanner()` parks the preview in `pendingBannerPreview` while in
-  PiP; it is shown on expand from both `onResume()` and `applyPipUi(false)` (some OEMs keep a PiP activity
-  resumed, so `onResume()` may not fire). The null-out makes the two paths idempotent.
-- **TURN warning banner** is not shown while in PiP; the state is restored on expand.
-- `notifActionReceiver` is `RECEIVER_NOT_EXPORTED`; PiP `PendingIntent`s run as this app, so delivery works.
+## Proximity wake lock (voice calls)
+Released in `onUserLeaveHint()` and `minimizeCall()`; re-acquired in `onResume()`. **Not** released in `onPause()`/`onStop()`: the proximity sensor
+blanking the screen pauses the activity, and releasing there would turn the screen back on and loop. Detached calls hold no lock (it is screen state).
 
-## Automated tests
+## Automated tests (plain JVM — no Android SDK, no Robolectric)
+`CallActivity.onCreate` initialises libwebrtc and Firebase, which cannot load on the JVM, so tests are pure-logic plus structural guards that read the sources.
 
-`CallBackPolicyTest` (plain JVM, no Android SDK — same style as `LockScreenManifestTest`):
-- the decision table for `onBack(...)` and `autoEnterPip(...)`
-- structural guards on `CallActivity.java`: `minimizeCall()` decides through `CallBackPolicy` and contains no
-  `hangup(` / `endCall(`; system back is an `OnBackPressedCallback` (not an `onBackPressed()` override);
-  the arrow routes to `minimizeCall()`; only `endCall()` hangs up and the End button + notification End use it
+| Test | Guards |
+|---|---|
+| `CallBackPolicyTest` | back decision table; back path never reaches `hangup()`; system back is an `OnBackPressedCallback`; only `endCall()` ends a call; screen registers no receivers |
+| `CallSessionPolicyTest` | detach / resume / lock-on-return decision tables; `formatDuration`; PiP crop math |
+| `CallSessionStructureTest` | `onDestroy` decides via policy and never hangs up itself; sinks detached before renderers released before teardown; teardown idempotent; history row written once; headless teardown posted after the manager call returns; lock participation rules; lock redirect only after authentication; chat counted by `AppLockManager`; bar shown/dismissed with the screen; viewers opt out; PiP declared on both screens; chat PiP shows only the remote tile and keeps its sink while floating |
+| `CallTaskIsolationTest` | manifest `taskAffinity` + `FLAG_ACTIVITY_NEW_TASK` at every launch site |
+| `PredictiveBackOverrideTest` | no `onBackPressed()` overrides; gate screens use `BackPressGuard` |
 
-Robolectric was not used: `CallActivity.onCreate` initialises libwebrtc and Firebase, which cannot load on the JVM.
-The structural tests were checked against bug-shaped variants (back calling `hangup()`; no back callback) and fail
-as intended.
+Every suite was re-run against bug-shaped variants and fails as intended (e.g. `onDestroy` hanging up, the lock redirect before authentication,
+the call screen counting itself unconditionally, the bar never dismissed, an unguarded history row, PiP removed from the chat manifest entry).
 
-## App-lock interaction (`BaseActivity`) — analysis, not changed
-
-`CallActivity` extends `AppCompatActivity`, not `BaseActivity`, so it skips everything `BaseActivity.onStart()`
-does: session check, auto sign-out, the PIN lock, the offline wall, and the `AppLockManager.onActivityStarted()`
-reference count. Consequences, given that back/Home now leave a live call running:
-
-1. **Return to a minimised call is not lock-checked.** Tapping the ongoing-call notification or the PiP window
-   shows the call (and the in-call chat) even if the app-lock timeout has elapsed. Before this change a user
-   could already do this via Home; back previously ended the call, so it wasn't reachable that way.
-2. **The lock timer appears to run during a call** (the call screen isn't counted as a foreground activity), so a
-   long call can be followed by an immediate PIN prompt when the user returns to a chat screen. That direction is
-   fail-safe, only mildly surprising.
-
-Why `CallActivity` was **not** simply switched to `BaseActivity`: its `onStart()` would (a) launch
-`LockScreenActivity` over an incoming/connecting call, (b) route to `NoInternetActivity` mid-call via the offline
-wall, and (c) can sign the user out and `finish()` the call screen. Those are product decisions, not a refactor.
-
-Suggested follow-up if (1) matters for your threat model: in `CallActivity`, only when returning from a minimise/PiP
-(not on first start), check `AppLockManager.shouldLock(this)` and launch `LockScreenActivity` over the call the way
-`BaseActivity` does. Needs a device test with the lock timeout set short. (I did not read `AppLockManager`'s
-timeout logic in full, so confirm the semantics before relying on point 2.)
+## Review notes (checked, left as is)
+* **Camera in PiP / detached:** the foreground service already declares the camera type and is started from `onCreate()` while the app is visible.
+* **Detached video:** tracks keep running with no sink; the camera capturer keeps running while the call is detached (same as backgrounded today).
+* **Two live screens:** if a second instance adopts while an older one still exists, `attach()` replaces the UI and the older screen's `detach()` is a
+  no-op, so its eventual destruction does not hang up.
+* **Chat banner while detached/PiP:** parked in `pendingBannerPreview`, shown on return (both `onResume()` and `applyPipUi(false)`).
 
 ## Manual test plan
+Run on at least one Android 8–11 device and one Android 12+ device. Put the lock timeout at its shortest for the lock rows.
 
-Run on at least one Android 8–11 device and one Android 12+ device.
-
-Video call:
-- [ ] Back (button and gesture) → PiP, call audio/video continue
-- [ ] Call started from a chat (`ChatMediaActivity`) and from contact details: call opens as its **own Recents card**
-- [ ] Home → PiP; Recents → PiP
-- [ ] PiP **Mute** toggles mic and the icon; state matches the in-app mute button when expanded
-- [ ] PiP **End** hangs up and closes the window; remote side sees the call end
-- [ ] Tap PiP → full screen, controls and self-view back, camera-off state preserved
-- [ ] Open in-call chat → **no** PiP; chevron-down returns to the call
-- [ ] Chat message arrives while in PiP → pill shows after expanding
-- [ ] Remote ends the call while in PiP → window closes
-- [ ] PiP disabled in system settings → back falls back to background, call survives
+**Back / PiP — video**
+- [ ] Back (button + gesture) → PiP, audio and video continue · Home → PiP · Recents → PiP
+- [ ] PiP **Mute** toggles the mic and its icon; matches the in-app button when expanded · PiP **End** hangs up, window closes, partner sees it end
+- [ ] Tap PiP → full screen, controls + self-view back, camera-off state preserved
+- [ ] Open in-call chat → **no** PiP · Home **from the chat** → PiP with the partner's video only · tap it → chat back, tile restored
+- [ ] Partner ends the call while in PiP (call screen and chat) → window closes
+- [ ] PiP disabled in system settings → back falls back to the background; call survives
 - [ ] Back during *Ringing…* / *Connecting…* → PiP, no crash
 
-Voice call:
-- [ ] Back / arrow → you return to the screen you came from (chat), call still running, notification stays, audio continues
-- [ ] Home → call goes to the background, audio continues
-- [ ] Incoming call → accept → back → lands on the previous app/screen, not stuck on a blank task
-- [ ] Notification tap → call screen returns
-- [ ] Notification **Mute** / **End** work
-- [ ] Phone against ear in another app does not blank the screen; back in the call screen it does
-- [ ] Back after the remote hung up → screen closes
+**Back — voice**
+- [ ] Back / arrow → the screen you came from, call still running, notification present, audio continues
+- [ ] Home → background, audio continues · notification tap returns · phone to ear in another app does **not** blank the screen
 
-Regression:
-- [ ] Bluetooth permission prompt (Android 12+) does not trigger PiP, including after choosing "Don't allow"
-- [ ] Rotating / split-screen does not recreate the call screen
+**Call outlives its screen (the new part)**
+- [ ] Close the PiP window with the **X** → call keeps going; notification present; tap it → call screen with live video + correct timer + mute state
+- [ ] Swipe the call's Recents card away → call keeps going; notification **End** hangs up
+- [ ] Toggle dark mode mid-call → brief flicker, call survives, controls correct
+- [ ] While detached: partner hangs up → notification disappears, **one** history row exists, camera light off
+- [ ] While detached: notification **Mute** works; plug/unplug a wired headset → audio re-routes
+- [ ] Detached, then tap the return bar from the chat list → call screen adopts the call
+- [ ] Start a second call while one is live → "You're already in a call", live call shown
+- [ ] Incoming call → accept → back → previous screen, no orphan task after hang-up
 
-## Deliberately not built (and why)
+**Return bar**
+- [ ] Visible on the chat list, chats, settings, contact details; shows a ticking duration; tap returns to the call
+- [ ] Toolbars/back buttons still tappable (content pushed down, not covered); bar disappears when the call ends
+- [ ] **Not** shown in the full-screen image and media viewers
 
-An earlier suggestion was to move `CallManager` into the foreground service so a call outlives its activity. After
-reading the lifecycle code that was **not** attempted here. `CallActivity` owns more than the UI: the call-record write
-on `ENDED`, the no-answer watchdog, the duration timer, the audio-focus request, the headset and notification-action
-receivers, and the in-call chat listener. Making the call survive its activity means moving or duplicating all of
-that into a headless owner, re-adopting live WebRTC tracks into a new activity, and routing the notification's
-End/Mute with no activity registered — roughly 600 lines in the most failure-prone path of the app, which cannot be
-compiled or run without a device and SDK. The own-task approach above delivers the user-visible part (back goes to
-the previous screen; the call keeps running; Recents/notification return) for a few lines and a pinned test.
+**App lock** (short timeout)
+- [ ] During a long call the lock screen does **not** appear while you are on the call or its chat
+- [ ] Minimise, wait past the timeout, tap the notification → lock screen over the call; unlock → straight back to the call
+- [ ] Locked app wakes for an incoming call → call is **not** blocked; after hang-up the lock still appears
+- [ ] Back gesture on the lock screen does not dismiss it (Android 13+) — `S11-H1`
 
-What it does **not** give you, and the design if you want it:
-- **Call survives the activity being destroyed** (e.g. PiP closed with the X on some OEMs, or a low-memory kill):
-  needs a `CallSession` owner (process singleton or the service) holding `CallManager`, a headless
-  `CallListener` that writes the call record and stops the service on `ENDED`/`FAILED`, `onDestroy()` that detaches
-  instead of hanging up while the call is live, and an adopt path in `onCreate()` that re-attaches renderers and
-  restores mute/camera/speaker/timer state. Restrict detaching to `CONNECTED` calls to avoid reimplementing the
-  no-answer watchdog.
-- **In-app "return to call" bar:** not added. A generic overlay in `BaseActivity` would sit on top of every screen's
-  toolbar or input bar, and I can't see/verify each layout. Per-screen placement (e.g. the chat list only) is the
-  safer route.
+**Regression**
+- [ ] Bluetooth permission prompt does not trigger PiP, including after "Don't allow"
+- [ ] Rotating / split-screen does not recreate the call screen · call history shows correct outcome/duration for answered, missed, failed calls
 
-## Known limitations / follow-ups
-
-- **Closing the PiP window with the X** — behaviour is OEM/OS-version dependent. If the system destroys the
-  activity, `onDestroy()` hangs up. Verify on device; if the call should survive, decouple `CallManager`
-  from the activity lifecycle.
-- Home from the **in-call chat screen** does not enter PiP. Deliberately not done: PiP is per-activity, so it would
-  mean duplicating the PiP wiring in `InCallChatActivity` (and handing the video surface across) for little gain —
-  the call keeps running behind its notification.
-- No in-app "return to call" bar (see above); use the notification or Recents.
-- Other screens that overrode `onBackPressed()` (incl. `LockScreenActivity`) were bypassed by predictive back on
-  Android 13+. That is a separate security fix: `fix/predictive-back-overrides` (`BUG_TRACKER` S11-H1).
+## Known limitations
+* Not run on a device. Behaviours that vary by OEM/OS version and need a look: what the system does when the PiP X is pressed (the design assumes the
+  activity is destroyed or stopped — either way the call now survives), and auto-enter timing on Android 12+.
+* Swiping the call's Recents card away leaves the call running (as WhatsApp does). Some OEMs kill the whole process on swipe — then the call ends.
+* A call that is still ringing/connecting is not detached.
+* The return bar's top-edge handling assumes the default (non-edge-to-edge) window for `targetSdk 34`; screens that draw under the status bar get the
+  measured overlap, but this is worth a visual check on a notched device.
+* Two Recents cards while a call is live (chats + call).

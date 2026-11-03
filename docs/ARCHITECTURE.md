@@ -112,10 +112,15 @@ app/src/main/java/com/duoshield/app/
 │   └── Message.java
 │
 ├── call/                               # voice/video calling — see docs/CALL_MINIMIZE_PIP.md
-│   ├── CallActivity.java               # call screen; back/Home minimise (PiP for video)
+│   ├── CallActivity.java               # call screen (UI only); attaches to / adopts the CallSession
+│   ├── CallSession.java                # process-wide owner of the live call (outlives any screen)
+│   ├── CallSessionPolicy.java          # pure decisions: detach / resume / lock-on-return
+│   ├── CallBackPolicy.java             # pure decisions: what back does, when PiP auto-enters
+│   ├── CallPip.java                    # shared PiP params, Mute/End actions, crop math
+│   ├── ReturnToCallBar.java            # "Tap to return to call" strip (shown by BaseActivity)
 │   ├── CallForegroundService.java      # ongoing-call notification, keeps process alive
 │   ├── CallManager.java                # WebRTC peer connection + signalling
-│   └── InCallChatActivity.java         # in-call text chat
+│   └── InCallChatActivity.java         # in-call text chat (also supports PiP)
 │
 ├── ui/
 │   ├── AddContactActivity.java

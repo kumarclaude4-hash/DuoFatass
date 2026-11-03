@@ -206,9 +206,23 @@ public class BaseActivity extends AppCompatActivity {
         }
     }
 
+    /** "Tap to return to call" strip, shown while a call is live and its screen is not in front. */
+    private com.duoshield.app.call.ReturnToCallBar returnToCallBar;
+
+    /**
+     * Whether this screen shows the return-to-call strip. Full-screen viewers opt out: shifting
+     * their content down would break the immersive layout.
+     */
+    protected boolean showsReturnToCallBar() {
+        return true;
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
+        if (showsReturnToCallBar()) {
+            returnToCallBar = com.duoshield.app.call.ReturnToCallBar.show(this);
+        }
         // Shake to lock is not a user-facing preference. It ships as an implicit part
         // of the secondary-code / duress capability: accounts the operator enrolled,
         // and accounts that already armed a secondary code, get it always-on. Ordinary
@@ -222,6 +236,10 @@ public class BaseActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        if (returnToCallBar != null) {
+            returnToCallBar.dismiss();
+            returnToCallBar = null;
+        }
         if (shakeDetector != null) {
             shakeDetector.stop();
             shakeDetector = null;

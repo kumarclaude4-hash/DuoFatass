@@ -34,6 +34,12 @@ import java.util.concurrent.Executors;
 
 public class MediaViewerActivity extends BaseActivity {
 
+    /** Immersive viewer: the return-to-call strip would shift the content. */
+    @Override
+    protected boolean showsReturnToCallBar() {
+        return false;
+    }
+
     public static final String EXTRA_URL       = "media_url";
     public static final String EXTRA_MEDIA_KEY = "media_key";
     /**
