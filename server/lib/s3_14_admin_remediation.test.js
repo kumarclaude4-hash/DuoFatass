@@ -45,8 +45,8 @@ test("S05-L1: GET /admin/api/account/lookup validates uid with validAdminUid()",
 // before ever invoking collectBody.
 
 const ADMIN_POST_ROUTES = [
-  "/admin/api/waitlist/approve",
-  "/admin/api/waitlist/deny",
+  "/admin/api/invites/create",
+  "/admin/api/invites/revoke",
   "/admin/api/locked/unfreeze",
   "/admin/api/sessions/revoke-all",
   "/admin/api/duress/enroll",
@@ -128,19 +128,19 @@ test("S05-L3: setBaselineSecurityHeaders sets Cache-Control: no-store and Vary: 
 // approve/unfreeze used to get()-then-write() outside any transaction, and
 // GET /admin/api/locked + GET /admin/api/duress/enrolled had no limit().
 
-test("S05-L4: waitlist approve wraps its read-check-write in db.runTransaction", () => {
-  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/waitlist/approve"');
-  assert.ok(routeStart > 0, "POST /admin/api/waitlist/approve route not found");
-  const nextRouteStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/waitlist/deny"', routeStart);
-  assert.ok(nextRouteStart > routeStart, "could not bound the approve handler");
+test("S05-L4: invite revoke wraps its read-check-write in db.runTransaction", () => {
+  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"');
+  assert.ok(routeStart > 0, "POST /admin/api/invites/revoke route not found");
+  const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "GET" && req.url === "/admin/api/locked"', routeStart);
+  assert.ok(nextRouteStart > routeStart, "could not bound the invite revoke handler");
   const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
   assert.ok(
-    /db\.runTransaction\(async \(txn\) => \{/.test(handler),
-    "approve must wrap its get()-branch-write() in db.runTransaction to close the TOCTOU " +
-    "window between two concurrent approvals of the same requestId"
+    /db\.runTransaction\(async \(tx\) => \{/.test(handler),
+    "invite revoke must wrap its read-check-write in db.runTransaction"
   );
-  assert.ok(/txn\.get\(ref\)/.test(handler), "approve's transaction must read via txn.get(), not a bare ref.get()");
-  assert.ok(/txn\.update\(ref/.test(handler), "approve's transaction must write via txn.update(), not a bare ref.update()");
+  assert.ok(/tx\.get\(ref\)/.test(handler), "invite revoke transaction must read using tx.get()");
+  assert.ok(/tx\.update\(ref/.test(handler), "invite revoke transaction must write using tx.update()");
+  assert.ok(/current !== "active"/.test(handler), "only active invites may be revoked");
 });
 
 test("S05-L4: locked/unfreeze wraps its read-check-write in db.runTransaction and re-checks locked===true", () => {
