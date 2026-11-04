@@ -58,20 +58,12 @@ public class BaseActivity extends AppCompatActivity {
      * BaseActivity-derived activities now route through, matching what GroupChatActivity's
      * and ChatMediaActivity's onResume() comments already claimed was happening globally.
      *
-     * <p><b>TEMPORARY TESTING DEFAULT — screenshots ALLOWED.</b> The {@code getBoolean}
-     * default below is currently {@code true}, i.e. FLAG_SECURE is NOT set on a fresh
-     * install, so screenshots, screen recording, and the recents-list thumbnail all work
-     * without the tester touching Settings. This exists only to capture screen-by-screen
-     * screenshots during the final testing pass.
-     *
-     * <p><b>REVERT BEFORE RELEASE.</b> The secure-by-default posture required by S08-H2 is
-     * {@code false} (screenshots BLOCKED); shipping with {@code true} re-introduces that
-     * finding. Set {@link #SCREENSHOTS_ALLOWED_BY_DEFAULT} back to {@code false} when the
-     * testing pass is finished. The matching {@code getBoolean} default in
-     * {@link com.duoshield.app.ui.SecurityPrivacySettingsActivity} reads this same constant,
-     * so the switch stays in step with the flag actually enforced.
+     * <p>Secure-by-default: on a fresh install, {@code getBoolean} returns {@code false}
+     * and {@link WindowManager.LayoutParams#FLAG_SECURE} remains set unless the user
+     * explicitly enables screenshots in Security & Privacy settings. The settings screen
+     * reads this same constant so its initial switch state matches the enforced window flag.
      */
-    public static final boolean SCREENSHOTS_ALLOWED_BY_DEFAULT = true;
+    public static final boolean SCREENSHOTS_ALLOWED_BY_DEFAULT = false;
 
     static void applyScreenshotSecurity(android.app.Activity activity) {
         boolean screenshotsAllowed = activity
