@@ -29,3 +29,17 @@ test("public liveness routes do not expose push delivery counters", () => {
   const rootHandler = source.slice(rootStart, rootEnd);
   assert.doesNotMatch(rootHandler, /stats\.|delivered|groupDelivered|skippedMissingToken|skippedOld|failed|uptime|startedAt/i);
 });
+test("Signal pre-key append persists and advances a server-owned high-water mark", () => {
+  const appendStart = SERVER_SOURCE.indexOf('req.url === "/signal/appendPreKeys"');
+  const claimStart = SERVER_SOURCE.indexOf('req.url === "/signal/claimPreKey"');
+  assert.ok(appendStart > 0 && claimStart > appendStart, "Signal append/claim route markers missing");
+  const appendHandler = SERVER_SOURCE.slice(appendStart, claimStart);
+  assert.match(appendHandler, /appendPreKeysWithHighWaterMark/);
+  assert.match(appendHandler, /current\.oneTimePreKeyIdHighWaterMark/);
+  assert.match(appendHandler, /firstPreKeyId/);
+  assert.match(appendHandler, /oneTimePreKeyIdHighWaterMark:\s*merged\.highWaterMark/);
+  const claimHandler = SERVER_SOURCE.slice(claimStart, SERVER_SOURCE.indexOf('req.url === "/turnCredentials"', claimStart));
+  assert.match(claimHandler, /oneTimePreKeyIdHighWaterMark:/);
+  assert.match(claimHandler, /getPreKeyHighWaterMark/);
+});
+
