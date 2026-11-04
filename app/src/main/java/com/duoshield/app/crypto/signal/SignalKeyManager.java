@@ -355,11 +355,11 @@ public final class SignalKeyManager {
      *   <li>Promotes the current SPK to {@link #KEY_SIGNED_PREKEY_PREV} (grace period).</li>
      *   <li>Generates a new Curve25519 key pair signed by the identity key.</li>
      *   <li>Persists the new SPK to {@link #KEY_SIGNED_PREKEY} in SecurePrefs.</li>
-     *   <li>Uploads the new public half to Firestore (fire-and-forget).</li>
+     *   <li>Uploads the new public half through the authenticated Signal key service.</li>
      * </ol>
      *
      * <p>Called by {@link SignedPreKeyRotationWorker} when the current SPK is ≥ 7 days old.
-     * The local rotation is synchronous; the Firestore upload is asynchronous.
+     * The local rotation is synchronous; the authenticated service update runs on the caller's thread.
      *
      * @throws InvalidKeyException If Curve25519 signature generation fails.
      */
@@ -392,7 +392,7 @@ public final class SignalKeyManager {
 
         Log.d(TAG, "Signed pre-key rotated — old key saved as prev, new key id=" + newId);
 
-        // Upload public half to Firestore (non-blocking — local rotation is already committed).
+        // Upload public half through the authenticated API (local rotation is already committed).
         uploadRotatedSignedPreKey(ctx, newSpk);
     }
 
@@ -496,7 +496,7 @@ public final class SignalKeyManager {
      * <ol>
      *   <li>Generates a new Kyber-1024 key pair signed by the identity key.</li>
      *   <li>Stores the private half in {@link SecurePrefs}.</li>
-     *   <li>Uploads the public half + signature to Firestore (fire-and-forget).</li>
+     *   <li>Uploads the public half + signature through the authenticated Signal key service.</li>
      * </ol>
      *
      * <p>The old Kyber key is NOT kept as a grace-period copy — Kyber last-resort
@@ -819,7 +819,7 @@ public final class SignalKeyManager {
     // ── Private: Firestore upload (public keys only) ───────────────────────────
 
     /**
-     * Uploads ONLY the public halves of the Signal keys to Firestore at:
+     * Uploads ONLY the public halves of the Signal keys through the authenticated service to:
      * {@code /users/{uid}/public_keys/bundle}
      *
      * Structure stored:
