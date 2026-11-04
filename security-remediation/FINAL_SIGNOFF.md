@@ -6,10 +6,10 @@
 
 ## Current evidence snapshot
 
-The canonical finding register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its latest in-file
-roll-up is **118 findings: 64 Fixed, 36 Partial, 6 Open, 12 Accepted**. These figures are
-carried from the current tracker table and were not independently recounted during this update;
-recount the finding rows and severity buckets before treating them as a fresh audit-grade tally.
+The canonical finding register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up
+was independently recounted on 2026-11-04: **116 findings: 74 Fixed, 29 Partial, 1 Open,
+12 Accepted**. Severity buckets are Critical 4/4/0/0/0, High 31/24/7/0/0, Medium 27/19/7/0/1,
+Low 31/18/11/1/1, and Info 23/9/4/0/10 (Total/Fixed/Partial/Open/Accepted).
 
 Merged to `main` on 2026-11-04:
 - #201 — screenshots blocked by default.
@@ -25,11 +25,11 @@ PR #200 (`ci: fix Espresso SDK setup`) was also merged. Its CI run
 passed all jobs, including the emulator-backed **Instrumented tests (Espresso)** job; that job
 reported **2 Espresso tests executed**.
 
-Post-merge `main` HEAD:
-`b17f26437bc0731b12f8d5bdb99d4268d860adc9`.
-Both post-merge workflows completed successfully:
-[CI run 41792882092](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882092)
-and [Security scan run 41792882126](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882126).
+Current `origin/main` HEAD verified on 2026-11-04:
+`45363ae8f1be3b9bf2dbdfab861580d4f3b6038d`.
+Both current workflows completed successfully:
+[CI run 41842025684](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41842025684)
+and [Security scan run 41842025761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41842025761).
 
 Firestore Rules catch-up gate S3-15b is **complete: 186/186 emulator tests passed**. The Android
 catch-up gate S3-19b is now **verified on main CI**: lint, unit tests, debug APK build and the

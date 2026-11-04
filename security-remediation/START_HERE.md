@@ -28,15 +28,15 @@ S3-15b (Firestore Rules catch-up) is DONE: 186/186 emulator tests passed. S3-19b
 and the S07-C1 Android compile gate) is now **verified on main CI** (lint, unit tests, debug APK,
 Espresso 2/2, supply-chain gates all passed). PR #200's separate Espresso workflow passed 2 instrumentation
 tests, but does not satisfy this broader catch-up gate. Security PRs #201–#205/#207/#208 and
-Espresso PR #200 are merged. Post-merge CI and Security scan on main at
-b17f26437bc0731b12f8d5bdb99d4268d860adc9 both completed successfully (runs 41792882092 and
-41792882126). Remaining gates: Firebase revoke-token integration test for S02-I3; Render/Worker credential
-verification for shared auth rate limiting; SC-12 main branch protection and tag/ruleset settings;
-leaked GCP service-account key and remaining Worker/B2/admin credential rotations; App Check
-enforcement and Firebase/Firestore operator configuration; trust-boundary review; and coordinated
-production server + Android release. SC-03 hashes/enforcement and the full S3-19b Android CI gate
-are now verified green on main. Keep FINAL_SIGNOFF.md PENDING until the remaining external items
-are evidenced.
+Espresso PR #200 are merged. Current `origin/main` is `45363ae8f1be3b9bf2dbdfab861580d4f3b6038d`;
+current CI and Security scan both completed successfully (runs 41842025684 and 41842025761).
+Remaining gates: Firebase revoke-token integration test for S02-I3; Render/Worker credential
+verification for shared auth rate limiting; SC-12 main branch protection and tag/ruleset settings
+(live read-back on 2026-11-04 confirmed they are still absent); leaked GCP service-account key and
+remaining Worker/B2/admin credential rotations; App Check enforcement and Firebase/Firestore operator
+configuration; trust-boundary review; and coordinated production server + Android release. SC-03
+hashes/enforcement and the full S3-19b Android CI gate are now verified green on main. Keep
+FINAL_SIGNOFF.md PENDING until the remaining external items are evidenced.
 ```
 
 If `NEXT SESSION` above is `S3-20 complete`, do **not** start coding — go to the sign-off gate at the
