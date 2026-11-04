@@ -204,6 +204,7 @@ function claimOneTimePreKey(bundle) {
 
 module.exports = {
   MAX_ONE_TIME_PREKEYS,
+  validId,
   validPublicPreKey,
   validSignedPreKey,
   sameSignedPreKey,
