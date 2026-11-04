@@ -3457,13 +3457,19 @@ const server = http.createServer((req, res) => {
           return;
         }
         const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
-        await db.runTransaction(async (tx) => {
+        const outcome = await db.runTransaction(async (tx) => {
           const snap = await tx.get(ref);
           if (!snap.exists) throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
+          const current = snap.data()[field];
+          const same = field === "signedPreKey"
+            ? signalPrekeys.sameSignedPreKey(current, value)
+            : signalPrekeys.sameKyberPreKey(current, value);
+          if (same) return "unchanged";
           tx.update(ref, { [field]: value, updatedAt: FieldValue.serverTimestamp() });
+          return "updated";
         });
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ updated: field }));
+        res.end(JSON.stringify({ updated: field, outcome }));
       } catch (e) {
         if (e.status) {
           res.writeHead(e.status, { "Content-Type": "text/plain" });
