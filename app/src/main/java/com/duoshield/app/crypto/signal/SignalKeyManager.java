@@ -901,7 +901,7 @@ public final class SignalKeyManager {
         bundle.put("signedPreKey",   spkMap);
         bundle.put("oneTimePreKeys", otpkList);
         if (kyberMap != null) bundle.put("kyberPreKey", kyberMap);
-        bundle.put("updatedAt",      FieldValue.serverTimestamp());
+        // The server supplies updatedAt after validating the public bundle.
 
         try {
             // UID is always derived from the verified Firebase ID token by the server.
