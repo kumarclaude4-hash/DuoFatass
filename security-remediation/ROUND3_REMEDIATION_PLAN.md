@@ -1,8 +1,10 @@
-# Round 3 Remediation Plan — 103 open findings across 20 sessions
+# Round 3 Remediation Plan — 20 scheduled sessions
 
-Status: **PLAN (intent, not result).** Drafted 2026-08-11 after the FINAL_SIGNOFF correction pass
-established that Rounds 1–2 are code-complete and server-test-verified, but **Round 3 was never
-implemented**. This document schedules the remaining work. It creates **no** `fixed` disposition;
+Status: **SCHEDULED WORK EXECUTED AT SOURCE/DOCUMENTATION LEVEL; sign-off gates remain.**
+This plan was drafted 2026-08-11 as intent. All 20 scheduled sessions have since been touched
+and S3-20 is complete. This is not a claim that every planned verification passed: S3-15b
+(Firestore Rules emulator) later passed 186/186; S3-19b (full Android compile/unit-test catch-up)
+remains outstanding. This document schedules the remaining work. It creates **no** `fixed` disposition;
 per `SESSION_PROTOCOL.md` §0–§1, a row moves to `fixed` only in its own session, only after the
 verification named here actually runs, and only recorded in **[`../BUG_TRACKER.md`](../BUG_TRACKER.md)**
 (the successor to the deleted `FINDING_INDEX.md`/`MASTER_CHECKLIST.md`/`REMEDIATION_PROGRESS.md`/
@@ -16,12 +18,11 @@ verification named here actually runs, and only recorded in **[`../BUG_TRACKER.m
 
 ## Scope
 
-- **116** findings total. **13** are already closed and are **out of scope** here (do not re-open or
+- **Historical planning baseline:** 116 findings total. **13** were already closed and were **out of scope** here (do not re-open or
   re-litigate unless current source falsifies them): `S03-H1`, `S04-H1`, `S04-H2`, `S04-H3`,
   `S05-H1`, `S05-H3`, `S05-I1`, `S06-H2`, `S06-H3`, `S06-I2`, `S07-C1`, `S08-H4` (fixed) and
   `S01-L1` (partial — finish item, scheduled in S3-05).
-- **103** findings remain open. Of these, **~11** are planned `accepted`/`accepted+partial`
-  (documentation, no code) and are consolidated into S3-20; the rest require a code change.
+- The original planning estimate of **103 open** findings is historical, not the current register state. Use the latest row dispositions in [`../BUG_TRACKER.md`](../BUG_TRACKER.md); its latest table reports 118 total (64 Fixed, 36 Partial, 6 Open, 12 Accepted), and must be independently recounted before sign-off.
 - Each session below is one unit of work = **fix + verify + document** exactly as the protocol
   defines: land the change, run the verification for that session's lane, then update the row's
   status in `../BUG_TRACKER.md` and write the session file under `sessions/`.
@@ -48,12 +49,13 @@ verification named here actually runs, and only recorded in **[`../BUG_TRACKER.m
 |---|---|---|
 | **SRV** — `server/` | `cd server && npm test` (currently 153/153) | **Yes** |
 | **WORKER** — `worker/` | `node --check` + unit tests; `wrangler` dry-run | **Yes** (Node); wrangler deploy = operator |
-| **RULES** — `firestore.rules` | `firestore-tests` on the emulator | **BLOCKED** — no JVM/`firebase` CLI |
-| **AND** — Android | `./gradlew :app:assembleDebug` + unit tests | **BLOCKED** — no JDK/Gradle/Android SDK |
+| **RULES** — `firestore.rules` | `firestore-tests` on the emulator | **DONE for S3-15b** — 186/186 passed |
+| **AND** — Android | `./gradlew :app:assembleDebug` + unit tests | **S3-19b OUTSTANDING** — broader catch-up not yet evidenced; PR #200's 2 Espresso tests do not replace it |
 | **CI** — workflows/supply chain | YAML lint, `git`/`gh` inspection, hash recompute | **Yes** (config); actual CI run = operator |
 
-RULES and AND sessions produce source-verified changes now and are **re-verified in S3-15b / S3-19b**
-(catch-up gates) when an operator provides the toolchain. This is called out per session.
+RULES and AND sessions produced source-verified changes. S3-15b subsequently ran and passed 186/186.
+S3-19b remains outstanding for the full Android build/unit-test catch-up; PR #200's separate Espresso
+workflow passed 2 instrumentation tests but does not satisfy that broader gate.
 
 ---
 
@@ -220,20 +222,19 @@ Not new fixes: `./gradlew :app:assembleDebug` + unit tests for every Android cha
 **No release and no sign-off before this passes.**
 
 ### S3-20 — Accepted dispositions + final reconciliation  · lane DOC
-Write the justification for every `accepted`/`accepted+partial` row into `../BUG_TRACKER.md` /
+**Completed.** The justification for every `accepted`/`accepted+partial` row was written into `../BUG_TRACKER.md` /
 `decisions/`: `S01-I1`, `S01-I2`, `S02-I1`, `S02-I3` (checkRevoked half), `S03-I1`, `S03-I3`,
-`S06-I3`, `S07-I1`, `S07-I2`, `S07-I3`, `S08-M3`, `S08-I2`, `SC-11`. Then reconcile `../BUG_TRACKER.md`
-end-to-end, confirm the rollup **actually matches recorded dispositions** (not an intent column), and
-only then revisit `FINAL_SIGNOFF.md`.
+`S06-I3`, `S07-I1`, `S07-I2`, `S07-I3`, `S08-M3`, `S08-I2`, `SC-11`. The S3-20 reconciliation was completed. See the current tracker addendum for the 2026-11-04 merge
+batch and workflow evidence; independently recount rows before final sign-off.
 
 ---
 
 ## Sign-off gate (unchanged from FINAL_SIGNOFF.md)
 
-`FINAL_SIGNOFF.md` stays **PENDING** until: all 20 sessions above are recorded `fixed`/`accepted`
-in `../BUG_TRACKER.md` with real evidence; **S3-15b and S3-19b have actually run** (no BLOCKED rows
-left claiming `fixed`) — **S3-15b ran this session (186/186 emulator tests passed); S3-19b remains
-outstanding** (no Android SDK/Gradle toolchain in this environment); operator items — GCP key
-revoked, all creds rotated, branch protection on, TTL/App Check/SBOM done; and an operator has built
-and released the Android client together with the server. Anything asserted before that is false
-progress.
+`FINAL_SIGNOFF.md` remains **PENDING**. S3-15b passed (186/186 Firestore emulator tests); S3-19b
+remains outstanding for the full Android compile/unit-test gate. PR #200's Espresso job passed
+2 instrumentation tests, and post-merge CI/security scans for main at
+b17f26437bc0731b12f8d5bdb99d4268d860adc9 both passed. Remaining gates include S02-I3 revoked-token
+integration verification; SC-03 hashes/enforcement; SC-12 branch protection; GCP/Worker/B2/admin
+credential rotation; App Check and Firestore operator settings; production environment/tag
+protection; trust-boundary review; and coordinated server + Android release. See FINAL_SIGNOFF.md.
