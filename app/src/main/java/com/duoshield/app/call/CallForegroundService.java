@@ -122,7 +122,10 @@ public class CallForegroundService extends Service {
 
         // Tap notification → bring CallActivity to foreground
         Intent openIntent = new Intent(this, CallActivity.class);
-        openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        // Adopt the live call even when the previous call screen no longer exists.
+        openIntent.putExtra(CallActivity.EXTRA_RESUME, true);
+        openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         PendingIntent openPi = PendingIntent.getActivity(this, 0, openIntent, piFlags);
 
         // "End" action → stops call

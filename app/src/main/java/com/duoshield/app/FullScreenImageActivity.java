@@ -25,6 +25,12 @@ import java.util.concurrent.Executors;
 
 public class FullScreenImageActivity extends BaseActivity {
 
+    /** Immersive viewer: the return-to-call strip would shift the content. */
+    @Override
+    protected boolean showsReturnToCallBar() {
+        return false;
+    }
+
     public static final String EXTRA_URL         = "image_url";
     public static final String EXTRA_MEDIA_KEY   = "media_key";
     public static final String EXTRA_SENDER_NAME = "sender_name";

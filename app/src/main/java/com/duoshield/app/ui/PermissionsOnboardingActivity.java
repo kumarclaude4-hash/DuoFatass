@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat;
 
 import com.duoshield.app.MainActivity;
 import com.duoshield.app.R;
+import com.duoshield.app.util.BackPressGuard;
 import com.google.android.material.button.MaterialButton;
 
 import java.util.ArrayList;
@@ -58,6 +59,7 @@ public class PermissionsOnboardingActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        BackPressGuard.onBack(this, this::finishAndProceed);
         setContentView(R.layout.activity_permissions_onboarding);
 
         // BLUETOOTH_CONNECT is only a runtime permission on Android 12 (API 31)+.
@@ -140,11 +142,5 @@ public class PermissionsOnboardingActivity extends AppCompatActivity {
         startActivity(next);
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
         finish();
-    }
-
-    /** Block the hardware back button — the user should make a choice via the buttons. */
-    @Override
-    public void onBackPressed() {
-        finishAndProceed();
     }
 }

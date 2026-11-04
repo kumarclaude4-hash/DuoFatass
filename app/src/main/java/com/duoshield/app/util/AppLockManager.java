@@ -68,6 +68,17 @@ public class AppLockManager {
            .edit().putLong(KEY_LOCK_TS, System.currentTimeMillis()).apply();
     }
 
+    /**
+     * True while a background timestamp is pending — i.e. the app was in the background the
+     * last time anything recorded it and nothing has since confirmed the user is back (and
+     * unlocked). Read-only; used by screens that are not a {@code BaseActivity} (the call
+     * screens) to decide whether counting themselves as a foreground activity would overwrite
+     * an older timestamp when they stop.
+     */
+    public static boolean hasBackgroundTimestamp(Context ctx) {
+        return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_LOCK_TS, 0) != 0;
+    }
+
     public static void onAppForegrounded(Context ctx) {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
            .edit().putLong(KEY_LOCK_TS, 0).apply();

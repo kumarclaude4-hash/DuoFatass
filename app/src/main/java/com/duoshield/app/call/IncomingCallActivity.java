@@ -212,6 +212,8 @@ public class IncomingCallActivity extends AppCompatActivity {
         timeoutHandler.removeCallbacksAndMessages(null);
 
         Intent intent = new Intent(this, CallActivity.class);
+        // CallActivity lives in its own task (see AndroidManifest taskAffinity).
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra(CallActivity.EXTRA_CALL_ID,      callId);
         intent.putExtra(CallActivity.EXTRA_CALLER_ID,    callerId);
         intent.putExtra(CallActivity.EXTRA_IS_VIDEO,     isVideo);

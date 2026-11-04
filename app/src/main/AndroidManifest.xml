@@ -256,7 +256,11 @@
             android:name=".call.CallActivity"
             android:exported="false"
             android:launchMode="singleTop"
+            android:taskAffinity="${applicationId}.call"
             android:screenOrientation="portrait"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:theme="@style/Theme.DuoShield.FullScreen"
             android:showWhenLocked="true"
             android:turnScreenOn="true" />
@@ -280,6 +284,9 @@
             android:name=".call.InCallChatActivity"
             android:exported="false"
             android:screenOrientation="portrait"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.DuoShield.FullScreen" />
 

@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.duoshield.app.R;
 import com.duoshield.app.util.NetworkStateHelper;
+import com.duoshield.app.util.BackPressGuard;
 import com.google.android.material.button.MaterialButton;
 
 /**
@@ -63,6 +64,7 @@ public class NoInternetActivity extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        BackPressGuard.onBack(this, () -> moveTaskToBack(true)); // back must not escape into the app while offline
         setContentView(R.layout.activity_no_internet);
 
         tvStatus = findViewById(R.id.tvOfflineStatus);
@@ -178,14 +180,5 @@ public class NoInternetActivity extends AppCompatActivity {
             }
             networkCallback = null;
         }
-    }
-
-    /**
-     * Back must not be an escape hatch into the app while the server is unreachable. Send
-     * the whole task to the background (equivalent to Home) instead of dismissing.
-     */
-    @Override
-    public void onBackPressed() {
-        moveTaskToBack(true);
     }
 }

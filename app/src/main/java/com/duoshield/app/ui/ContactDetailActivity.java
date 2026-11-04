@@ -200,6 +200,8 @@ public class ContactDetailActivity extends BaseActivity {
         }
         String myUid = com.google.firebase.auth.FirebaseAuth.getInstance().getUid();
         Intent i = new Intent(this, com.duoshield.app.call.CallActivity.class);
+        // CallActivity lives in its own task (see AndroidManifest taskAffinity).
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         i.putExtra(com.duoshield.app.call.CallActivity.EXTRA_IS_CALLER,    true);
         i.putExtra(com.duoshield.app.call.CallActivity.EXTRA_IS_VIDEO,     isVideo);
         i.putExtra(com.duoshield.app.call.CallActivity.EXTRA_MY_UID,       myUid);
