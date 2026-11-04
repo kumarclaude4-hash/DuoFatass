@@ -620,6 +620,73 @@ test('S03-M1: the cold (B2) tier also serves the key-derived Content-Type with n
 
 // ─── S03-M3: delete tokens are single-use and reject a legacy 5-part shape ─
 
+test('S03-M3: DELETE fails closed when the replay KV namespace is absent', async () => {
+  const env = makeEnv({ RATE_KV: undefined });
+  const key = `media/${'z'.repeat(20)}/kv-unavailable.jpg`;
+  const holder = 'user-alice';
+  const putToken = await mintToken('write', key, holder);
+  const put = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${putToken}`, 'Content-Length': '3' },
+    body: 'abc',
+  }), env, ctx);
+  assert.equal(put.status, 200);
+  assert.ok(await env.HOT_BUCKET.head(key));
+
+  const deleteToken = await mintToken('delete', key, holder);
+  const deletion = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${deleteToken}` },
+  }), env, ctx);
+  assert.equal(deletion.status, 503);
+  assert.match((await deletion.json()).error, /replay protection unavailable/i);
+  assert.ok(await env.HOT_BUCKET.head(key), 'object must remain untouched when replay protection is unavailable');
+});
+
+test('S03-M3: DELETE fails closed when replay KV lookup throws', async () => {
+  const env = makeEnv();
+  const key = `media/${'z'.repeat(20)}/kv-error.jpg`;
+  const holder = 'user-alice';
+  const putToken = await mintToken('write', key, holder);
+  const put = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${putToken}`, 'Content-Length': '3' },
+    body: 'abc',
+  }), env, ctx);
+  assert.equal(put.status, 200);
+  env.RATE_KV.get = async () => { throw new Error('simulated KV outage'); };
+
+  const deleteToken = await mintToken('delete', key, holder);
+  const deletion = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${deleteToken}` },
+  }), env, ctx);
+  assert.equal(deletion.status, 503);
+  assert.ok(await env.HOT_BUCKET.head(key), 'object must remain untouched when KV lookup fails');
+});
+
+test('S03-M3: DELETE does not mutate storage when writing the single-use marker fails', async () => {
+  const env = makeEnv();
+  const key = `media/${'z'.repeat(20)}/kv-put-error.jpg`;
+  const holder = 'user-alice';
+  const putToken = await mintToken('write', key, holder);
+  const put = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${putToken}`, 'Content-Length': '3' },
+    body: 'abc',
+  }), env, ctx);
+  assert.equal(put.status, 200);
+  env.RATE_KV.put = async () => { throw new Error('simulated KV write outage'); };
+
+  const deleteToken = await mintToken('delete', key, holder);
+  const deletion = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${deleteToken}` },
+  }), env, ctx);
+  assert.equal(deletion.status, 503);
+  assert.ok(await env.HOT_BUCKET.head(key), 'object must remain untouched when KV marker cannot be persisted');
+});
+
 test('S03-M3: a delete token can only be used once — replaying it after a successful delete is rejected', async () => {
   const env = makeEnv();
   const holder = 'user-single-use';
