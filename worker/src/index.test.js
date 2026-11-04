@@ -656,7 +656,7 @@ test('S03-M3: DELETE fails closed when replay KV lookup throws', async () => {
   assert.equal(put.status, 200);
   const originalGet = env.RATE_KV.get.bind(env.RATE_KV);
   env.RATE_KV.get = async (kvKey) => {
-    if (typeof kvKey === 'string' && kvKey.includes('delete:')) {
+    if (typeof kvKey === 'string' && kvKey.startsWith('token:used:')) {
       throw new Error('simulated replay KV outage');
     }
     return originalGet(kvKey);
