@@ -1,56 +1,83 @@
 # FINAL SIGN-OFF
 
-> Status: **PENDING** — this document is completed and signed only after Round 3
-> (the final planned round) exits. It is the hard stop of the program.
+> Status: **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF.**
+> Updated 2026-11-04 after the remediation merge batch and verification of the resulting
+> `main` workflows. This document is the release/sign-off gate, not a progress claim.
 
-Sign-off criteria — status as **re-assessed and corrected 2026-08-11** against
-[`../BUG_TRACKER.md`](../BUG_TRACKER.md) (the successor to the deleted `FINDING_INDEX.md`) and source.
-The four boxes below were previously checked `[x]`; that was false (see the correction note) and they
-are now unchecked. **Updated same day, tracker consolidation pass:** `../BUG_TRACKER.md` now records
-real, re-verified-from-source dispositions — **25 fixed, 6 partial, 12 accepted, 73 still open** —
-which is real progress over the "0 dispositions" state below, but still far short of sign-off.
+## Current evidence snapshot
 
-- [ ] **Every audit finding has exactly one final disposition.** **NOT MET.** `../BUG_TRACKER.md`
-      records 25 `fixed`, 6 `partial`, 12 `accepted`, and **73 still `open`** out of 116. The earlier
-      "116/116, 0 open" claim in a now-deleted report was produced by miscounting an intent column,
-      which carried no evidentiary weight.
-- [ ] **Every Critical finding is fixed or accepted-with-justification.** **PARTIAL.** `S07-C1` is
-      genuinely fixed and verified (Round 1). Remaining Criticals depend on Round 3, which is not
-      implemented.
-- [ ] **Every High finding is fixed or accepted-with-justification.** **NOT MET.** Source shows
-      unfixed Highs, e.g. `S01-H1` (cross-user prekey overwrite still allowed by `firestore.rules`)
-      and `S02-H1` (`/migrateUid` verbatim copy). These are Round 3 items and Round 3 has no code.
-- [ ] **Every Medium/Low/Informational finding is fixed, accepted, or deferred-with-justification.**
-      **NOT MET** — the bulk of these are Round 3 (85 of 116 findings are R3) and remain open.
-- [x] FINAL_SECURITY_REPORT.md written — see [`FINAL_SECURITY_REPORT.md`](./FINAL_SECURITY_REPORT.md)
-      (corrected 2026-08-11 to reflect the true state).
-- [ ] **Every fix has source + test evidence.** Source review: yes, all. Executed tests: **server layer
-      only** (153/153 pass). The Android layer has **never been compiled** and the Firestore rules
-      tests have **never been executed** — no JDK/Gradle/SDK and no `firebase` CLI in the remediation
-      environment. Source-reviewed is not test-verified, and this box stays unchecked until a build
-      environment proves otherwise.
-- [ ] Every trust boundary in TRUST_BOUNDARIES.md is revalidated (verified / accepted).
-- [ ] No unreviewed trust-boundary change remains.
-- [ ] **Operator actions complete.** 8 outstanding — `FINAL_SECURITY_REPORT.md` §3. Blocking ones:
-      the **leaked GCP service-account key is still un-revoked** (it shipped inside published APKs, so
-      it must be assumed compromised), remaining credential rotations, and `SC-12` branch protection
-      (re-checked 2026-08-11: still `404 Branch not protected`).
-- [ ] **Server and APK released together.** `/mintToken` hard-requires `nonce`+`signatureHex`; a
-      server-only deploy breaks old clients, and making those fields optional to accommodate them
-      would reintroduce the `S07-C1` account takeover.
+The canonical finding register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its latest in-file
+roll-up is **118 findings: 64 Fixed, 36 Partial, 6 Open, 12 Accepted**. These figures are
+carried from the current tracker table and were not independently recounted during this update;
+recount the finding rows and severity buckets before treating them as a fresh audit-grade tally.
 
-## Why this is still PENDING
+Merged to `main` on 2026-11-04:
+- #201 — screenshots blocked by default.
+- #202 — reject revoked Firebase ID tokens at the affected authenticated endpoints.
+- #203 — require AAD metadata on new group ciphertext.
+- #204 — release publishing restricted to immutable version tags / approved environment.
+- #205 — stop persisting decrypted message media; #206 was closed as a superseded duplicate.
+- #207 — server-managed one-time pre-key consumption.
+- #208 — media capability-token lifecycle and fail-closed delete replay protection.
 
-The **code** remediation is **not** complete. Rounds 1–2 are code-complete and, for the server,
-genuinely test-verified (153/153); **Round 3 — 85 of the 116 findings — is not implemented** (no R3
-commit; source confirms unfixed Highs such as `S01-H1` and `S02-H1`). On top of that, the
-**deployment** is not remediated: a live compromised GCP admin credential and an uncompiled Android
-client are not paperwork.
+PR #200 (`ci: fix Espresso SDK setup`) was also merged. Its CI run
+[41766375329](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41766375329)
+passed all jobs, including the emulator-backed **Instrumented tests (Espresso)** job; that job
+reported **2 Espresso tests executed**.
 
-Per `SESSION_PROTOCOL.md` §9 and this program's history of false-progress incidents, signing this
-document now would repeat that failure. The 2026-08-11 correction pass **withdrew** four boxes that
-had been checked on the strength of the intent column rather than source. Sign this only when the
-unchecked boxes above are actually true — Round 3 genuinely implemented and verified, operator items
-1–5 done — and verify each from source and command output, not from this file.
+Post-merge `main` HEAD:
+`b17f26437bc0731b12f8d5bdb99d4268d860adc9`.
+Both post-merge workflows completed successfully:
+[CI run 41792882092](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882092)
+and [Security scan run 41792882126](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882126).
 
-Final tallies, per-finding dispositions, and signatures are written here at program close.
+Firestore Rules catch-up gate S3-15b is **complete: 186/186 emulator tests passed** (see
+`START_HERE.md` and the S3-15b session record). This does not close the separate Android
+catch-up gate.
+
+## Sign-off criteria
+
+- [ ] **Every finding has one current disposition.** Use row-level state in `../BUG_TRACKER.md`;
+      independently recount section rows and reconcile the summary before signing.
+- [ ] **All Critical and High findings are fixed or explicitly accepted with a ratified rationale.**
+      Re-check every such row and its current source evidence, including operator dependencies.
+- [ ] **Every Partial finding has passed its missing verification or has an approved residual-risk
+      disposition.** In particular, S3-19b remains outstanding for the Android changes in
+      S3-15/16/17/18/19 and the S07-C1 Android compile gate. PR #200's two Espresso tests are useful
+      CI evidence but do not substitute for the full S3-19b compile/unit-test matrix.
+- [ ] **S02-I3 revoked-token integration verification.** PR #202 added check-revocation behavior
+      at the affected ID-token verification call sites. Still run the Firebase integration scenario:
+      issue an ID token, revoke refresh tokens, prove the old token is rejected on each affected
+      endpoint, and prove a newly issued token succeeds. Do not mark this complete from source
+      inspection alone.
+- [ ] **Supply-chain gates complete.** SC-03 still needs dependency-verification hashes populated
+      and enforced; confirm release provenance/SBOM and associated operator configuration.
+- [ ] **Branch protection verified.** SC-12 requires live confirmation that `main` protection and
+      required reviews/checks are enabled. A previous check reported branch protection absent;
+      no successful live re-check is recorded here.
+- [ ] **Secrets and credentials rotated.** Revoke the leaked Firebase/GCP service-account key and
+      rotate remaining Worker, Backblaze/B2, admin/session and other exposed credentials. Record
+      console/API evidence; source changes do not rotate deployed credentials.
+- [ ] **App Check and Firebase/Firestore operator configuration complete.** Enable enforcement only
+      after compatible clients are deployed; verify Firestore TTL/configuration and deployment state.
+      The rules-test workflow validates rules; it does not deploy them.
+- [ ] **Coordinated server + Android release completed.** Build and test the Android client, deploy
+      compatible server/Worker/Firestore rules in the documented order, and verify production
+      behavior. PR merges and green CI do not themselves deploy the complete stack.
+- [ ] **Trust-boundary review and release approval completed.** Revalidate `TRUST_BOUNDARIES.md`,
+      review residual risks, and obtain the required production-release approval and immutable-tag
+      ruleset/environment configuration.
+
+## Why this remains PENDING
+
+The remediation has materially advanced: all 20 scheduled Round 3 sessions have been worked through
+at source/documentation level, the S3-15b Firestore Rules catch-up passed, the security PR batch is
+merged, PR #200's Espresso job passed, and post-merge CI plus security scanning are green. That is
+not the same as end-to-end assurance. The full Android catch-up gate S3-19b remains outstanding;
+S02-I3 still needs live revoked-token integration verification; SC-03 and SC-12 have operator
+configuration dependencies; credentials must be rotated; App Check/Firestore settings and a
+coordinated production release need live evidence.
+
+Do not change this status to COMPLETE based solely on merged PRs or CI. Sign only after every
+unchecked criterion above is either satisfied with evidence or formally deferred with an explicit,
+approved residual-risk decision.
