@@ -188,10 +188,12 @@ test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
   assert.ok(handler.includes('auditAdminEvent("invite_created"'), "invite creation must be audited");
   const createWriteStart = handler.indexOf("await ref.create({");
   const createWriteEnd = handler.indexOf("});", createWriteStart);
-  const storedRecord = handler.slice(createWriteStart, createWriteEnd);
   assert.ok(createWriteStart >= 0 && createWriteEnd > createWriteStart, "invite write payload missing");
-  assert.doesNotMatch(storedRecord, /^\\s*token\\s*:/m, "the raw token must not be persisted");
+  const storedRecord = handler.slice(createWriteStart, createWriteEnd);
   assert.match(storedRecord, /tokenHash:\\s*invite\\.hashInviteToken\\(rawToken\\)/);
+  assert.match(storedRecord, /tokenFingerprint:\\s*invite\\.tokenFingerprint\\(rawToken\\)/);
+  assert.doesNotMatch(storedRecord, /(?:^|\\n)\\s*token\\s*:/m,
+    "Firestore may store only tokenHash/tokenFingerprint, never the one-time raw token");
 });
 
 test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-checked, and audited", () => {
