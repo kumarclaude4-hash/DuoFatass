@@ -128,6 +128,7 @@ function appendPreKeysWithHighWaterMark(
     if (!validId(firstId) || firstId !== additions[0].id) {
       const error = new TypeError("Server pre-key high-water mark missing; first batch ID required");
       error.code = "PREKEY_HIGH_WATER_MARK_REQUIRED";
+      error.status = 409;
       throw error;
     }
     mark = previousPreKeyId(firstId);
@@ -146,6 +147,7 @@ function appendPreKeysWithHighWaterMark(
     if (mark === null) {
       const error = new TypeError("Cannot append pre-keys without a trustworthy high-water mark");
       error.code = "PREKEY_HIGH_WATER_MARK_REQUIRED";
+      error.status = 409;
       throw error;
     }
     const distance = preKeyForwardDistance(entry.id, mark);
