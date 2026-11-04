@@ -22,11 +22,11 @@
 // interleave with another concurrent `fetch()` call to that same instance,
 // with no manual locking required. (See Cloudflare's Durable Objects docs:
 // "Requests to the same Durable Object are delivered in order and processed
-// one at a time.") Every (normalized IP)'s lockout state lives in exactly
-// one Durable Object instance (`idFromName(key)`), so incrementing that
-// instance's counter is a true atomic operation: two concurrent failures
-// for the same IP are guaranteed to be applied as two increments, never
-// collapsed into one.
+// one at a time.") Every opaque rate-limit bucket key (normalized IP for the
+// admin gate, or a hashed UID+endpoint for authenticated API limits) maps to
+// exactly one Durable Object instance (`idFromName(key)`). Incrementing that
+// instance's counter is therefore a true atomic operation: concurrent
+// requests for the same bucket are serialized, never collapsed into one.
 //
 // This is available on the Cloudflare Workers FREE plan as of the SQLite
 // storage backend (`new_sqlite_classes` migration in wrangler.jsonc) — no
@@ -79,7 +79,11 @@ export class AdminLockoutCounter {
 
   async alarm() {
     const existing = await this.state.storage.get(STORAGE_KEY);
-    if (!existing) return;
+    if (!existing) {
+      await this.state.storage.deleteAlarm();
+      await this.state.storage.deleteAll();
+      return;
+    }
 
     // Older records did not include windowMs; their historical lifetime was
     // DEFAULT_WINDOW_MS, so use that as a migration-safe default.
@@ -88,7 +92,10 @@ export class AdminLockoutCounter {
       : DEFAULT_WINDOW_MS;
     const expiresAt = existing.windowStart + lifetime;
     if (Date.now() >= expiresAt) {
-      await this.state.storage.delete(STORAGE_KEY);
+      await this.state.storage.deleteAlarm();
+      // Delete the entire SQLite-backed DO storage, not just the value: this
+      // deallocates the idle per-bucket instance's storage after expiry.
+      await this.state.storage.deleteAll();
       return;
     }
     // An early alarm (clock adjustment/runtime retry) must not delete a live
@@ -138,9 +145,9 @@ export class AdminLockoutCounter {
     if (action === "status") {
       const existing = await this.state.storage.get(STORAGE_KEY);
       if (!existing || now - existing.windowStart >= windowMs) {
-        if (existing) await this.state.storage.delete(STORAGE_KEY);
-        if (typeof this.state.storage.deleteAlarm === "function") {
+        if (existing) {
           await this.state.storage.deleteAlarm();
+          await this.state.storage.deleteAll();
         }
         return json({ count: 0, locked: false, windowStart: null });
       }
@@ -148,10 +155,8 @@ export class AdminLockoutCounter {
     }
 
     if (action === "reset") {
-      await this.state.storage.delete(STORAGE_KEY);
-      if (typeof this.state.storage.deleteAlarm === "function") {
-        await this.state.storage.deleteAlarm();
-      }
+      await this.state.storage.deleteAlarm();
+      await this.state.storage.deleteAll();
       return json({ ok: true });
     }
 
