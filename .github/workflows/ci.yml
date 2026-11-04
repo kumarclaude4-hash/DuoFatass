@@ -381,6 +381,10 @@ jobs:
       # was never created ("No compatible devices connected").
       - name: Set up Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          # Google no longer serves the legacy `tools` package, which is the
+          # default requested by this pinned action revision.
+          packages: 'platform-tools'
 
       # AVD snapshot cache. The cache is only restored on an exact key hit, so
       # the key must encode every AVD-defining property (api-level, target,
