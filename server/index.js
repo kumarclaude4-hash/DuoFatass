@@ -3457,11 +3457,18 @@ const server = http.createServer((req, res) => {
           return;
         }
         const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
-        await ref.update({ [field]: value, updatedAt: FieldValue.serverTimestamp() });
+        await db.runTransaction(async (tx) => {
+          const snap = await tx.get(ref);
+          if (!snap.exists) throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
+          tx.update(ref, { [field]: value, updatedAt: FieldValue.serverTimestamp() });
+        });
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
         res.end(JSON.stringify({ updated: field }));
       } catch (e) {
-        sendServerError(res, "signal/updatePreKey", e);
+        if (e.status) {
+          res.writeHead(e.status, { "Content-Type": "text/plain" });
+          res.end(e.message);
+        } else sendServerError(res, "signal/updatePreKey", e);
       }
     });
     return;
