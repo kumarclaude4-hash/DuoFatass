@@ -901,11 +901,23 @@ public final class B2StorageHelper {
     // ── Legacy plaintext cache cleanup ────────────────────────────────────────
 
     /**
-     * Compatibility no-op. Restore flows must not pre-populate a persistent cache
-     * containing decrypted message media.
+     * Preloads and authenticates restored media without persisting decrypted bytes.
+     * Small objects may remain in the bounded in-memory LRU; large objects are
+     * discarded after verification and will be fetched on demand.
+     *
+     * @param ctx retained for API compatibility.
      */
     public static void preCacheSync(Context ctx, String b2Path, String keyBase64) {
-        // Intentionally no-op: plaintext media is never cached on disk.
+        if (b2Path == null || b2Path.isEmpty()) return;
+        if (MEDIA_CACHE.get(b2Path) != null) return;
+        try {
+            byte[] raw = downloadFile(b2Path);
+            byte[] plain = decryptAfterDownload(raw, keyBase64);
+            cachePut(b2Path, plain);
+            Log.d(TAG, "preCacheSync: verified " + b2Path + " (" + plain.length + " B)");
+        } catch (Exception e) {
+            Log.w(TAG, "preCacheSync: skipped " + b2Path + " — " + e.getMessage());
+        }
     }
 
     /**
