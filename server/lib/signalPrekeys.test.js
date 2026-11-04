@@ -82,6 +82,16 @@ test("rejects a reused ID carrying a different public key", () => {
   );
 });
 
+test("public pre-key list bounds permit legitimate rotation retries", () => {
+  const existing = Array.from({ length: 99 }, (_, i) => publicKey(i + 1));
+  const next = publicKey(100);
+  assert.equal(signalPrekeys.appendPreKeys(existing, [next]).length, 100);
+  assert.throws(
+    () => signalPrekeys.appendPreKeys(existing, [next, publicKey(101)]),
+    /pool limit/
+  );
+});
+
 test("rotation duplicate detection is idempotent and compares every field", () => {
   const spk = signedPreKey();
   assert.equal(signalPrekeys.sameSignedPreKey(spk, { ...spk }), true);
