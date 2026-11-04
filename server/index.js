@@ -559,7 +559,11 @@ if (!MEDIA_TOKEN_SECRET) {
 
 // Short TTL: long enough to cover a slow upload on a poor connection, short
 // enough that a token captured from logs or a proxy is quickly worthless.
-const MEDIA_TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MEDIA_TOKEN_TTL_MS = {
+  read: 5 * 60 * 1000,   // 5 minutes; enough for a media read request
+  write: 10 * 60 * 1000, // 10 minutes; accommodates slow mobile uploads
+  delete: 60 * 1000,     // 1 minute; destructive capability, minimize exposure
+};
 
 const MEDIA_OPS = new Set(["read", "write", "delete"]);
 
@@ -3279,7 +3283,7 @@ const server = http.createServer((req, res) => {
           }
         }
 
-        const expiresAt = Date.now() + MEDIA_TOKEN_TTL_MS;
+        const expiresAt = Date.now() + MEDIA_TOKEN_TTL_MS[op];
         const token     = signMediaToken({ op, key, uid, expiresAt });
 
         res.writeHead(200, { "Content-Type": "application/json" });
