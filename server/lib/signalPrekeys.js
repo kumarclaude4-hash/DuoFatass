@@ -43,7 +43,7 @@ function validSignedPreKey(entry) {
 }
 
 function sameSignedPreKey(current, next) {
-  return current && next && current.id === next.id
+  return !!current && !!next && current.id === next.id
     && current.publicKey === next.publicKey
     && current.signature === next.signature
     && current.timestamp === next.timestamp;
@@ -62,7 +62,7 @@ function validKyberPreKey(entry) {
 }
 
 function sameKyberPreKey(current, next) {
-  return current && next && current.id === next.id
+  return !!current && !!next && current.id === next.id
     && current.publicKey === next.publicKey
     && current.signature === next.signature
     && current.timestamp === next.timestamp;
