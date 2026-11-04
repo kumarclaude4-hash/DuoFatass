@@ -94,24 +94,91 @@ function validInitialBundle(bundle) {
   return true;
 }
 
-function appendPreKeys(existing, additions, max = MAX_ONE_TIME_PREKEYS) {
+function getPreKeyHighWaterMark(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  // The pool is ordered oldest-to-newest: claims remove from the front and
+  // appended batches are added at the end. The last entry is the legacy
+  // high-water mark for bundles that predate the server-owned marker.
+  return entries[entries.length - 1].id;
+}
+
+function preKeyForwardDistance(id, highWaterMark) {
+  // IDs are generated in the inclusive 1..0xFFFFFF range and wrap to 1.
+  return (id - highWaterMark + MAX_PREKEY_ID) % MAX_PREKEY_ID;
+}
+
+function previousPreKeyId(firstId) {
+  if (!validId(firstId)) throw new TypeError("Invalid first one-time pre-key ID");
+  return firstId <= 1 ? MAX_PREKEY_ID : firstId - 1;
+}
+
+function appendPreKeysWithHighWaterMark(
+  existing,
+  additions,
+  max = MAX_ONE_TIME_PREKEYS,
+  highWaterMark = null,
+  firstId = null
+) {
   if (!validPreKeyList(existing, max) || !validPreKeyList(additions, max)) {
     throw new TypeError("Invalid one-time pre-key list");
   }
-  const existingIds = new Map(existing.map(entry => [entry.id, entry.publicKey]));
-  const byId = new Map(existing.map(entry => [entry.id, entry]));
-  for (const entry of additions) {
-    const current = byId.get(entry.id);
-    if (current && current.publicKey !== entry.publicKey) {
-      throw new TypeError("Pre-key ID already exists with different public key");
+
+  let mark = validId(highWaterMark) ? highWaterMark : getPreKeyHighWaterMark(existing);
+  if (mark === null && additions.length > 0) {
+    if (!validId(firstId) || firstId !== additions[0].id) {
+      const error = new TypeError("Server pre-key high-water mark missing; first batch ID required");
+      error.code = "PREKEY_HIGH_WATER_MARK_REQUIRED";
+      throw error;
     }
-    // Never resurrect an already consumed one-time key. A retry is allowed only
-    // when the exact ID/public-key pair is still present in the server pool.
-    if (!existingIds.has(entry.id)) byId.set(entry.id, entry);
+    mark = previousPreKeyId(firstId);
   }
-  const result = Array.from(byId.values()).sort((a, b) => a.id - b.id);
-  if (result.length > max) throw new RangeError("One-time pre-key pool limit exceeded");
-  return result;
+
+  const activeById = new Map(existing.map(entry => [entry.id, entry]));
+  const newCandidates = [];
+  for (const entry of additions) {
+    const active = activeById.get(entry.id);
+    if (active) {
+      if (active.publicKey !== entry.publicKey) {
+        throw new TypeError("Pre-key ID already exists with different public key");
+      }
+      continue;
+    }
+    if (mark === null) {
+      const error = new TypeError("Cannot append pre-keys without a trustworthy high-water mark");
+      error.code = "PREKEY_HIGH_WATER_MARK_REQUIRED";
+      throw error;
+    }
+    const distance = preKeyForwardDistance(entry.id, mark);
+    if (distance === 0 || distance > Math.floor(MAX_PREKEY_ID / 2)) continue;
+    newCandidates.push({ entry, distance });
+  }
+
+  newCandidates.sort((a, b) => a.distance - b.distance);
+  const appended = [];
+  for (const candidate of newCandidates) {
+    const entry = candidate.entry;
+    const active = activeById.get(entry.id);
+    if (active) {
+      if (active.publicKey !== entry.publicKey) {
+        throw new TypeError("Pre-key ID already exists with different public key");
+      }
+      continue;
+    }
+    const distance = preKeyForwardDistance(entry.id, mark);
+    if (distance === 0 || distance > Math.floor(MAX_PREKEY_ID / 2)) continue;
+    activeById.set(entry.id, entry);
+    appended.push(entry);
+    mark = entry.id;
+  }
+
+  if (existing.length + appended.length > max) {
+    throw new RangeError("One-time pre-key pool limit exceeded");
+  }
+  return { oneTimePreKeys: existing.concat(appended), highWaterMark: mark };
+}
+
+function appendPreKeys(existing, additions, max = MAX_ONE_TIME_PREKEYS) {
+  return appendPreKeysWithHighWaterMark(existing, additions, max).oneTimePreKeys;
 }
 
 function validStoredBundle(bundle) {
@@ -146,5 +213,8 @@ module.exports = {
   validInitialBundle,
   validStoredBundle,
   appendPreKeys,
+  appendPreKeysWithHighWaterMark,
+  getPreKeyHighWaterMark,
+  previousPreKeyId,
   claimOneTimePreKey,
 };
