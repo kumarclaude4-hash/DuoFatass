@@ -198,13 +198,41 @@ match what the old index already claimed, re-confirmed against source.
 ## Summary
 
 | Sev | Total | Fixed | Partial | Open | Accepted |
-|---|---|---|---|---|---|
-| Critical | 4 | **4** | 0 | **0** | 0 |
+|---|---:|---:|---:|---:|---:|
+| Critical | 4 | 4 | 0 | 0 | 0 |
 | High | 31 | 19 | 10 | 2 | 0 |
 | Medium | 27 | 15 | 11 | 0 | 1 |
 | Low | 33 | 18 | 13 | 1 | 1 |
 | Info | 23 | 8 | 2 | 3 | 10 |
 | **Total** | **118** | **64** | **36** | **6** | **12** |
+
+> **Current status addendum — 2026-11-04.** The row counts above are the latest counts already
+> recorded in this tracker (118 total: 64 Fixed, 36 Partial, 6 Open, 12 Accepted); they were
+> not independently recounted during this update. The S3-20 and post-S3-20 recount notes below
+> are historical snapshots and must not be mistaken for a new 2026-11-04 row-by-row audit.
+> Recount every finding row and reconcile the severity buckets before final sign-off.
+>
+> **Merged to main on 2026-11-04:** #201 screenshot default; #202 revoked Firebase ID-token
+> checks; #203 AAD enforcement for new group ciphertext; #204 immutable tag-only release
+> workflow; #205 removal of persistent decrypted-media cache; #207 server-managed one-time
+> pre-key consumption; and #208 media capability-token lifecycle plus fail-closed delete replay
+> protection. PR #206 was closed as a duplicate/superseded alternative to #205, not merged.
+> PR #200 (Espresso SDK setup) was also merged. Its CI run [41766375329](https://github.com/
+> kumarclaude4-hash/DuoFatass/actions/runs/41766375329) passed all jobs, including the
+> emulator-backed Instrumented tests (Espresso) job, which reported **2 Espresso tests executed**.
+>
+> Post-merge main HEAD: `b17f26437bc0731b12f8d5bdb99d4268d860adc9`. CI run
+> [41792882092](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882092)
+> and Security scan run
+> [41792882126](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882126)
+> both completed successfully.
+>
+> **Do not infer overall sign-off:** PR #200's 2 Espresso tests do not satisfy the broader
+> S3-19b Android compile/unit-test catch-up gate. S3-15b Rules emulator testing is complete
+> (186/186 passed), while S3-19b remains outstanding. S02-I3 still requires Firebase
+> revoke-token integration verification. SC-03 dependency hashes/enforcement, SC-12 branch
+> protection, external credential/key rotation, App Check enforcement, Firestore TTL/config
+> and coordinated production server+APK release remain outstanding unless separately evidenced.
 
 > **Rollup reconciliation (S3-20 — this pass owns the end-to-end
 > reconciliation the previous caveat deferred).** Every row in every section
@@ -247,20 +275,15 @@ match what the old index already claimed, re-confirmed against source.
 > stand after those 13 edits — recount it directly against the section bodies
 > if a future session doubts it, using the same anchor pattern noted above. 
 
-This is meaningfully worse than the old `MASTER_CHECKLIST.md`'s last snapshot
-(0% complete, everything reset) and meaningfully better than
-`FINDING_INDEX.md`'s row-by-row claims in five specific places (table above).
-Neither old document reflected the actual repo at any single point in time —
-this file does, as of `298f916`.
+The preceding comparison describes the historical consolidation baseline at `298f916`.
+The repository has advanced since then; see the 2026-11-04 addendum under Summary for
+merged remediation PRs and post-merge CI/security workflow evidence.
 
 ## Next steps for anyone picking this up
 
-1. Rows marked **Carried** were not re-read against source in this pass —
-   re-verify before relying on them, same discipline that caught the five
-   corrections above.
-2. Highest-value next fixes by exposure: **SC-01** (unverified crypto JAR —
-   the last open Critical), **S08-H5/S07-M1** (plaintext key fallback),
-   **S01-H1/H2/H3** (Firestore rules gaps with no code dependency, cheap to
-   close), **S07-H2/H3** (backup oracle, missing AAD).
-3. `SC-04`, `SC-05`, `SC-12` need an operator with GitHub Actions/branch
-   settings access — they can't be closed from source alone.
+1. Rows marked **Carried** still require source re-verification before reliance.
+2. Reassess unresolved and Partial rows against current source and test evidence. Do not infer
+   that a merged PR closes a finding without mapping its exact code path and verification.
+3. Operator gates remain, including SC-03 dependency hashes/enforcement, SC-12 branch protection,
+   external credential rotation, App Check/Firebase/Firestore configuration, and coordinated
+   production release. See `security-remediation/FINAL_SIGNOFF.md`.
