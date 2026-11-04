@@ -65,9 +65,9 @@ messaging server over one would trade a small exposure for a total outage.
 |---|---|---|
 | `TURN_TOKEN_ID`, `TURN_API_TOKEN` | Cloudflare TURN credentials for calls | `/turnCredentials` returns `503`; client-side behaviour after that is not documented here (not verified) |
 | `PUBLIC_BASE_URL` | Absolute origin of this server, used to build proxied preview-image URLs | Derived from `X-Forwarded-Proto`/`Host`; set it explicitly behind a proxy that rewrites `Host` |
-| `ADMIN_LOCKOUT_WORKER_URL`, `ADMIN_LOCKOUT_WORKER_SECRET` | Cloudflare Worker + Durable Object endpoint backing the admin brute-force lockout counter (`lib/adminLockoutStore.js`, S04-L3) | Falls back to a process-local counter — same behaviour as before this was made durable, i.e. it does NOT survive a Render restart/redeploy or span multiple instances. Both must be set together; the server still boots and serves traffic either way. |
+| `ADMIN_LOCKOUT_WORKER_URL`, `ADMIN_LOCKOUT_WORKER_SECRET` | Cloudflare Worker + Durable Object endpoint backing the admin brute-force lockout and authenticated endpoint rate-limit buckets (`lib/adminLockoutStore.js`, `lib/authRateLimitStore.js`) | Falls back to bounded process-local counters — these do NOT survive a Render restart/redeploy or span multiple instances. Both must be set together; the server still boots and serves traffic either way. |
 
-#### Cloudflare Durable Object setup (admin lockout durability + atomicity)
+#### Cloudflare Durable Object setup (admin lockout + authenticated API rate-limit durability)
 
 As of 2026-08-14 this is backed by a Cloudflare Durable Object
 (`worker/src/adminLockoutDurableObject.js`), fronted by the `/adminLockout`
@@ -76,11 +76,12 @@ This is **not** Cloudflare KV — an earlier same-day attempt to back this
 counter with plain KV (`GET`→increment→`PUT`) was found to have a genuine
 concurrency bug (concurrent failed admin-login attempts could undercount
 the lockout, widening an attacker's guess budget) and was replaced before
-ever shipping. Durable Objects guarantee that every request to the same
-instance is processed strictly one at a time, so the increment here is
-genuinely atomic — see `adminLockoutStore.js`'s header comment for the full
-fix history, and `adminLockoutDurableObject.js`'s for why the guarantee
-holds. This also replaces the original Upstash Redis-backed store
+ever shipping. Durable Objects guarantee that requests to the same opaque
+bucket instance are processed one at a time, so the increment is atomic.
+The Render server uses it for both admin IP lockout keys and SHA-256-derived
+per-user/per-endpoint authenticated API rate-limit keys. Each counter's
+fixed-window record expires through a Durable Object alarm, which deletes
+all per-instance storage after expiry; see `adminLockoutDurableObject.js`. This also replaces the original Upstash Redis-backed store
 (`KV_REST_API_URL`/`KV_REST_API_TOKEN` — **removed**, no longer read by
 `index.js`; safe to delete from Render and from wherever the Upstash
 integration provisioned them once this migration is deployed and verified).
