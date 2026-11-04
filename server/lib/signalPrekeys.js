@@ -114,17 +114,21 @@ function appendPreKeys(existing, additions, max = MAX_ONE_TIME_PREKEYS) {
   return result;
 }
 
+function validStoredBundle(bundle) {
+  return !!bundle && typeof bundle === "object" && !Array.isArray(bundle)
+    && isBase64(bundle.identityKey, 33, 33)
+    && Number.isInteger(bundle.registrationId)
+    && bundle.registrationId >= 1 && bundle.registrationId <= 16383
+    && validSignedPreKey(bundle.signedPreKey)
+    && (bundle.kyberPreKey === undefined || validKyberPreKey(bundle.kyberPreKey))
+    && validPreKeyList(bundle.oneTimePreKeys);
+}
+
 function claimOneTimePreKey(bundle) {
-  if (!bundle || typeof bundle !== "object" || Array.isArray(bundle)
-      || !isBase64(bundle.identityKey, 33, 33)
-      || !Number.isInteger(bundle.registrationId)
-      || bundle.registrationId < 1 || bundle.registrationId > 16383
-      || !validSignedPreKey(bundle.signedPreKey)
-      || (bundle.kyberPreKey !== undefined && !validKyberPreKey(bundle.kyberPreKey))) {
+  if (!validStoredBundle(bundle)) {
     throw new TypeError("Invalid Signal key bundle");
   }
-  const keys = Array.isArray(bundle.oneTimePreKeys) ? bundle.oneTimePreKeys.slice() : [];
-  if (!validPreKeyList(keys)) throw new TypeError("Stored Signal pre-key pool is invalid");
+  const keys = bundle.oneTimePreKeys.slice();
   const claimed = keys.length ? keys.shift() : null;
   const remaining = { ...bundle, oneTimePreKeys: keys };
   const response = { ...bundle, oneTimePreKeys: claimed ? [claimed] : [] };
@@ -140,6 +144,7 @@ module.exports = {
   sameKyberPreKey,
   validPreKeyList,
   validInitialBundle,
+  validStoredBundle,
   appendPreKeys,
   claimOneTimePreKey,
 };
