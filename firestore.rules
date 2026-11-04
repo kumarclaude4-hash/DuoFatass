@@ -74,21 +74,13 @@ service cloud.firestore {
                         || request.resource.data.platform is string);
       allow delete: if request.auth != null && request.auth.uid == uid;
 
-      // public_keys subcollection: owner can write their own bundle.
-      // Prekey consumption is server-mediated. Clients may read public bundles,
-      // but no client (including the owner) may mutate this shared bundle directly.
-      // The authenticated /consumePreKey endpoint performs atomic one-time-key
-      // consumption using the Admin SDK after verifying conversation membership.
-      // Without this rule, consumeOtpkOnFirestore() always gets PERMISSION_DENIED
-      // and index-0 is silently reused for every new session (BUG-F01 / BUG-F05).
+      // public_keys subcollection: public key bundles are readable by signed-in
+      // users, but all mutations are server-mediated through authenticated
+      // /signal/* endpoints. The server uses Firestore Admin transactions to
+      // validate additions/rotations and atomically claim a single OTP key.
       match /public_keys/{doc} {
-        allow read:   if request.auth != null;
+        allow read: if request.auth != null;
         allow create: if request.auth != null && request.auth.uid == uid;
-        // All public-key bundle mutations are server-mediated. A client-side
-        // owner check is insufficient here because the document contains both
-        // long-lived identity material and an array of consumable one-time keys;
-        // server Admin SDK transactions preserve the bundle while atomically
-        // consuming exactly the selected key.
         allow update: if false;
         allow delete: if request.auth != null && request.auth.uid == uid;
       }
