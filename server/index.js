@@ -2747,7 +2747,7 @@ const server = http.createServer((req, res) => {
 
         let decodedToken;
         try {
-          decodedToken = await admin.auth().verifyIdToken(idToken);
+          decodedToken = await admin.auth().verifyIdToken(idToken, true);
         } catch (authErr) {
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Invalid or expired token");
@@ -2978,7 +2978,7 @@ const server = http.createServer((req, res) => {
 
         let decodedToken;
         try {
-          decodedToken = await admin.auth().verifyIdToken(idToken);
+          decodedToken = await admin.auth().verifyIdToken(idToken, true);
         } catch (authErr) {
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Invalid or expired token");
@@ -3084,7 +3084,7 @@ const server = http.createServer((req, res) => {
 
         let decodedToken;
         try {
-          decodedToken = await admin.auth().verifyIdToken(idToken);
+          decodedToken = await admin.auth().verifyIdToken(idToken, true);
         } catch (authErr) {
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Invalid or expired token");
@@ -3210,7 +3210,7 @@ const server = http.createServer((req, res) => {
 
         let uid;
         try {
-          uid = (await admin.auth().verifyIdToken(idToken)).uid;
+          uid = (await admin.auth().verifyIdToken(idToken, true)).uid;
         } catch {
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Invalid or expired token");
@@ -3308,7 +3308,7 @@ const server = http.createServer((req, res) => {
         }
         let turnUid;
         try {
-          turnUid = (await admin.auth().verifyIdToken(idToken)).uid;
+          turnUid = (await admin.auth().verifyIdToken(idToken, true)).uid;
         } catch (authErr) {
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Invalid or expired token");
@@ -3632,7 +3632,7 @@ const server = http.createServer((req, res) => {
         const tok = (req.headers["authorization"] || "").replace(/^Bearer\s+/, "").trim();
         if (!tok) { res.writeHead(401); res.end("Unauthorized"); return; }
         let lpUid;
-        try { lpUid = (await admin.auth().verifyIdToken(tok)).uid; }
+        try { lpUid = (await admin.auth().verifyIdToken(tok, true)).uid; }
         catch { res.writeHead(401); res.end("Invalid token"); return; }
         if (!checkAuthRateLimit(lpUid, "linkPreview")) {
           res.writeHead(429); res.end("Rate limit exceeded — retry in 60 s"); return;
@@ -3790,7 +3790,7 @@ const server = http.createServer((req, res) => {
         const tok = (req.headers["authorization"] || "").replace(/^Bearer\s+/, "").trim();
         if (!tok) { res.writeHead(401); res.end("Unauthorized"); return; }
         let callerUid;
-        try { callerUid = (await admin.auth().verifyIdToken(tok)).uid; }
+        try { callerUid = (await admin.auth().verifyIdToken(tok, true)).uid; }
         catch { res.writeHead(401); res.end("Invalid token"); return; }
         if (!checkAuthRateLimit(callerUid, "removeGroupMember")) {
           res.writeHead(429); res.end("Rate limit exceeded — retry in 60 s"); return;
@@ -3853,7 +3853,7 @@ const server = http.createServer((req, res) => {
 
         let uid;
         try {
-          uid = (await admin.auth().verifyIdToken(idToken)).uid;
+          uid = (await admin.auth().verifyIdToken(idToken, true)).uid;
         } catch (_) {
           res.writeHead(401, { "Content-Type": "text/plain" });
           res.end("Invalid or expired token");
