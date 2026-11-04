@@ -36,7 +36,7 @@ function validSignedPreKey(entry) {
   return !!entry && typeof entry === "object" && !Array.isArray(entry)
     && validId(entry.id)
     && isBase64(entry.publicKey, 33, 33)
-    && isBase64(entry.signature, 64, 128)
+    && isBase64(entry.signature, 64, 64)
     && Number.isSafeInteger(entry.timestamp) && entry.timestamp > 0
     && Object.keys(entry).every(key =>
       key === "id" || key === "publicKey" || key === "signature" || key === "timestamp");
@@ -49,7 +49,7 @@ function validKyberPreKey(entry) {
   return !!entry && typeof entry === "object" && !Array.isArray(entry)
     && validId(entry.id)
     && isBase64(entry.publicKey, 1568, 1568)
-    && isBase64(entry.signature, 64, 128)
+    && isBase64(entry.signature, 64, 64)
     && Number.isSafeInteger(entry.timestamp) && entry.timestamp > 0
     && Object.keys(entry).every(key =>
       key === "id" || key === "publicKey" || key === "signature" || key === "timestamp");
