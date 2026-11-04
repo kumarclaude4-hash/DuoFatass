@@ -64,6 +64,11 @@ test("appends only unique IDs and preserves existing public keys", () => {
   );
 });
 
+test("appending the same generated batch a second time is idempotent", () => {
+  const batch = [publicKey(10), publicKey(11, 2)];
+  assert.deepEqual(signalPrekeys.appendPreKeys(batch, batch), batch);
+});
+
 test("rejects a reused ID carrying a different public key", () => {
   assert.throws(
     () => signalPrekeys.appendPreKeys([publicKey(1)], [publicKey(1, 8)]),
