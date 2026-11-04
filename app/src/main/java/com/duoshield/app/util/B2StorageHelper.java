@@ -900,14 +900,9 @@ public final class B2StorageHelper {
         if (b2Path != null) MEDIA_CACHE.remove(b2Path);
     }
 
-    /** Evicts a path from both in-memory and disk caches. Requires context for disk. */
+    /** Evicts a path from the volatile in-memory cache. Context is retained for API compatibility. */
     public static void evictCache(Context ctx, String b2Path) {
-        if (b2Path == null) return;
-        MEDIA_CACHE.remove(b2Path);
-        if (ctx != null) {
-            File f = diskCacheFile(ctx, b2Path);
-            if (f != null && f.exists()) f.delete();
-        }
+        if (b2Path != null) MEDIA_CACHE.remove(b2Path);
     }
 
     // ── Legacy plaintext cache cleanup ────────────────────────────────────────
