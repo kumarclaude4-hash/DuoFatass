@@ -71,6 +71,16 @@ test("rejects a reused ID carrying a different public key", () => {
   );
 });
 
+test("rotation duplicate detection is idempotent and compares every field", () => {
+  const spk = signedPreKey();
+  assert.equal(signalPrekeys.sameSignedPreKey(spk, { ...spk }), true);
+  assert.equal(signalPrekeys.sameSignedPreKey(spk, { ...spk, publicKey: b64(33) + "AA==" }), false);
+
+  const kyber = kyberPreKey();
+  assert.equal(signalPrekeys.sameKyberPreKey(kyber, { ...kyber }), true);
+  assert.equal(signalPrekeys.sameKyberPreKey(kyber, { ...kyber, id: 2 }), false);
+});
+
 test("claim returns exactly one pre-key and leaves it out of the stored bundle", () => {
   const original = validBundle();
   const { remaining, response, claimed } = signalPrekeys.claimOneTimePreKey(original);
