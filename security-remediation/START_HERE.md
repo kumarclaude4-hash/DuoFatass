@@ -24,18 +24,19 @@ until all residual test and operator gates have been verified.
 
 ```
 NEXT ACTION: S3-20 is the final scheduled session and is complete. Do not invent S3-21.
-S3-15b (Firestore Rules catch-up) is DONE: 186/186 emulator tests passed. S3-19b (full Android
-compile + unit-test catch-up for the Android changes in S3-15/16/17/18/19 and the S07-C1
-Android compile gate) remains OPEN. PR #200's separate Espresso workflow passed 2 instrumentation
+S3-15b (Firestore Rules catch-up) is DONE: 186/186 emulator tests passed. S3-19b is also now verified on main CI. S3-19b (full Android compile + unit-test catch-up for the Android changes in S3-15/16/17/18/19
+and the S07-C1 Android compile gate) is now **verified on main CI** (lint, unit tests, debug APK,
+Espresso 2/2, supply-chain gates all passed). PR #200's separate Espresso workflow passed 2 instrumentation
 tests, but does not satisfy this broader catch-up gate. Security PRs #201–#205/#207/#208 and
 Espresso PR #200 are merged. Post-merge CI and Security scan on main at
 b17f26437bc0731b12f8d5bdb99d4268d860adc9 both completed successfully (runs 41792882092 and
-41792882126). Remaining gates: Firebase revoke-token integration verification for S02-I3; SC-03
-Gradle dependency hashes populated and enforced; SC-12 main branch protection; leaked GCP
-service-account key and remaining Worker/B2/admin credential rotations; App Check enforcement
-and Firebase/Firestore operator configuration; production environment/tag protections; trust-
-boundary review; and coordinated server + Android build/release. Keep FINAL_SIGNOFF.md PENDING
-until each item is verified from live evidence.
+41792882126). Remaining gates: Firebase revoke-token integration test for S02-I3; Render/Worker credential
+verification for shared auth rate limiting; SC-12 main branch protection and tag/ruleset settings;
+leaked GCP service-account key and remaining Worker/B2/admin credential rotations; App Check
+enforcement and Firebase/Firestore operator configuration; trust-boundary review; and coordinated
+production server + Android release. SC-03 hashes/enforcement and the full S3-19b Android CI gate
+are now verified green on main. Keep FINAL_SIGNOFF.md PENDING until the remaining external items
+are evidenced.
 ```
 
 If `NEXT SESSION` above is `S3-20 complete`, do **not** start coding — go to the sign-off gate at the
@@ -96,3 +97,13 @@ evidence. Tracked in the plan's sign-off gate and `SESSION_PROTOCOL.md §6`.
 `START_HERE.md` (this file, for `NEXT SESSION`) → `SESSION_PROTOCOL.md` (rules) →
 `ROUND3_REMEDIATION_PLAN.md` (the session's scope) → `../BUG_TRACKER.md` (per-row truth) →
 previous `sessions/SESSION-*.md` (inherited evidence). Then work.
+
+## Final mainline verification — 2026-11-04
+
+PR #209 merged at `00aec631041643e0ce7b35b9c1220d35875a48ee`. A deterministic-clock fix for
+Durable Object expiry tests followed; current main is `c38967540294355ae94adb3f913d8f637dd1693d`.
+Main CI [41810314589](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41810314589)
+and Security scan [41810314539](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41810314539)
+are successful. Main CI ran the full Server + Worker suites, lint, Android unit tests, debug APK
+build, Espresso (2 tests executed), Gradle wrapper validation, and libsignal integrity. See the
+post-merge addendum in `../BUG_TRACKER.md` and the explicit unresolved items in `FINAL_SIGNOFF.md`.
