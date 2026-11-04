@@ -31,9 +31,9 @@ Both post-merge workflows completed successfully:
 [CI run 41792882092](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882092)
 and [Security scan run 41792882126](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882126).
 
-Firestore Rules catch-up gate S3-15b is **complete: 186/186 emulator tests passed** (see
-`START_HERE.md` and the S3-15b session record). This does not close the separate Android
-catch-up gate.
+Firestore Rules catch-up gate S3-15b is **complete: 186/186 emulator tests passed**. The Android
+catch-up gate S3-19b is now **verified on main CI**: lint, unit tests, debug APK build and the
+emulator-backed Espresso job all passed. This closes the previously documented AND-lane CI gap;
 
 ## Sign-off criteria
 
@@ -42,16 +42,18 @@ catch-up gate.
 - [ ] **All Critical and High findings are fixed or explicitly accepted with a ratified rationale.**
       Re-check every such row and its current source evidence, including operator dependencies.
 - [ ] **Every Partial finding has passed its missing verification or has an approved residual-risk
-      disposition.** In particular, S3-19b remains outstanding for the Android changes in
-      S3-15/16/17/18/19 and the S07-C1 Android compile gate. PR #200's two Espresso tests are useful
-      CI evidence but do not substitute for the full S3-19b compile/unit-test matrix.
+      disposition.** S3-19b is now verified on main CI for the Android changes in S3-15/16/17/18/19
+      and the S07-C1 Android compile gate. Reassess each Android Partial row against the actual CI
+      evidence and any finding-specific residual. PR #209 also adds a Glide no-disk-cache migration.
 - [ ] **S02-I3 revoked-token integration verification.** PR #202 added check-revocation behavior
-      at the affected ID-token verification call sites. Still run the Firebase integration scenario:
+      at all 12 live ID-token verification call sites, guarded by CI regression tests in PR #209.
+      Still run the Firebase integration scenario:
       issue an ID token, revoke refresh tokens, prove the old token is rejected on each affected
       endpoint, and prove a newly issued token succeeds. Do not mark this complete from source
       inspection alone.
-- [ ] **Supply-chain gates complete.** SC-03 still needs dependency-verification hashes populated
-      and enforced; confirm release provenance/SBOM and associated operator configuration.
+- [ ] **Supply-chain gates complete.** SC-03 dependency-verification hashes are populated and
+      enforced, and wrapper/JAR integrity gates pass. Confirm release provenance/SBOM and any
+      remaining operator configuration.
 - [ ] **Branch protection verified.** SC-12 requires live confirmation that `main` protection and
       required reviews/checks are enabled. A previous check reported branch protection absent;
       no successful live re-check is recorded here.
@@ -73,10 +75,10 @@ catch-up gate.
 The remediation has materially advanced: all 20 scheduled Round 3 sessions have been worked through
 at source/documentation level, the S3-15b Firestore Rules catch-up passed, the security PR batch is
 merged, PR #200's Espresso job passed, and post-merge CI plus security scanning are green. That is
-not the same as end-to-end assurance. The full Android catch-up gate S3-19b remains outstanding;
-S02-I3 still needs live revoked-token integration verification; SC-03 and SC-12 have operator
-configuration dependencies; credentials must be rotated; App Check/Firestore settings and a
-coordinated production release need live evidence.
+not the same as end-to-end assurance. S3-19b is now verified on main CI. S02-I3 still needs live Firebase revoked-token integration
+verification; S02-I2 needs confirmation that Render/Worker shared credentials are set correctly;
+SC-12 branch protection still needs authorized verification; credentials must be rotated;
+App Check/Firestore settings and coordinated production release need live evidence.
 
 Do not change this status to COMPLETE based solely on merged PRs or CI. Sign only after every
 unchecked criterion above is either satisfied with evidence or formally deferred with an explicit,
