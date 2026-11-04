@@ -379,13 +379,29 @@ async function verifyMediaToken(request, env, key) {
 // every other KV-gated control here (rate limiting, quotas) and is a known,
 // documented limitation of the dev/no-KV configuration, not a silent gap.
 async function isTokenAlreadyUsed(env, jti) {
-  if (!env.RATE_KV || !jti) return false;
-  return (await env.RATE_KV.get(`token:used:${jti}`)) !== null;
+  if (!env.RATE_KV || !jti) {
+    // DELETE is irreversible. If the replay store is unavailable, fail closed
+    // rather than silently turning a single-use capability into a reusable one.
+    throw new Error('Delete-token replay protection is unavailable');
+  }
+  try {
+    return (await env.RATE_KV.get(`token:used:${jti}`)) !== null;
+  } catch (err) {
+    console.error('Delete-token replay lookup failed:', err?.message || err);
+    throw new Error('Delete-token replay protection is unavailable');
+  }
 }
 
 async function markTokenUsed(env, jti, ttlSeconds) {
-  if (!env.RATE_KV || !jti) return;
-  await kvSet(env, `token:used:${jti}`, '1', { expirationTtl: Math.max(60, ttlSeconds) });
+  if (!env.RATE_KV || !jti) throw new Error('Delete-token replay protection is unavailable');
+  try {
+    await env.RATE_KV.put(`token:used:${jti}`, '1', {
+      expirationTtl: Math.max(60, ttlSeconds),
+    });
+  } catch (err) {
+    console.error('Delete-token replay write failed:', err?.message || err);
+    throw new Error('Delete-token replay protection is unavailable');
+  }
 }
 
 // ─── KV helpers ───────────────────────────────────────────────────────────────
@@ -1018,11 +1034,23 @@ export default {
       // within its TTL must not be able to issue the same destructive
       // operation twice. Checked before touching R2/B2 at all, so a replay
       // never even reaches either tier's ownership check or delete call.
-      if (await isTokenAlreadyUsed(env, cap.jti)) {
+      let alreadyUsed;
+      try {
+        alreadyUsed = await isTokenAlreadyUsed(env, cap.jti);
+      } catch {
+        return respond({ error: 'Delete-token replay protection unavailable' }, 503);
+      }
+      if (alreadyUsed) {
         return respond({ error: 'Capability token already used' }, 403);
       }
       const remainingTtlSeconds = Math.ceil(Math.max(0, cap.expiresAt - Date.now()) / 1000);
-      ctx.waitUntil(markTokenUsed(env, cap.jti, remainingTtlSeconds));
+      // Persist the single-use marker BEFORE mutating storage. A failed KV write
+      // must not allow deletion without replay protection.
+      try {
+        await markTokenUsed(env, cap.jti, remainingTtlSeconds);
+      } catch {
+        return respond({ error: 'Delete-token replay protection unavailable' }, 503);
+      }
 
       // Check R2 first (files < 30 days old live only in R2).
       const r2Head = await env.HOT_BUCKET.head(key).catch(() => null);
