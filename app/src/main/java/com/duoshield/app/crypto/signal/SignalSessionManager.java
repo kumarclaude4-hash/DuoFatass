@@ -19,6 +19,8 @@ import org.signal.libsignal.protocol.kem.KEMPublicKey;
 import org.signal.libsignal.protocol.state.PreKeyBundle;
 import org.signal.libsignal.protocol.SessionBuilder;
 
+import java.util.Map;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -180,11 +182,9 @@ public final class SignalSessionManager {
                     (List<Map<String, Object>>) doc.get("oneTimePreKeys");
             int                 otpkId    = -1;
             ECPublicKey         otpkPub   = null;
-            Map<String, Object> chosenEntry = null; // retained for atomic arrayRemove below
 
             if (otpks != null && !otpks.isEmpty()) {
-                Map<String, Object> chosen = otpks.get(0); // pick the first available
-                chosenEntry = chosen;
+                Map<String, Object> chosen = otpks.get(0); // server returns at most one claimed key
                 otpkId  = toInt(chosen.get("id"), -1);
                 String pubB64 = (String) chosen.get("publicKey");
                 if (otpkId >= 0 && pubB64 != null) {
@@ -308,7 +308,7 @@ public final class SignalSessionManager {
             // The server atomically claimed (and removed) the selected OTP key
             // before it returned this bundle. If a local handshake subsequently
             // fails, the key is intentionally burned rather than made reusable.
-            if (otpkId >= 0 && otpks != null && otpks.size() == 1) {
+            if (otpkId >= 0 && otpks != null && !otpks.isEmpty()) {
                 Log.d(TAG, "A single-use OTP key was claimed for " + LogRedact.uid(recipientUid));
             }
 
