@@ -57,6 +57,11 @@ function makeFakeStorage(delayMs = 5) {
       await delay();
       alarmAt = null;
     },
+    async deleteAll() {
+      await delay();
+      map.clear();
+      alarmAt = null;
+    },
     async get(key) {
       await delay();
       return map.has(key) ? map.get(key) : undefined;
