@@ -708,14 +708,15 @@ public final class B2StorageHelper {
     /**
      * Downloads and decrypts B2 media on the shared thread pool.
      *
-     * Cache priority (fastest → slowest):
-     *  1. In-memory LRU cache (same-session repeat views — instant)
-     *  2. Persistent disk cache in {@code ctx.getFilesDir()/b2_cache/} (survives restarts)
-     *  3. Live B2 download over the network (retried up to {@link #MAX_RETRIES} times)
+     * Cache priority:
+     *  1. Bounded in-memory LRU cache (same-process repeat views).
+     *  2. Live authenticated B2 download and decryption (retried up to
+     *     {@link #MAX_RETRIES} times).
      *
-     * Delivers decrypted bytes on the main thread.
+     * Decrypted bytes are never written to a reusable disk cache. Results are
+     * delivered on the main thread.
      *
-     * @param ctx optional — if non-null, the persistent disk cache is checked/populated.
+     * @param ctx retained for API compatibility; it is not used for disk caching.
      */
     public static void loadMedia(Context ctx, String b2Path, String keyBase64, MediaCallback cb) {
         if (b2Path == null || b2Path.isEmpty()) {
@@ -738,7 +739,6 @@ public final class B2StorageHelper {
             list.add(cb);
             IN_FLIGHT.put(b2Path, list);
         }
-        final Context fCtx = ctx;
         MEDIA_POOL.execute(() -> {
             List<MediaCallback> waiters;
             synchronized (IN_FLIGHT) { waiters = IN_FLIGHT.remove(b2Path); }
@@ -773,16 +773,9 @@ public final class B2StorageHelper {
     }
 
     /**
-     * Returns true when the plaintext for {@code b2Path} can be produced without a network
-     * round-trip — i.e. it is in the in-memory cache or the persistent disk cache.
-     *
-     * <p>Callers that only want to do optional work when the download is "already paid for"
-     * should use this rather than {@code getCached(path) != null}. The latter answers a
-     * narrower question ("are the bytes in RAM right now"), and since
-     * {@link #MAX_CACHE_ENTRY_BYTES} deliberately keeps large videos out of the in-memory
-     * cache, it now answers "no" for every large file even when the fully decrypted plaintext
-     * is sitting on disk. Gating on it would silently disable that optional work for exactly
-     * the files it was meant to cover.
+     * Returns true only when the decrypted bytes for {@code b2Path} are in the
+     * in-memory LRU cache. No decrypted media is persisted for reuse across process
+     * restarts, so a cache miss requires an authenticated download and decryption.
      */
     public static boolean isLocallyAvailable(Context ctx, String b2Path) {
         if (b2Path == null || b2Path.isEmpty()) return false;
@@ -2032,7 +2025,6 @@ public final class B2StorageHelper {
                     cb.onError(new IOException("B2 path is null or empty")));
             return;
         }
-        final Context fCtx = ctx;
         MEDIA_POOL.execute(() -> {
             try {
                 byte[] cached = MEDIA_CACHE.get(b2Path);
