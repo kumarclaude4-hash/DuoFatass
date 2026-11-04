@@ -98,13 +98,16 @@ function appendPreKeys(existing, additions, max = MAX_ONE_TIME_PREKEYS) {
   if (!validPreKeyList(existing, max) || !validPreKeyList(additions, max)) {
     throw new TypeError("Invalid one-time pre-key list");
   }
+  const existingIds = new Map(existing.map(entry => [entry.id, entry.publicKey]));
   const byId = new Map(existing.map(entry => [entry.id, entry]));
   for (const entry of additions) {
     const current = byId.get(entry.id);
     if (current && current.publicKey !== entry.publicKey) {
       throw new TypeError("Pre-key ID already exists with different public key");
     }
-    byId.set(entry.id, entry);
+    // Never resurrect an already consumed one-time key. A retry is allowed only
+    // when the exact ID/public-key pair is still present in the server pool.
+    if (!existingIds.has(entry.id)) byId.set(entry.id, entry);
   }
   const result = Array.from(byId.values()).sort((a, b) => a.id - b.id);
   if (result.length > max) throw new RangeError("One-time pre-key pool limit exceeded");
