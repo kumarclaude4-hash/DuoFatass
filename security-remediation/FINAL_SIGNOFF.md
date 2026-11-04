@@ -6,10 +6,11 @@
 
 ## Current evidence snapshot
 
-The canonical finding register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its latest in-file
-roll-up is **118 findings: 64 Fixed, 36 Partial, 6 Open, 12 Accepted**. These figures are
-carried from the current tracker table and were not independently recounted during this update;
-recount the finding rows and severity buckets before treating them as a fresh audit-grade tally.
+The canonical finding register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its current in-file
+roll-up is **116 findings: 74 Fixed, 29 Partial, 1 Open, 12 Accepted**, independently recounted on
+2026-11-04 from the section tables (Critical 4, High 31, Medium 27, Low 31, Informational 23).
+Recount the finding rows and severity buckets again before treating them as a fresh audit-grade
+tally if any row changes.
 
 Merged to `main` on 2026-11-04:
 - #201 — screenshots blocked by default.
@@ -25,15 +26,17 @@ PR #200 (`ci: fix Espresso SDK setup`) was also merged. Its CI run
 passed all jobs, including the emulator-backed **Instrumented tests (Espresso)** job; that job
 reported **2 Espresso tests executed**.
 
-Post-merge `main` HEAD:
-`b17f26437bc0731b12f8d5bdb99d4268d860adc9`.
-Both post-merge workflows completed successfully:
-[CI run 41792882092](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882092)
-and [Security scan run 41792882126](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882126).
+Latest completed full `main` workflow evidence:
+[CI run 41863879619](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879619)
+and [Security scan run 41863879529](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879529),
+both successful at current `main` commit
+`58b29f16b0c368cb9dbd71512e98317022db4781`.
 
 Firestore Rules catch-up gate S3-15b is **complete: 186/186 emulator tests passed**. The Android
 catch-up gate S3-19b is now **verified on main CI**: lint, unit tests, debug APK build and the
-emulator-backed Espresso job all passed. This closes the previously documented AND-lane CI gap;
+emulator-backed Espresso job all passed. This closes the previously documented AND-lane CI gap,
+but does not by itself prove device-specific behavior, live Firebase revocation, production
+deployment state, or finding-specific residuals that require separate evidence.
 
 ## Sign-off criteria
 
@@ -55,8 +58,9 @@ emulator-backed Espresso job all passed. This closes the previously documented A
       enforced, and wrapper/JAR integrity gates pass. Confirm release provenance/SBOM and any
       remaining operator configuration.
 - [ ] **Branch protection verified.** SC-12 requires live confirmation that `main` protection and
-      required reviews/checks are enabled. A previous check reported branch protection absent;
-      no successful live re-check is recorded here.
+      required reviews/checks are enabled. A 2026-11-04 live read-back confirmed `main` branch
+      protection is absent, repository rulesets are empty, and deployment environments have no
+      protection rules; an authorized admin must configure and read back the required settings.
 - [ ] **Secrets and credentials rotated.** Revoke the leaked Firebase/GCP service-account key and
       rotate remaining Worker, Backblaze/B2, admin/session and other exposed credentials. Record
       console/API evidence; source changes do not rotate deployed credentials.
@@ -74,11 +78,12 @@ emulator-backed Espresso job all passed. This closes the previously documented A
 
 The remediation has materially advanced: all 20 scheduled Round 3 sessions have been worked through
 at source/documentation level, the S3-15b Firestore Rules catch-up passed, the security PR batch is
-merged, PR #200's Espresso job passed, and post-merge CI plus security scanning are green. That is
-not the same as end-to-end assurance. S3-19b is now verified on main CI. S02-I3 still needs live Firebase revoked-token integration
-verification; S02-I2 needs confirmation that Render/Worker shared credentials are set correctly;
-SC-12 branch protection still needs authorized verification; credentials must be rotated;
-App Check/Firestore settings and coordinated production release need live evidence.
+merged, S3-19b is verified on main CI, and the latest completed full CI plus security scanning are
+green. That is not the same as end-to-end assurance. S02-I3 still needs live Firebase revoked-token
+integration verification; S02-I2 needs confirmation that Render/Worker shared credentials are set
+correctly; SC-12 branch protection, immutable tag rulesets, and protected production environments
+still need authorized configuration and read-back; credentials must be rotated; App Check/Firestore
+settings and coordinated production release need live evidence.
 
 Do not change this status to COMPLETE based solely on merged PRs or CI. Sign only after every
 unchecked criterion above is either satisfied with evidence or formally deferred with an explicit,

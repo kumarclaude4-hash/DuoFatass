@@ -127,7 +127,7 @@ match what the old index already claimed, re-confirmed against source.
 | SC-10 | **Fixed** (S3-03) | Verified | Firestore deploy runs unpinned `npm install` | Claim re-confirmed: `firestore.yml` + `firestore-rules-test.yml` used bare `npm install` and `npm install -g firebase-tools` (floating latest). **Fix:** both workflows now use `npm ci` (installs exactly from the committed `firestore-tests/package-lock.json`, failing if manifest and lock disagree) and pin the global CLI to `firebase-tools@15.26.0`. **Evidence:** grep confirms `npm ci` (no bare `npm install`) and `firebase-tools@15.26.0` in both workflows; `firestore-tests/package-lock.json` present for `npm ci` to consume; `js-yaml` parse OK. |
 | S11-M1 | **Partial** (call-session PR) | Verified (source) | The call screens sit outside `AppLockManager`: the lock timer runs for the whole call, and returning to a minimised call is never lock-checked | Found while making back/Home keep a call alive. `CallActivity` extends `AppCompatActivity`, not `BaseActivity`, so it never calls `AppLockManager.onActivityStarted()/onActivityStopped()`. Read from `AppLockManager`: it counts started activities and records the background timestamp when the count reaches zero — so starting the call screen over the last `BaseActivity` started the lock timer while the user was on the call (a long call was followed by an immediate PIN prompt), and tapping the ongoing-call notification showed the call and its in-call chat with no lock check even after the timeout. **Fix:** `CallActivity` and `InCallChatActivity` now count as foreground activities — but only when no background timestamp is already pending (`AppLockManager.hasBackgroundTimestamp`, new read-only getter), so a call that wakes a locked app cannot overwrite the older timestamp and extend the lock window. `CallActivity` checks `shouldLock()` on a *return* (never on first start, so incoming calls are not blocked by a lock screen) and raises `LockScreenActivity` over the call; after authentication succeeds `LockScreenActivity.unlock()` sends the user back to the call (opt-in extra, only after the credential check). Deliberately **not** done: making `CallActivity` a `BaseActivity` (its `onStart()` would put the lock screen or the offline wall over a connecting call and can sign the user out mid-call). **Why Partial:** not built or run on a device; verify with a short lock timeout — minimise a call, wait past the timeout, tap the notification: the lock screen must appear, and unlocking must return to the call. |
 
-## Low (33)
+## Low (31)
 
 | ID | Status | Confidence | Issue |
 |---|---|---|---|
@@ -163,7 +163,7 @@ match what the old index already claimed, re-confirmed against source.
 | S10-N2 | **Partial** (S3-17) | Verified | Peer uid in release logcat | Claim re-confirmed before fixing: `DuoShieldSignalStore.java` and `GroupChatActivity.java`'s group-key-sender check interpolated raw peer uids (`address`, `address.getName()`, the session `key` string embedding the peer uid, `sender`/`creatorUid`) directly into `Log.w`/`Log.e` calls — lines that survive release builds per `proguard-rules.pro` (which deliberately keeps `Log.w`/`Log.e` for real failure diagnostics while stripping `Log.d`/`Log.i`), directly violating the product's metadata-resistance threat model. **Fix:** every such call site in the two touched files now routes the peer identifier through the pre-existing `LogRedact.uid()` helper (stable-per-process, salted SHA-256 tag — not a new utility, already used elsewhere in the codebase, e.g. `SignalSessionManager.java`) before logging: `DuoShieldSignalStore.saveIdentity`/`isTrustedIdentity`/`getIdentity`/`storeSession`'s failure logs, and `GroupChatActivity`'s sender-mismatch log. **Verification this session:** `grep`'d every `Log.w`/`Log.e` call across `app/src/main/java/com/duoshield/app` that references an `address`/`sender`/`creatorUid`/`uid`-shaped variable — all now go through `LogRedact.uid()` except lines that log a constant string with no actual uid value (e.g. `"register: uid still null after ... retries"`), which are not an instance of this finding. No raw-peer-uid `Log.w`/`Log.e` line remains in the files this session touched. **Why Partial, not Fixed:** this session's fix is scoped to the two files it touched for S07-H2/H3/M2/M3/L1/L4 (`DuoShieldSignalStore.java`, `GroupChatActivity.java`); a full-repo sweep for any other release-surviving raw-uid log line outside those files was not performed and is not claimed. Also, no JDK/Gradle/Android SDK here — source-reviewed and structurally checked, not compiled/tested; AND-lane verification routed to **S3-19b**. See `SESSION-S3-17.md`. |
 | S10-N3 | **Partial** | Verified | Deleted media survives B2 cold tier on race — a race guard now exists (`worker/src/index.js:553-574`, "Race guard: the nightly migration PUTs to B2 and THEN deletes from R2"); confirm end-to-end before closing | Re-verified this session (S3-12, no code changes to this guard): `worker/src/index.test.js` **29/29 pass**, including the 2 migration-race regression tests added in the prior session covering the compensating-delete path (an R2 re-HEAD after the B2 PUT comes back null — object was deleted mid-migration — triggers a best-effort delete of the just-written B2 copy so a deleted object can't resurrect from cold storage). `node --check worker/src/index.js` clean. Re-read the guard end-to-end this session and confirmed it is correctly scoped: it only fires on the `current === null` branch and does not touch the two other pre-existing, unrelated race guards in the same function. **Still Partial, not Fixed:** production runtime verification against a real Cloudflare Worker + R2 + B2 deployment remains **BLOCKED** in this environment (no `wrangler`/live Cloudflare account access here) — code and unit-test evidence is as strong as this environment can produce, but the actual migration job has never been observed to run end-to-end against live R2/B2. |
 | SC-11 | **Accepted** (S3-20) | Verified | Production crypto depends on an alpha library | Re-verified this session: `app/build.gradle:213` still declares `implementation 'androidx.security:security-crypto:1.1.0-alpha06'`, unchanged. **Rationale (per `audit/SESSION-09-SUPPLY-CHAIN-CI.md`):** the audit itself rates this Low, not because the dependency is safe in the abstract, but because `alpha06` is widely deployed industry-wide with no known exploitable defect, and the "stable" `1.0.0` alternative the library offers is itself more limited — swapping to it would be a downgrade, not a fix. This is recorded as a maintenance-risk finding, not an active vulnerability, and the audit's own recommendation is to track it, not block on it. **Residual risk:** `EncryptedSharedPreferences` (which backs PIN material and key metadata reviewed in S06/S07/S08) receives no formal API or behavioral stability guarantee and no backported security fixes from an alpha channel; combined with `SC-03` (dependency hashes), this version is not yet hash-pinned either. **Operational dependency:** none blocking; the audit's stated follow-up is to hash-pin the current version via `SC-03` and, longer-term, consider consolidating small-secret storage onto the app's own SQLCipher-backed database + AndroidKeyStore path instead of `security-crypto` at all — a product/architecture decision out of scope for this reconciliation pass. |
-| SC-12 | **Open (operator verification required)** | Unverified | Branch protection and required checks on `main` | Source and PR checks pass, but the GitHub integration does not have permission to read branch-protection settings (earlier API access returned 403/404, which is not proof of current configuration). An authorized repository admin must verify and enable branch protection, required reviews, required CI checks, and tag/ruleset protections in GitHub Settings. Do not mark Fixed from green Actions runs alone. |
+| SC-12 | **Open (operator action required)** | Verified blocked | Branch protection and required checks on `main` | Re-checked live on 2026-11-04 from the authorized GitHub CLI context: `GET /repos/kumarclaude4-hash/DuoFatass/branches/main/protection` returned **404 Branch not protected**; `GET /repos/kumarclaude4-hash/DuoFatass/rulesets` returned `[]`; `GET /repos/kumarclaude4-hash/DuoFatass/environments` listed Preview/Production environments with empty `protection_rules` and no deployment branch policy. The available token is read-only for administration and cannot apply the required settings. An authorized repository admin must enable PR review, exact required CI/Security checks, force-push/deletion prevention, immutable `v*` tag protection, and a protected production-release environment, then read back the effective settings. Do not mark Fixed from green Actions runs alone. |
 
 ## Informational (23)
 
@@ -200,17 +200,18 @@ match what the old index already claimed, re-confirmed against source.
 | Sev | Total | Fixed | Partial | Open | Accepted |
 |---|---:|---:|---:|---:|---:|
 | Critical | 4 | 4 | 0 | 0 | 0 |
-| High | 31 | 19 | 10 | 2 | 0 |
-| Medium | 27 | 15 | 11 | 0 | 1 |
-| Low | 33 | 18 | 13 | 1 | 1 |
-| Info | 23 | 8 | 2 | 3 | 10 |
-| **Total** | **118** | **64** | **36** | **6** | **12** |
+| High | 31 | 24 | 7 | 0 | 0 |
+| Medium | 27 | 19 | 7 | 0 | 1 |
+| Low | 31 | 18 | 11 | 1 | 1 |
+| Info | 23 | 9 | 4 | 0 | 10 |
+| **Total** | **116** | **74** | **29** | **1** | **12** |
 
-> **Current status addendum — 2026-11-04.** The row counts above are the latest counts already
-> recorded in this tracker (118 total: 64 Fixed, 36 Partial, 6 Open, 12 Accepted); they were
-> not independently recounted during this update. The S3-20 and post-S3-20 recount notes below
-> are historical snapshots and must not be mistaken for a new 2026-11-04 row-by-row audit.
-> Recount every finding row and reconcile the severity buckets before final sign-off.
+> **Current status addendum — 2026-11-04.** The row counts above were independently recounted in
+> this pass from the section tables (`Critical` through `Informational`, rows with at least four
+> cells): **116 total: 74 Fixed, 29 Partial, 1 Open, 12 Accepted**. Severity buckets are Critical 4,
+> High 31, Medium 27, Low 31, and Informational 23. The S3-20 and post-S3-20 recount notes below are
+> historical snapshots and must not be mistaken for this current row-by-row count. Recount again
+> before final sign-off if any row changes.
 >
 > **Merged to main on 2026-11-04:** #201 screenshot default; #202 revoked Firebase ID-token
 > checks; #203 AAD enforcement for new group ciphertext; #204 immutable tag-only release
@@ -221,18 +222,20 @@ match what the old index already claimed, re-confirmed against source.
 > kumarclaude4-hash/DuoFatass/actions/runs/41766375329) passed all jobs, including the
 > emulator-backed Instrumented tests (Espresso) job, which reported **2 Espresso tests executed**.
 >
-> Post-merge main HEAD: `b17f26437bc0731b12f8d5bdb99d4268d860adc9`. CI run
-> [41792882092](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882092)
+> Latest completed full main CI evidence: CI run
+> [41863879619](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879619)
 > and Security scan run
-> [41792882126](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41792882126)
-> both completed successfully.
+> [41863879529](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879529)
+> both completed successfully at current `main` commit
+> `58b29f16b0c368cb9dbd71512e98317022db4781`.
 >
-> **Do not infer overall sign-off:** PR #200's 2 Espresso tests do not satisfy the broader
-> S3-19b Android compile/unit-test catch-up gate. S3-15b Rules emulator testing is complete
-> (186/186 passed), while S3-19b remains outstanding. S02-I3 still requires Firebase
-> revoke-token integration verification. SC-03 dependency hashes/enforcement, SC-12 branch
-> protection, external credential/key rotation, App Check enforcement, Firestore TTL/config
-> and coordinated production server+APK release remain outstanding unless separately evidenced.
+> **Do not infer overall sign-off:** S3-15b Rules emulator testing is complete (186/186 passed), and
+> S3-19b is verified on main CI (lint, Android unit tests, debug APK, Espresso, wrapper validation,
+> and libsignal integrity). S02-I3 still requires Firebase revoke-token integration verification.
+> S02-I2 Render/Worker shared-secret verification, SC-12 branch protection/tag rulesets/protected
+> production environment, external credential/key rotation, App Check enforcement, Firestore
+> TTL/config, and coordinated production server+APK release remain outstanding unless separately
+> evidenced.
 
 > **Rollup reconciliation (S3-20 — this pass owns the end-to-end
 > reconciliation the previous caveat deferred).** Every row in every section
@@ -284,9 +287,9 @@ merged remediation PRs and post-merge CI/security workflow evidence.
 1. Rows marked **Carried** still require source re-verification before reliance.
 2. Reassess unresolved and Partial rows against current source and test evidence. Do not infer
    that a merged PR closes a finding without mapping its exact code path and verification.
-3. Operator gates remain, including SC-03 dependency hashes/enforcement, SC-12 branch protection,
-   external credential rotation, App Check/Firebase/Firestore configuration, and coordinated
-   production release. See `security-remediation/FINAL_SIGNOFF.md`.
+3. Operator gates remain, including SC-12 branch protection/tag rulesets/protected production
+   environment, external credential rotation, App Check/Firebase/Firestore configuration, and
+   coordinated production release. See `security-remediation/FINAL_SIGNOFF.md`.
 
 ## Post-merge reconciliation — 2026-11-04
 
@@ -297,12 +300,13 @@ PR #209 (`fix(security): close server rate-limit and public telemetry gaps`) was
   - `79a4f48bba23b07f9c0c75736686c97b4dbebd4a`
   - `c38967540294355ae94adb3f913d8f637dd1693d`
 
-The final mainline HEAD is `c38967540294355ae94adb3f913d8f637dd1693d`.
-Post-merge main CI [41810314589](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41810314589)
-and Security scan [41810314539](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41810314539)
-both completed successfully. CI jobs: Server + Worker tests, lint, Android unit tests,
-debug APK build, emulator-backed Espresso, Gradle wrapper validation, and vendored libsignal
-integrity. Espresso reported **2 tests executed** and `BUILD SUCCESSFUL`.
+The latest completed full mainline CI evidence is CI
+[41863879619](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879619)
+and Security scan [41863879529](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879529),
+both successful at `58b29f16b0c368cb9dbd71512e98317022db4781`. CI jobs: Server + Worker tests,
+lint, Android unit tests, debug APK build, emulator-backed Espresso, Gradle wrapper validation, and
+vendored libsignal integrity. Current `main` is `58b29f16b0c368cb9dbd71512e98317022db4781`, the
+verified commit.
 
 PR #209 changes now reflected in row dispositions:
 - S02-I2: Partial — shared Durable Object implementation is present, but Render/Worker
@@ -315,8 +319,10 @@ PR #209 changes now reflected in row dispositions:
 - SC-03: Fixed — populated Gradle dependency checksums are enforced; temporary dry-run job removed.
 - S08-H5 / S07-M1: Partial — new persistent plaintext fallback is gone, but legacy plaintext data
   is retained on devices where durable migration is unavailable to avoid data loss.
-- SC-12 remains Open pending actual branch-protection/ruleset inspection by an authorized admin.
+- SC-12 remains Open. Live 2026-11-04 read-back found no `main` branch protection, no repository
+  rulesets, and no protected deployment environments; an authorized admin must configure and
+  read back the required settings.
 
-The roll-up above remains the tracker’s latest existing row-count snapshot. It has not been
-independently re-counted row-by-row in this post-merge update; no new audit-grade grand total
-is asserted here.
+The current roll-up above was independently recounted row-by-row on 2026-11-04: **116 total,
+74 Fixed, 29 Partial, 1 Open, 12 Accepted**. Recount again before final sign-off if any row
+changes.

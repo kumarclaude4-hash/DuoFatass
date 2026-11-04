@@ -2,13 +2,15 @@
 
 Status: **SCHEDULED WORK EXECUTED AT SOURCE/DOCUMENTATION LEVEL; sign-off gates remain.**
 This plan was drafted 2026-08-11 as intent. All 20 scheduled sessions have since been touched
-and S3-20 is complete. This is not a claim that every planned verification passed: S3-15b
-(Firestore Rules emulator) later passed 186/186; S3-19b (full Android compile/unit-test catch-up)
-remains outstanding. This document schedules the remaining work. It creates **no** `fixed` disposition;
-per `SESSION_PROTOCOL.md` §0–§1, a row moves to `fixed` only in its own session, only after the
-verification named here actually runs, and only recorded in **[`../BUG_TRACKER.md`](../BUG_TRACKER.md)**
-(the successor to the deleted `FINDING_INDEX.md`/`MASTER_CHECKLIST.md`/`REMEDIATION_PROGRESS.md`/
-`RISK_REGISTER.md`).
+and S3-20 is complete. This is not a claim that every planned verification passed. Current-state
+addendum (2026-11-04): S3-15b passed 186/186 Firestore emulator tests, and S3-19b is **verified on
+main CI** by run 41863879619 at `58b29f16b0c368cb9dbd71512e98317022db4781` (lint, Android unit
+tests, debug APK, Espresso, wrapper validation, and libsignal integrity). Older statements below
+that call S3-19b outstanding are historical session context, not the current gate state. This
+document creates **no** `fixed` disposition; per `SESSION_PROTOCOL.md` §0–§1, a row moves to
+`fixed` only in its own session, only after the verification named here actually runs, and only
+recorded in **[`../BUG_TRACKER.md`](../BUG_TRACKER.md)** (the successor to the deleted
+`FINDING_INDEX.md`/`MASTER_CHECKLIST.md`/`REMEDIATION_PROGRESS.md`/`RISK_REGISTER.md`).
 
 > **2026-08-11 re-verification note:** a fresh source pass for the tracker consolidation found some of
 > this plan's "open" assumptions were already stale — e.g. `S08-H1` (WORKER_SECRET in the APK) is now
@@ -22,7 +24,7 @@ verification named here actually runs, and only recorded in **[`../BUG_TRACKER.m
   re-litigate unless current source falsifies them): `S03-H1`, `S04-H1`, `S04-H2`, `S04-H3`,
   `S05-H1`, `S05-H3`, `S05-I1`, `S06-H2`, `S06-H3`, `S06-I2`, `S07-C1`, `S08-H4` (fixed) and
   `S01-L1` (partial — finish item, scheduled in S3-05).
-- The original planning estimate of **103 open** findings is historical, not the current register state. Use the latest row dispositions in [`../BUG_TRACKER.md`](../BUG_TRACKER.md); its latest table reports 118 total (64 Fixed, 36 Partial, 6 Open, 12 Accepted), and must be independently recounted before sign-off.
+- The original planning estimate of **103 open** findings is historical, not the current register state. Use the latest row dispositions in [`../BUG_TRACKER.md`](../BUG_TRACKER.md); the 2026-11-04 direct row recount reports **116 total: 74 Fixed, 29 Partial, 1 Open, 12 Accepted**. Recount again before sign-off if any row changes.
 - Each session below is one unit of work = **fix + verify + document** exactly as the protocol
   defines: land the change, run the verification for that session's lane, then update the row's
   status in `../BUG_TRACKER.md` and write the session file under `sessions/`.
@@ -47,15 +49,16 @@ verification named here actually runs, and only recorded in **[`../BUG_TRACKER.m
 
 | Lane | Command | Available now? |
 |---|---|---|
-| **SRV** — `server/` | `cd server && npm test` (currently 153/153) | **Yes** |
+| **SRV** — `server/` | `cd server && npm test` | **Yes** |
 | **WORKER** — `worker/` | `node --check` + unit tests; `wrangler` dry-run | **Yes** (Node); wrangler deploy = operator |
 | **RULES** — `firestore.rules` | `firestore-tests` on the emulator | **DONE for S3-15b** — 186/186 passed |
-| **AND** — Android | `./gradlew :app:assembleDebug` + unit tests | **S3-19b OUTSTANDING** — broader catch-up not yet evidenced; PR #200's 2 Espresso tests do not replace it |
+| **AND** — Android | `./gradlew :app:assembleDebug` + unit tests | **DONE for S3-19b** — main CI run 41863879619 passed lint, unit tests, debug APK, and Espresso at `58b29f16b0c368cb9dbd71512e98317022db4781` |
 | **CI** — workflows/supply chain | YAML lint, `git`/`gh` inspection, hash recompute | **Yes** (config); actual CI run = operator |
 
 RULES and AND sessions produced source-verified changes. S3-15b subsequently ran and passed 186/186.
-S3-19b remains outstanding for the full Android build/unit-test catch-up; PR #200's separate Espresso
-workflow passed 2 instrumentation tests but does not satisfy that broader gate.
+S3-19b is now verified on main CI by run 41863879619 at
+`58b29f16b0c368cb9dbd71512e98317022db4781`; PR #200's separate Espresso workflow was not the basis
+for that promotion.
 
 ---
 
@@ -215,11 +218,16 @@ clipboard), `S08-L3` (don't store PIN length beside hash), `S08-I1` (stop R8 kee
 retries).
 Exit: source-reviewed; pending S3-19b.
 
-### S3-19b — ANDROID catch-up verification gate  · lane AND · **operator toolchain required**
+### S3-19b — ANDROID catch-up verification gate  · lane AND · **DONE on main CI**
 Not new fixes: `./gradlew :app:assembleDebug` + unit tests for every Android change in S3-15/16/17/
-18/19 **and** the standing `S07-C1` Android-compile gate (`AuthTokenHelper.java`). Promote each
-`partial — AND verification BLOCKED` row to `fixed`, or `deferred-with-justification` on failure.
-**No release and no sign-off before this passes.**
+18/19 **and** the standing `S07-C1` Android-compile gate (`AuthTokenHelper.java`). Main CI run
+[41863879619](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879619) at
+`58b29f16b0c368cb9dbd71512e98317022db4781` passed lint, Android unit tests, debug APK build, and
+emulator-backed Espresso; Security scan
+[41863879529](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879529) also passed.
+This closes the CI compile/unit-test gate only. It does **not** by itself prove device-specific
+behavior, live Firebase revocation, production deployment state, or every finding-specific residual;
+promote rows only when their own required behavior is covered by this evidence.
 
 ### S3-20 — Accepted dispositions + final reconciliation  · lane DOC
 **Completed.** The justification for every `accepted`/`accepted+partial` row was written into `../BUG_TRACKER.md` /
@@ -231,10 +239,10 @@ batch and workflow evidence; independently recount rows before final sign-off.
 
 ## Sign-off gate (unchanged from FINAL_SIGNOFF.md)
 
-`FINAL_SIGNOFF.md` remains **PENDING**. S3-15b passed (186/186 Firestore emulator tests); S3-19b
-remains outstanding for the full Android compile/unit-test gate. PR #200's Espresso job passed
-2 instrumentation tests, and post-merge CI/security scans for main at
-b17f26437bc0731b12f8d5bdb99d4268d860adc9 both passed. Remaining gates include S02-I3 revoked-token
-integration verification; SC-03 hashes/enforcement; SC-12 branch protection; GCP/Worker/B2/admin
-credential rotation; App Check and Firestore operator settings; production environment/tag
-protection; trust-boundary review; and coordinated server + Android release. See FINAL_SIGNOFF.md.
+`FINAL_SIGNOFF.md` remains **PENDING**. S3-15b passed (186/186 Firestore emulator tests), and
+S3-19b is verified on main CI by run 41863879619 at
+`58b29f16b0c368cb9dbd71512e98317022db4781`; Security scan 41863879529 also passed. Remaining gates
+include S02-I3 revoked-token integration verification; S02-I2 Render/Worker shared-secret and
+Durable Object verification; SC-12 branch protection, immutable tag ruleset, and protected
+production environment; GCP/Worker/B2/admin credential rotation; App Check and Firestore operator
+settings; trust-boundary review; and coordinated server + Android release. See FINAL_SIGNOFF.md.

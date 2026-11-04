@@ -11,10 +11,11 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 All 20 scheduled Round 3 remediation sessions have been worked through at the
 source/documentation level; this is not equivalent to end-to-end sign-off. The Firestore Rules
 catch-up gate S3-15b passed **186/186 emulator tests**. The broader Android catch-up gate S3-19b
-remains outstanding. On 2026-11-04, security fixes #201–#205 and #207–#208, plus the separate
-Espresso SDK setup fix #200, were merged to `main`. See the root `../BUG_TRACKER.md` for
-finding-level dispositions and the current test evidence. `FINAL_SIGNOFF.md` remains **PENDING**
-until all residual test and operator gates have been verified.
+is **verified on main CI** as of 2026-11-04. On 2026-11-04, security fixes #201–#205 and #207–#208,
+plus the separate Espresso SDK setup fix #200, were merged to `main`. See the root
+`../BUG_TRACKER.md` for finding-level dispositions and the current test evidence.
+`FINAL_SIGNOFF.md` remains **PENDING** until all residual test and operator gates have been
+verified.
 
 ---
 
@@ -24,19 +25,20 @@ until all residual test and operator gates have been verified.
 
 ```
 NEXT ACTION: S3-20 is the final scheduled session and is complete. Do not invent S3-21.
-S3-15b (Firestore Rules catch-up) is DONE: 186/186 emulator tests passed. S3-19b is also now verified on main CI. S3-19b (full Android compile + unit-test catch-up for the Android changes in S3-15/16/17/18/19
-and the S07-C1 Android compile gate) is now **verified on main CI** (lint, unit tests, debug APK,
-Espresso 2/2, supply-chain gates all passed). PR #200's separate Espresso workflow passed 2 instrumentation
-tests, but does not satisfy this broader catch-up gate. Security PRs #201–#205/#207/#208 and
-Espresso PR #200 are merged. Post-merge CI and Security scan on main at
-b17f26437bc0731b12f8d5bdb99d4268d860adc9 both completed successfully (runs 41792882092 and
-41792882126). Remaining gates: Firebase revoke-token integration test for S02-I3; Render/Worker credential
-verification for shared auth rate limiting; SC-12 main branch protection and tag/ruleset settings;
-leaked GCP service-account key and remaining Worker/B2/admin credential rotations; App Check
-enforcement and Firebase/Firestore operator configuration; trust-boundary review; and coordinated
-production server + Android release. SC-03 hashes/enforcement and the full S3-19b Android CI gate
-are now verified green on main. Keep FINAL_SIGNOFF.md PENDING until the remaining external items
-are evidenced.
+S3-15b (Firestore Rules catch-up) is DONE: 186/186 emulator tests passed. S3-19b (full Android
+compile + unit-test catch-up for the Android changes in S3-15/16/17/18/19 and the S07-C1 Android
+compile gate) is **verified on main CI**: run 41863879619 at
+`58b29f16b0c368cb9dbd71512e98317022db4781` passed Server + Worker tests, lint, Android unit tests,
+debug APK build, Espresso, Gradle wrapper validation, and vendored libsignal integrity; Security
+scan run 41863879529 passed CodeQL, gitleaks, and SBOM generation. Current `main` commit
+`58b29f16b0c368cb9dbd71512e98317022db4781` is the verified commit. Remaining gates: Firebase
+revoke-token integration test for
+S02-I3; Render/Worker credential verification for shared auth rate limiting; SC-12 main branch
+protection and tag/ruleset settings; leaked GCP service-account key and remaining Worker/B2/admin
+credential rotations; App Check enforcement and Firebase/Firestore operator configuration;
+trust-boundary review; and coordinated production server + Android release. SC-03
+hashes/enforcement and the full S3-19b Android CI gate are verified green on main. Keep
+FINAL_SIGNOFF.md PENDING until the remaining external items are evidenced.
 ```
 
 If `NEXT SESSION` above is `S3-20 complete`, do **not** start coding — go to the sign-off gate at the
@@ -85,7 +87,7 @@ bottom of the plan and verify operator items instead.
 
 These cannot be completed by a session in this environment — revoke the leaked GCP service-account
 key, rotate `WORKER_SECRET`/B2/admin creds, enable `SC-12` branch protection, Firestore TTL, App
-Check enable, SBOM, and the Android build+release. A session may **re-check** whether an operator has
+Check enable, release SBOM/provenance, and the Android release. A session may **re-check** whether an operator has
 done one (e.g. `gh api repos/kumarclaude4-hash/DuoFatass/branches/main/protection`) and update the
 disposition from live evidence — but must never report an operator action as done without that
 evidence. Tracked in the plan's sign-off gate and `SESSION_PROTOCOL.md §6`.
@@ -100,10 +102,12 @@ previous `sessions/SESSION-*.md` (inherited evidence). Then work.
 
 ## Final mainline verification — 2026-11-04
 
-PR #209 merged at `00aec631041643e0ce7b35b9c1220d35875a48ee`. A deterministic-clock fix for
-Durable Object expiry tests followed; current main is `c38967540294355ae94adb3f913d8f637dd1693d`.
-Main CI [41810314589](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41810314589)
-and Security scan [41810314539](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41810314539)
-are successful. Main CI ran the full Server + Worker suites, lint, Android unit tests, debug APK
-build, Espresso (2 tests executed), Gradle wrapper validation, and libsignal integrity. See the
-post-merge addendum in `../BUG_TRACKER.md` and the explicit unresolved items in `FINAL_SIGNOFF.md`.
+Latest completed full main CI evidence is
+[41863879619](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879619) at
+`58b29f16b0c368cb9dbd71512e98317022db4781`; Security scan
+[41863879529](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41863879529) completed
+successfully at the same commit. Main CI ran the full Server + Worker suites, lint, Android unit
+tests, debug APK build, emulator-backed Espresso, Gradle wrapper validation, and vendored libsignal
+integrity. Current `main` is `58b29f16b0c368cb9dbd71512e98317022db4781`, the verified commit. See
+the post-merge addendum in `../BUG_TRACKER.md` and the explicit unresolved items in
+`FINAL_SIGNOFF.md`.
