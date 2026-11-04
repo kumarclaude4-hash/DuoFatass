@@ -659,9 +659,11 @@ describe('/groups/{groupId}/messages/{msgId}', () => {
   test('member can write a group message', async () => {
     await assertSucceeds(
       asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_2`).set({
+        id: 'msg_2',
         sender: 'bob',
         text: 'reply',
         isEncrypted: true,  // required by rules (F28 fix)
+        aadV1: true,        // new non-empty ciphertext must be AAD-bound
       })
     );
   });
@@ -723,9 +725,6 @@ describe('/groups/{groupId}/messages/{msgId}', () => {
       asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_1`).delete()
     );
   });
-});
-
-
   test('S07-L1: non-empty new ciphertext must set aadV1 and matching message id', async () => {
     await assertFails(
       asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_no_aad`).set({
@@ -769,6 +768,10 @@ describe('/groups/{groupId}/messages/{msgId}', () => {
       })
     );
   });
+
+});
+
+
 describe('/groups/{groupId}/keys/{memberUid}', () => {
   const GROUP_ID = 'group_1';
 
