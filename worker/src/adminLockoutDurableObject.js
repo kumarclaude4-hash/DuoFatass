@@ -35,17 +35,16 @@
 // S03-I2 "no Durable Objects" note, which predates this fix and no longer
 // applies to this one counter).
 //
-// SCOPE: this Durable Object exists ONLY for the admin lockout counter. It
-// does not replace or generalize to the Worker's other KV-backed counters
-// (rate limiting, storage quotas) — those remain best-effort KV as before,
-// because their failure mode (an approximate quota/rate limit) does not
-// carry the same "brute-force gate must not undercount" requirement that
-// motivated this specific fix.
+// SCOPE: this Durable Object provides atomic, expiring fixed-window counters
+// for the admin lockout gate and authenticated API rate limits. It is still
+// separate from the Worker's KV-backed storage quotas and edge request
+// counters, which have different consistency and throughput requirements.
 //
-// WHAT IS STORED: `{ count, windowStart }` only, in this instance's own
-// transactional storage (`state.storage`, SQLite-backed) — no tokens,
-// secrets, or PII. Structurally identical to the record shape the KV
-// version stored, but see the API surface: this Durable Object is called
+// WHAT IS STORED: `{ count, windowStart, windowMs }` only, in this instance's
+// own transactional storage (`state.storage`, SQLite-backed) — no tokens,
+// secrets, or raw UIDs. Auth limiter keys are SHA-256 namespaced identifiers.
+// A Durable Object alarm deletes each record when its window expires so
+// inactive users/endpoints do not leave permanent rows behind. This Durable Object is called
 // with a single atomic RPC per admin lockout operation (`record` /
 // `status` / `reset`), not raw get/put/delete, precisely because the
 // atomicity guarantee lives in "one instance processes one request fully
@@ -78,6 +77,25 @@ export class AdminLockoutCounter {
     this.env = env;
   }
 
+  async alarm() {
+    const existing = await this.state.storage.get(STORAGE_KEY);
+    if (!existing) return;
+
+    // Older records did not include windowMs; their historical lifetime was
+    // DEFAULT_WINDOW_MS, so use that as a migration-safe default.
+    const lifetime = Number.isFinite(existing.windowMs) && existing.windowMs > 0
+      ? existing.windowMs
+      : DEFAULT_WINDOW_MS;
+    const expiresAt = existing.windowStart + lifetime;
+    if (Date.now() >= expiresAt) {
+      await this.state.storage.delete(STORAGE_KEY);
+      return;
+    }
+    // An early alarm (clock adjustment/runtime retry) must not delete a live
+    // counter. Reschedule for the exact expiry boundary.
+    await this.state.storage.setAlarm(expiresAt);
+  }
+
   async fetch(request) {
     let body;
     try {
@@ -108,15 +126,22 @@ export class AdminLockoutCounter {
       const existing = await this.state.storage.get(STORAGE_KEY);
       const next =
         !existing || now - existing.windowStart >= windowMs
-          ? { count: 1, windowStart: now }
-          : { count: existing.count + 1, windowStart: existing.windowStart };
+          ? { count: 1, windowStart: now, windowMs }
+          : { count: existing.count + 1, windowStart: existing.windowStart, windowMs };
       await this.state.storage.put(STORAGE_KEY, next);
+      // Per-instance alarm removes this fixed-window record after it expires.
+      // setAlarm is awaited inside the same serialized DO request.
+      await this.state.storage.setAlarm(next.windowStart + windowMs);
       return json({ count: next.count, locked: next.count >= maxFails, windowStart: next.windowStart });
     }
 
     if (action === "status") {
       const existing = await this.state.storage.get(STORAGE_KEY);
       if (!existing || now - existing.windowStart >= windowMs) {
+        if (existing) await this.state.storage.delete(STORAGE_KEY);
+        if (typeof this.state.storage.deleteAlarm === "function") {
+          await this.state.storage.deleteAlarm();
+        }
         return json({ count: 0, locked: false, windowStart: null });
       }
       return json({ count: existing.count, locked: existing.count >= maxFails, windowStart: existing.windowStart });
@@ -124,6 +149,9 @@ export class AdminLockoutCounter {
 
     if (action === "reset") {
       await this.state.storage.delete(STORAGE_KEY);
+      if (typeof this.state.storage.deleteAlarm === "function") {
+        await this.state.storage.deleteAlarm();
+      }
       return json({ ok: true });
     }
 
