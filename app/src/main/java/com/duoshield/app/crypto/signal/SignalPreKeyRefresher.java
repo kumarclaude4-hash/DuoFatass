@@ -4,10 +4,6 @@ import android.content.Context;
 import android.util.Base64;
 import android.util.Log;
 
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FieldValue;
-import com.google.firebase.firestore.FirebaseFirestore;
 
 import org.signal.libsignal.protocol.ecc.Curve;
 import org.signal.libsignal.protocol.ecc.ECKeyPair;
@@ -32,9 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *       thread generates {@value #BATCH_SIZE} new Curve25519 key pairs.</li>
  *   <li>Private bytes are stored in {@link com.duoshield.app.util.SecurePrefs}
  *       via {@link SignalKeyManager#storeNewPreKeys}.</li>
- *   <li>Public bytes are appended to the Firestore bundle at
- *       {@code /users/{uid}/public_keys/bundle.oneTimePreKeys} using
- *       {@code FieldValue.arrayUnion} so existing keys are not displaced.</li>
+ *   <li>Public bytes are appended through the authenticated server API, which
+ *       validates uniqueness and performs a transaction so existing keys are not displaced.</li>
  * </ol>
  *
  * <h3>Guarantees</h3>
@@ -42,8 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>Only one replenishment runs at a time (guarded by {@link AtomicBoolean}).</li>
  *   <li>Pre-key IDs are monotonically increasing and stored in
  *       {@link SignalKeyManager#KEY_PREKEY_NEXT_ID} to prevent reuse.</li>
- *   <li>Firestore failure is non-fatal — the local pool is updated regardless,
- *       so the next replenishment attempt will upload the same keys.</li>
+ *   <li>Server upload failure is logged. The private keys remain stored locally;
+ *       a later replenishment attempt can retry with newly generated keys.</li>
  * </ul>
  */
 public final class SignalPreKeyRefresher {
@@ -99,12 +94,6 @@ public final class SignalPreKeyRefresher {
     // ── Private: replenishment ────────────────────────────────────────────────
 
     private static void replenish(Context ctx) throws Exception {
-        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-        if (user == null) {
-            Log.w(TAG, "Cannot replenish — no signed-in user.");
-            return;
-        }
-
         // ── 1. Generate fresh Curve25519 key pairs ────────────────────────────
         int startId = SignalKeyManager.getAndIncrementNextPreKeyId(ctx, BATCH_SIZE);
         List<PreKeyRecord> newKeys = new ArrayList<>(BATCH_SIZE);
@@ -128,19 +117,10 @@ public final class SignalPreKeyRefresher {
             publicEntries.add(entry);
         }
 
-        // ── 4. Append to Firestore bundle (arrayUnion = non-destructive add) ──
-        // arrayUnion adds elements that are not already present in the array.
-        // We convert to Object[] because FieldValue.arrayUnion(Object... elements).
-        FirebaseFirestore.getInstance()
-                .collection("users").document(user.getUid())
-                .collection("public_keys").document("bundle")
-                .update("oneTimePreKeys", FieldValue.arrayUnion(publicEntries.toArray()))
-                .addOnSuccessListener(v ->
-                        Log.d(TAG, "Uploaded " + BATCH_SIZE
-                                + " new pre-keys to Firestore (IDs "
-                                + startId + " – " + (startId + BATCH_SIZE - 1) + ")."))
-                .addOnFailureListener(e ->
-                        Log.e(TAG, "Firestore pre-key upload failed — keys stored locally,"
-                                + " will retry on next replenishment cycle.", e));
+        // ── 4. Append through the authenticated, transaction-backed server API ──
+        // Private halves remain in SecurePrefs; only bounded public entries are sent.
+        SignalKeyApi.appendPreKeys(publicEntries);
+        Log.d(TAG, "Uploaded " + BATCH_SIZE + " pre-keys through the server API (IDs "
+                + startId + " – " + (startId + BATCH_SIZE - 1) + ").");
     }
 }

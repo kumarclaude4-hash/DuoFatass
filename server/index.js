@@ -474,6 +474,10 @@ const AUTH_RATE_LIMITS = {
   // couple of times per rotation (an initial call plus a retry or two if the
   // network drops), so a low limit costs nothing to a real user while bounding
   // how fast a compromised token can hammer the accountLock transaction.
+  signalRegisterBundle: 2,
+  signalAppendPreKeys: 6,
+  signalUpdatePreKey: 6,
+  signalClaimPreKey: 30,
   acknowledgeRotation: 3,
 };
 const authRateLimits = new Map(); // uid → { counts: {ep: n}, windowStart }
@@ -3282,6 +3286,284 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ token, expiresAt }));
       } catch (e) {
         sendServerError(res, "mediaToken", e);
+      }
+    });
+    return;
+  }
+
+  // ── Signal Protocol public pre-key API ────────────────────────────────────
+  //
+  // The public key bundle is readable by authenticated peers, but every mutation
+  // is performed here with the Admin SDK. In particular, callers never submit a
+  // replacement oneTimePreKeys array: /signal/claimPreKey atomically reserves and
+  // removes one server-selected entry in a Firestore transaction.
+  const signalPrekeys = require("./lib/signalPrekeys");
+
+  if (req.method === "POST" && req.url === "/signal/registerBundle") {
+    collectBody(req, res, async (body) => {
+      try {
+        const authHeader = req.headers["authorization"] || "";
+        const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+        if (!idToken) {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Missing Authorization header");
+          return;
+        }
+        let uid;
+        try { uid = (await admin.auth().verifyIdToken(idToken, true)).uid; }
+        catch {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Invalid, expired, or revoked token");
+          return;
+        }
+        if (!checkAuthRateLimit(uid, "signalRegisterBundle")) {
+          res.writeHead(429, { "Content-Type": "text/plain" });
+          res.end("Rate limit exceeded");
+          return;
+        }
+        if (await isAccountLocked(uid)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Access request not approved");
+          return;
+        }
+        let parsed;
+        try { parsed = JSON.parse(body || "{}"); }
+        catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Malformed JSON body");
+          return;
+        }
+        const bundle = parsed.bundle;
+        if (!signalPrekeys.validInitialBundle(bundle)) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid Signal public key bundle");
+          return;
+        }
+        const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
+        await ref.set({ ...bundle, updatedAt: FieldValue.serverTimestamp() });
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ uploaded: true }));
+      } catch (e) {
+        sendServerError(res, "signal/registerBundle", e);
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/signal/appendPreKeys") {
+    collectBody(req, res, async (body) => {
+      try {
+        const authHeader = req.headers["authorization"] || "";
+        const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+        if (!idToken) {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Missing Authorization header");
+          return;
+        }
+        let uid;
+        try { uid = (await admin.auth().verifyIdToken(idToken, true)).uid; }
+        catch {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Invalid, expired, or revoked token");
+          return;
+        }
+        if (!checkAuthRateLimit(uid, "signalAppendPreKeys")) {
+          res.writeHead(429, { "Content-Type": "text/plain" });
+          res.end("Rate limit exceeded");
+          return;
+        }
+        if (await isAccountLocked(uid)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Access request not approved");
+          return;
+        }
+        let parsed;
+        try { parsed = JSON.parse(body || "{}"); }
+        catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Malformed JSON body");
+          return;
+        }
+        const additions = parsed.oneTimePreKeys;
+        if (!signalPrekeys.validPreKeyList(additions, 25)) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid one-time pre-keys");
+          return;
+        }
+        const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
+        const outcome = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(ref);
+          if (!snap.exists) throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
+          const current = snap.data();
+          const merged = signalPrekeys.appendPreKeys(current.oneTimePreKeys || [], additions);
+          if (merged.length === (current.oneTimePreKeys || []).length) return "unchanged";
+          tx.update(ref, {
+            oneTimePreKeys: merged,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          return "updated";
+        });
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ appended: additions.length, outcome }));
+      } catch (e) {
+        if (e.status) {
+          res.writeHead(e.status, { "Content-Type": "text/plain" });
+          res.end(e.message);
+        } else sendServerError(res, "signal/appendPreKeys", e);
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/signal/updatePreKey") {
+    collectBody(req, res, async (body) => {
+      try {
+        const authHeader = req.headers["authorization"] || "";
+        const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+        if (!idToken) {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Missing Authorization header");
+          return;
+        }
+        let uid;
+        try { uid = (await admin.auth().verifyIdToken(idToken, true)).uid; }
+        catch {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Invalid, expired, or revoked token");
+          return;
+        }
+        if (!checkAuthRateLimit(uid, "signalUpdatePreKey")) {
+          res.writeHead(429, { "Content-Type": "text/plain" });
+          res.end("Rate limit exceeded");
+          return;
+        }
+        if (await isAccountLocked(uid)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Access request not approved");
+          return;
+        }
+        let parsed;
+        try { parsed = JSON.parse(body || "{}"); }
+        catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Malformed JSON body");
+          return;
+        }
+        const field = parsed.field;
+        const value = parsed.value;
+        if (!["signedPreKey", "kyberPreKey"].includes(field)
+            || (field === "signedPreKey" && !signalPrekeys.validSignedPreKey(value))
+            || (field === "kyberPreKey" && !signalPrekeys.validKyberPreKey(value))) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid pre-key update");
+          return;
+        }
+        const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
+        const outcome = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(ref);
+          if (!snap.exists) throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
+          const current = snap.data()[field];
+          const same = field === "signedPreKey"
+            ? signalPrekeys.sameSignedPreKey(current, value)
+            : signalPrekeys.sameKyberPreKey(current, value);
+          if (same) return "unchanged";
+          tx.update(ref, { [field]: value, updatedAt: FieldValue.serverTimestamp() });
+          return "updated";
+        });
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ updated: field, outcome }));
+      } catch (e) {
+        if (e.status) {
+          res.writeHead(e.status, { "Content-Type": "text/plain" });
+          res.end(e.message);
+        } else sendServerError(res, "signal/updatePreKey", e);
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/signal/claimPreKey") {
+    collectBody(req, res, async (body) => {
+      try {
+        const authHeader = req.headers["authorization"] || "";
+        const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+        if (!idToken) {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Missing Authorization header");
+          return;
+        }
+        let callerUid;
+        try { callerUid = (await admin.auth().verifyIdToken(idToken, true)).uid; }
+        catch {
+          res.writeHead(401, { "Content-Type": "text/plain" });
+          res.end("Invalid, expired, or revoked token");
+          return;
+        }
+        if (!checkAuthRateLimit(callerUid, "signalClaimPreKey")) {
+          res.writeHead(429, { "Content-Type": "text/plain" });
+          res.end("Rate limit exceeded");
+          return;
+        }
+        if (await isAccountLocked(callerUid)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Access request not approved");
+          return;
+        }
+        let parsed;
+        try { parsed = JSON.parse(body || "{}"); }
+        catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Malformed JSON body");
+          return;
+        }
+        const recipientUid = typeof parsed.recipientUid === "string" ? parsed.recipientUid : "";
+        if (!recipientUid || recipientUid === callerUid || recipientUid.length > 128) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Invalid recipient UID");
+          return;
+        }
+        if (await isAccountLocked(recipientUid)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Access request not approved");
+          return;
+        }
+        const chatId = crypto.createHash("sha256")
+          .update([callerUid, recipientUid].sort().join("/"))
+          .digest("hex");
+        const chatRef = db.collection("chats").doc(chatId);
+        const bundleRef = db.collection("users").doc(recipientUid)
+          .collection("public_keys").doc("bundle");
+        const result = await db.runTransaction(async (tx) => {
+          const [chatSnap, bundleSnap] = await Promise.all([
+            tx.get(chatRef), tx.get(bundleRef),
+          ]);
+          const participants = chatSnap.exists ? chatSnap.data().participants : null;
+          if (!Array.isArray(participants)
+              || participants.length !== 2
+              || !participants.includes(callerUid)
+              || !participants.includes(recipientUid)) {
+            throw Object.assign(new Error("Not a participant of this conversation"), { status: 403 });
+          }
+          if (!bundleSnap.exists) {
+            throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
+          }
+          const source = bundleSnap.data();
+          const { remaining, response } = signalPrekeys.claimOneTimePreKey(source);
+          if (response.oneTimePreKeys.length) {
+            tx.update(bundleRef, {
+              oneTimePreKeys: remaining.oneTimePreKeys,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+          return response;
+        });
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ bundle: result }));
+      } catch (e) {
+        if (e.status) {
+          res.writeHead(e.status, { "Content-Type": "text/plain" });
+          res.end(e.message);
+        } else sendServerError(res, "signal/claimPreKey", e);
       }
     });
     return;

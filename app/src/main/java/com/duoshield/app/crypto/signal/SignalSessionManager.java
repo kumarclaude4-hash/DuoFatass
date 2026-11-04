@@ -8,10 +8,6 @@ import android.os.Looper;
 import android.util.Base64;
 import android.util.Log;
 
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.FieldValue;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.WriteBatch;
 
 import org.signal.libsignal.protocol.IdentityKey;
 import org.signal.libsignal.protocol.InvalidKeyException;
@@ -22,6 +18,7 @@ import org.signal.libsignal.protocol.ecc.ECPublicKey;
 import org.signal.libsignal.protocol.kem.KEMPublicKey;
 import org.signal.libsignal.protocol.state.PreKeyBundle;
 import org.signal.libsignal.protocol.SessionBuilder;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,15 +31,12 @@ import java.util.concurrent.Executors;
  *
  * <h3>What happens inside {@link #establishSession}:</h3>
  * <ol>
- *   <li>Fetch the recipient's public key bundle from Firestore
- *       {@code /users/{recipientUid}/public_keys/bundle}.</li>
- *   <li>Pick the first available one-time pre-key from the bundle.</li>
+ *   <li>Request the recipient's public key bundle from the authenticated server API.</li>
+ *   <li>The server atomically claims one one-time pre-key and returns it with the bundle.</li>
  *   <li>Construct a {@link PreKeyBundle} and call
  *       {@link SessionBuilder#process(PreKeyBundle)} — this runs the full X3DH
  *       handshake and stores the resulting Double Ratchet session in Room DB via
  *       {@link DuoShieldSignalStore}.</li>
- *   <li>Atomically remove the consumed one-time pre-key from the recipient's
- *       Firestore document so it cannot be reused.</li>
  * </ol>
  *
  * After this call succeeds, {@code DuoShieldSignalStore} holds a live
@@ -93,7 +87,7 @@ public final class SignalSessionManager {
      * that point on.
      *
      * <p>If no session exists, the full X3DH handshake is performed:
-     * fetch bundle → build PreKeyBundle → SessionBuilder.process() → consume OTP key.
+     * claim bundle + OTP key server-side → build PreKeyBundle → SessionBuilder.process().
      *
      * @param ctx          Application or activity context.
      * @param recipientUid Firebase Auth UID of the message recipient.
@@ -124,28 +118,25 @@ public final class SignalSessionManager {
         });
     }
 
-    // ── Private: Firestore fetch ───────────────────────────────────────────────
+    // ── Private: server-mediated bundle claim ─────────────────────────────────
 
     private static void fetchBundleAndRunX3DH(Context ctx,
                                                String recipientUid,
                                                SignalProtocolAddress address,
                                                DuoShieldSignalStore store,
                                                SessionCallback callback) {
-        FirebaseFirestore.getInstance()
-                .collection("users").document(recipientUid)
-                .collection("public_keys").document("bundle")
-                .get()
-                .addOnSuccessListener(doc -> {
-                    // Firestore callback arrives on the main thread — dispatch the
-                    // CPU-bound X3DH + Room write to the background executor.
-                    executor.execute(() ->
-                            runX3DH(ctx, recipientUid, address, store, doc, callback));
-                })
-                .addOnFailureListener(e -> {
-                    Log.e(TAG, "Failed to fetch public key bundle for " + LogRedact.uid(recipientUid), e);
-                    deliver(callback, null, null,
-                            "Could not fetch " + recipientUid + "'s public keys: " + e.getMessage());
-                });
+        executor.execute(() -> {
+            try {
+                // The server atomically claims exactly one one-time pre-key before
+                // returning the public bundle. No client can submit an array rewrite.
+                Map<String, Object> bundle = SignalKeyApi.claimPreKey(recipientUid);
+                runX3DH(ctx, recipientUid, address, store, bundle, callback);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to claim Signal pre-key for " + LogRedact.uid(recipientUid), e);
+                deliver(callback, null, null, "Could not fetch " + recipientUid
+                        + "'s public keys: " + e.getMessage());
+            }
+        });
     }
 
     // ── Private: X3DH handshake ───────────────────────────────────────────────
@@ -155,9 +146,9 @@ public final class SignalSessionManager {
                                  String recipientUid,
                                  SignalProtocolAddress address,
                                  DuoShieldSignalStore store,
-                                 DocumentSnapshot doc,
+                                 Map<String, Object> doc,
                                  SessionCallback callback) {
-        if (!doc.exists()) {
+        if (doc == null || doc.isEmpty()) {
             deliver(callback, null, null,
                     recipientUid + " has not uploaded Signal keys yet — ask them to re-open the app.");
             return;
@@ -165,7 +156,7 @@ public final class SignalSessionManager {
 
         try {
             // ── 1. Parse identity key ─────────────────────────────────────────
-            String identityKeyB64 = doc.getString("identityKey");
+            String identityKeyB64 = (String) doc.get("identityKey");
             if (identityKeyB64 == null)
                 throw new IllegalArgumentException("identityKey missing from bundle");
             IdentityKey identityKey = new IdentityKey(
@@ -183,15 +174,22 @@ public final class SignalSessionManager {
             byte[] spkSig = Base64.decode((String) spkMap.get("signature"), Base64.NO_WRAP);
 
             // ── 3. Pick one one-time pre-key (optional but strongly recommended) ─
-            List<Map<String, Object>> otpks =
-                    (List<Map<String, Object>>) doc.get("oneTimePreKeys");
+            List<Map<String, Object>> otpks = new ArrayList<>();
+            Object oneTimePreKeys = doc.get("oneTimePreKeys");
+            if (oneTimePreKeys instanceof List) {
+                for (Object entry : (List<?>) oneTimePreKeys) {
+                    if (entry instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> publicKeyEntry = (Map<String, Object>) entry;
+                        otpks.add(publicKeyEntry);
+                    }
+                }
+            }
             int                 otpkId    = -1;
             ECPublicKey         otpkPub   = null;
-            Map<String, Object> chosenEntry = null; // retained for atomic arrayRemove below
 
             if (otpks != null && !otpks.isEmpty()) {
-                Map<String, Object> chosen = otpks.get(0); // pick the first available
-                chosenEntry = chosen;
+                Map<String, Object> chosen = otpks.get(0); // server returns at most one claimed key
                 otpkId  = toInt(chosen.get("id"), -1);
                 String pubB64 = (String) chosen.get("publicKey");
                 if (otpkId >= 0 && pubB64 != null) {
@@ -312,13 +310,11 @@ public final class SignalSessionManager {
             Log.d(TAG, "X3DH complete for " + recipientUid
                     + (otpkPub != null ? " (OTP key #" + otpkId + " consumed)" : " (no OTP key)"));
 
-            // ── 5. Atomically remove the consumed one-time pre-key from Firestore ─
-            if (otpkId >= 0 && otpkPub != null && chosenEntry != null) {
-                consumeOtpkOnFirestore(recipientUid, otpkId, chosenEntry);
-                if (otpks.size() == 1) {
-                    Log.w(TAG, "OTP key pool for " + LogRedact.uid(recipientUid) + " is now exhausted after this session."
-                            + " Pre-key refresh will be triggered on next outbound message.");
-                }
+            // The server atomically claimed (and removed) the selected OTP key
+            // before it returned this bundle. If a local handshake subsequently
+            // fails, the key is intentionally burned rather than made reusable.
+            if (otpkId >= 0 && otpks != null && !otpks.isEmpty()) {
+                Log.d(TAG, "A single-use OTP key was claimed for " + LogRedact.uid(recipientUid));
             }
 
             deliver(callback, address, store, null);
@@ -330,51 +326,6 @@ public final class SignalSessionManager {
             Log.e(TAG, "Unexpected error during X3DH for " + LogRedact.uid(recipientUid), e);
             deliver(callback, null, null, "Unexpected error: " + e.getMessage());
         }
-    }
-
-    // ── Private: consume OTP key on Firestore ─────────────────────────────────
-
-    /**
-     * Atomically removes the consumed one-time pre-key from the recipient's Firestore bundle.
-     *
-     * <p>Uses {@link FieldValue#arrayRemove(Object...)} which is a Firestore atomic
-     * operation — concurrent reads by two initiating devices can no longer both consume
-     * the same key and then each overwrite the other's removal (BUG-CR02).
-     *
-     * <p>If the network fails the worst case is unchanged: the key may be reused once
-     * more, which is a privacy (not security) degradation, consistent with Signal's own
-     * behaviour when servers are unreachable.
-     */
-    private static void consumeOtpkOnFirestore(String recipientUid, int consumedId,
-                                                Map<String, Object> chosenEntry) {
-        // BUG-S11 fix: retry up to 3 times with linear back-off (5 s / 10 s / 15 s).
-        // Failure means the key may be reused once, which is a privacy (not security)
-        // degradation — consistent with Signal's own behaviour on server unreachability.
-        consumeOtpkWithRetry(recipientUid, consumedId, chosenEntry, 3);
-    }
-
-    private static void consumeOtpkWithRetry(String recipientUid, int consumedId,
-                                              Map<String, Object> chosenEntry, int retriesLeft) {
-        FirebaseFirestore.getInstance()
-                .collection("users").document(recipientUid)
-                .collection("public_keys").document("bundle")
-                .update("oneTimePreKeys", FieldValue.arrayRemove(chosenEntry))
-                .addOnSuccessListener(v ->
-                        Log.d(TAG, "OTP key #" + consumedId + " removed for " + recipientUid))
-                .addOnFailureListener(e -> {
-                    if (retriesLeft > 0) {
-                        long delayMs = 5_000L * (4 - retriesLeft); // 5 s, 10 s, 15 s
-                        Log.w(TAG, "OTP key #" + consumedId + " removal failed — retrying in "
-                                + delayMs / 1000 + "s (" + retriesLeft + " left)", e);
-                        new Handler(Looper.getMainLooper()).postDelayed(
-                                () -> consumeOtpkWithRetry(
-                                        recipientUid, consumedId, chosenEntry, retriesLeft - 1),
-                                delayMs);
-                    } else {
-                        Log.w(TAG, "OTP key #" + consumedId + " removal failed after 3 attempts"
-                                + " — key may be reused once (BUG-S11)", e);
-                    }
-                });
     }
 
     // ── Private helpers ────────────────────────────────────────────────────────

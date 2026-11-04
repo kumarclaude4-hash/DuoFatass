@@ -195,9 +195,8 @@ describe('/users/{uid}/public_keys/{doc}', () => {
     );
   });
 
-  test('any signed-in user can consume a one-time pre-key (oneTimePreKeys + updatedAt only)', async () => {
-    // Legit consume: arrayRemove one entry → list shrinks from 2 → 1.
-    await assertSucceeds(
+  test('clients cannot consume a one-time pre-key directly (server-only transaction)', async () => {
+    await assertFails(
       asUser('bob').doc('users/alice/public_keys/bundle').update({
         oneTimePreKeys: [{ id: 2, key: 'otpk2' }],
         updatedAt: 2000,
@@ -205,8 +204,7 @@ describe('/users/{uid}/public_keys/{doc}', () => {
     );
   });
 
-  // ── S01-H1: cross-user prekey writes must be consume-only (list may only shrink) ──
-  test('S01-H1: non-owner cannot GROW the pre-key pool (plant attacker prekeys)', async () => {
+  test('non-owner cannot GROW the pre-key pool (server-only mutation)', async () => {
     await assertFails(
       asUser('bob').doc('users/alice/public_keys/bundle').update({
         oneTimePreKeys: [
@@ -219,20 +217,17 @@ describe('/users/{uid}/public_keys/{doc}', () => {
     );
   });
 
-  test('S01-H1: non-owner cannot SAME-SIZE swap the pool with attacker prekeys', async () => {
+  test('non-owner cannot replace the pool with a different shorter array', async () => {
     await assertFails(
       asUser('bob').doc('users/alice/public_keys/bundle').update({
-        oneTimePreKeys: [
-          { id: 1, key: 'attacker_a' },
-          { id: 2, key: 'attacker_b' },
-        ],
+        oneTimePreKeys: [{ id: 9, key: 'attacker_key' }],
         updatedAt: 2000,
       })
     );
   });
 
-  test('S01-H1: owner CAN still grow their own pre-key pool (refresh / arrayUnion)', async () => {
-    await assertSucceeds(
+  test('owner cannot directly rewrite the public key bundle after server-only migration', async () => {
+    await assertFails(
       asUser('alice').doc('users/alice/public_keys/bundle').update({
         oneTimePreKeys: [
           { id: 1, key: 'otpk1' },
@@ -261,8 +256,8 @@ describe('/users/{uid}/public_keys/{doc}', () => {
     );
   });
 
-  test('owner can still update identityKey/signedPreKey on their own bundle', async () => {
-    await assertSucceeds(
+  test('owner cannot rewrite identityKey directly after server-only migration', async () => {
+    await assertFails(
       asUser('alice').doc('users/alice/public_keys/bundle').update({
         identityKey: 'rotated_ik',
       })
