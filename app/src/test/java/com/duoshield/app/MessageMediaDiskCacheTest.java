@@ -25,7 +25,7 @@ public class MessageMediaDiskCacheTest {
 
     @Test
     public void everyPrivateMediaByteArrayLoadDisablesDiskCaching() throws IOException {
-        Path path = Paths.get("src/main/java/com/duoshield/app/ui/MessageAdapter.java");
+        Path path = locateAppFile("src/main/java/com/duoshield/app/ui/MessageAdapter.java");
         String source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
 
         Pattern privateLoad = Pattern.compile(
@@ -43,10 +43,7 @@ public class MessageMediaDiskCacheTest {
     }
     @Test
     public void upgradedInstallsPurgeLegacyGlideDiskCacheOffMainThread() throws IOException {
-        Path path = Paths.get("../app/src/main/java/com/duoshield/app/DuoShieldApp.java");
-        if (!Files.isRegularFile(path)) {
-            path = Paths.get("src/main/java/com/duoshield/app/DuoShieldApp.java");
-        }
+        Path path = locateAppFile("src/main/java/com/duoshield/app/DuoShieldApp.java");
         String source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
         assertTrue("A one-time migration marker must guard the legacy cache purge.",
                 source.contains("glide_private_media_disk_cache_purged_v1"));
@@ -56,6 +53,18 @@ public class MessageMediaDiskCacheTest {
                 source.indexOf("clearDiskCache()") < source.indexOf(".putBoolean(KEY_GLIDE_PRIVATE_MEDIA_CACHE_PURGED, true)"));
         assertTrue("Legacy private-media cache cleanup must run on a background thread.",
                 source.contains("new Thread(() -> {") && source.contains("glide-legacy-cache-purge"));
+    }
+
+    private static Path locateAppFile(String relativePath) throws IOException {
+        Path directory = Paths.get(".").toAbsolutePath().normalize();
+        for (int i = 0; i < 7 && directory != null; i++) {
+            Path modulePath = directory.resolve(relativePath);
+            if (Files.isRegularFile(modulePath)) return modulePath;
+            Path repositoryPath = directory.resolve("app").resolve(relativePath);
+            if (Files.isRegularFile(repositoryPath)) return repositoryPath;
+            directory = directory.getParent();
+        }
+        throw new IOException("Could not locate app source file: " + relativePath);
     }
 
 }
