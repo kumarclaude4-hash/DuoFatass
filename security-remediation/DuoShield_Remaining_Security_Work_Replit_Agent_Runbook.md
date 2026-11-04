@@ -11,7 +11,8 @@
 
 The source remediation is substantially merged. PRs #201–#205 and #207–#209 are merged; #206 was closed as a duplicate of #205; PR #200 was already merged separately. PR #209 was the final remediation PR.
 
-- **Latest main SHA at handoff:** `0006313d18dae0b3a402083e92c3eff303476df3`
+- **Main SHA at the code-remediation handoff before PR #210:** `0006313d18dae0b3a402083e92c3eff303476df3`
+- **Main SHA after PR #210 (documentation handoff):** `6b851556d961efee7da0cf8c89bb128754e5882f`. The present runbook correction branch is based on that main snapshot; always fetch live `origin/main` before any operator action.
 - **Code baseline with recorded green CI/security evidence:** `c38967540294355ae94adb3f913d8f637dd1693d`
 - **Final remediation PR merge:** #209, merge commit `00aec631041643e0ce7b35b9c1220d35875a48ee`
 - **CI run:** [#41810314589](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/41810314589)
@@ -346,7 +347,7 @@ You are the infrastructure and security closeout agent for DuoShield. Read this 
 
 **Repository:** https://github.com/kumarclaude4-hash/DuoFatass  
 **Recorded code baseline:** `c38967540294355ae94adb3f913d8f637dd1693d`  
-**Recorded latest main at handoff:** `0006313d18dae0b3a402083e92c3eff303476df3`  
+**Main SHA after previous runbook PR #210:** `6b851556d961efee7da0cf8c89bb128754e5882f` (historical starting point only; fetch live origin/main before action).  
 **FINAL SIGN-OFF:** PENDING.
 
 Begin read-only. Fetch origin/main and report current SHA, CI/Security run IDs, open PRs, live Render/Worker deployment identities, secret NAMES present/missing (never values), missing API scopes and the next safe task. Execute one phase at a time with before/after evidence and rollback plan.
