@@ -9,7 +9,9 @@ const MAX_PREKEY_ID = 0xFFFFFF;
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function isBase64(value, minBytes, maxBytes) {
-  if (typeof value !== "string" || value.length === 0 || value.length > Math.ceil(maxBytes * 4 / 3) + 8) {
+  if (typeof value !== "string" || value.length === 0
+      || value.length < Math.ceil(minBytes * 4 / 3) - 4
+      || value.length > Math.ceil(maxBytes * 4 / 3) + 8) {
     return false;
   }
   if (!BASE64_RE.test(value)) return false;
@@ -41,12 +43,12 @@ function validSignedPreKey(entry) {
 }
 
 function validKyberPreKey(entry) {
-  // libsignal Kyber-1024 public-key/signature encodings are kept opaque here;
-  // enforce bounded canonical base64 and the fixed schema, with stricter
-  // cryptographic signature verification performed by the client protocol.
+  // DuoShield currently generates libsignal KYBER_1024 public keys. Its
+  // serialized KEMPublicKey is 1568 bytes; keep the accepted value exact so
+  // arbitrary attacker-controlled payloads cannot be stored as "Kyber keys".
   return !!entry && typeof entry === "object" && !Array.isArray(entry)
     && validId(entry.id)
-    && isBase64(entry.publicKey, 1000, 5000)
+    && isBase64(entry.publicKey, 1568, 1568)
     && isBase64(entry.signature, 64, 128)
     && Number.isSafeInteger(entry.timestamp) && entry.timestamp > 0
     && Object.keys(entry).every(key =>
