@@ -177,8 +177,17 @@ public final class SignalSessionManager {
             byte[] spkSig = Base64.decode((String) spkMap.get("signature"), Base64.NO_WRAP);
 
             // ── 3. Pick one one-time pre-key (optional but strongly recommended) ─
-            List<Map<String, Object>> otpks =
-                    (List<Map<String, Object>>) doc.get("oneTimePreKeys");
+            List<Map<String, Object>> otpks = new ArrayList<>();
+            Object oneTimePreKeys = doc.get("oneTimePreKeys");
+            if (oneTimePreKeys instanceof List) {
+                for (Object entry : (List<?>) oneTimePreKeys) {
+                    if (entry instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> publicKeyEntry = (Map<String, Object>) entry;
+                        otpks.add(publicKeyEntry);
+                    }
+                }
+            }
             int                 otpkId    = -1;
             ECPublicKey         otpkPub   = null;
 
