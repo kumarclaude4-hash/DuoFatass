@@ -37,7 +37,6 @@ import java.util.concurrent.Executors;
  *       {@link SessionBuilder#process(PreKeyBundle)} — this runs the full X3DH
  *       handshake and stores the resulting Double Ratchet session in Room DB via
  *       {@link DuoShieldSignalStore}.</li>
-
  * </ol>
  *
  * After this call succeeds, {@code DuoShieldSignalStore} holds a live
@@ -119,7 +118,7 @@ public final class SignalSessionManager {
         });
     }
 
-    // ── Private: Firestore fetch ───────────────────────────────────────────────
+    // ── Private: server-mediated bundle claim ─────────────────────────────────
 
     private static void fetchBundleAndRunX3DH(Context ctx,
                                                String recipientUid,
