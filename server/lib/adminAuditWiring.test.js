@@ -190,8 +190,8 @@ test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
   const createWriteEnd = handler.indexOf("});", createWriteStart);
   assert.ok(createWriteStart >= 0 && createWriteEnd > createWriteStart, "invite write payload missing");
   const storedRecord = handler.slice(createWriteStart, createWriteEnd);
-  assert.match(storedRecord, /tokenHash:\\s*invite\\.hashInviteToken\\(rawToken\\)/);
-  assert.match(storedRecord, /tokenFingerprint:\\s*invite\\.tokenFingerprint\\(rawToken\\)/);
+  assert.match(storedRecord, /tokenHash:\s*invite\.hashInviteToken\(rawToken\)/);
+  assert.match(storedRecord, /tokenFingerprint:\s*invite\.tokenFingerprint\(rawToken\)/);
   assert.doesNotMatch(storedRecord, /(?:^|\\n)\\s*token\\s*:/m,
     "Firestore may store only tokenHash/tokenFingerprint, never the one-time raw token");
 });
