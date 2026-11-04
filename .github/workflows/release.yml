@@ -2,18 +2,19 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Release tag (e.g. v1.3.1). Leave blank to use versionName from build.gradle.'
-        required: false
+        description: 'Existing version tag to build (e.g. v1.4.1). Must point to this workflow commit.'
+        required: true
         type: string
 
-# Only one release job runs at a time; a newer push cancels an in-progress build.
+# Version tags are immutable release identifiers. Do not cancel a release already in progress.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write      # create/update releases and tags
@@ -28,6 +29,7 @@ jobs:
   release:
     name: Build & publish signed release APK
     runs-on: ubuntu-latest
+    environment: production-release
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -284,68 +286,62 @@ jobs:
         if: always()
         run: rm -f app/duoshield-release.keystore
 
-      # ── Resolve the release tag ──────────────────────────────────────────────
-      # Manual dispatch with an explicit tag  → use it as-is.
-      # Manual dispatch without a tag         → v{versionName}.
-      # Automatic push                        → v{versionName}  (always the same
-      #   rolling tag; old release is replaced and prior ones are deleted below).
-      - name: Resolve release tag
+      # A release is created only from an explicit version tag. Never synthesize
+      # or move a rolling version tag from main. For tag pushes, github.ref_name
+      # is the tag; manual dispatch must supply the same explicit tag.
+      - name: Resolve and validate immutable release tag
         id: tag
-        run: |
-          VERSION_NAME=$(grep -m1 'versionName' app/build.gradle | grep -oP '"\K[^"]+')
-
-          if [ -n "${{ inputs.version_tag }}" ]; then
-            TAG="${{ inputs.version_tag }}"
-          else
-            TAG="v${VERSION_NAME}"
-          fi
-
-          echo "name=${TAG}" >> $GITHUB_OUTPUT
-          echo "version_name=${VERSION_NAME}" >> $GITHUB_OUTPUT
-          echo "Resolved release tag: ${TAG}"
-
-      # ── Clear only the release being republished ─────────────────────────────
-      # SC-05: this step used to enumerate and DELETE *every* release and *every*
-      # tag in the repo on every push to `main` — paginating through the whole
-      # list and issuing `DELETE …/releases/{id}` + `DELETE …/git/refs/tags/{tag}`
-      # for each one. That destroyed the entire release/provenance history on
-      # each build: prior signed APKs, their tags, and their checksums all
-      # vanished, so nobody could pin, audit, or roll back to an earlier build,
-      # and a single push (or a compromised token) could wipe the record for
-      # every past version at once.
-      #
-      # The only legitimate goal was "don't stack duplicate releases on the
-      # rolling `v{versionName}` tag." That needs deleting AT MOST the one tag we
-      # are about to republish — never anyone else's. `action-gh-release` below
-      # updates an existing release in place, so this step just removes a stale
-      # release record for THIS tag (if present) and lets the tag be re-pointed
-      # at the new commit. All other releases and tags are preserved.
-      - name: Clear existing release for this tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.version_tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
-          set -u
-          REPO="${{ github.repository }}"
-          TAG="${{ steps.tag.outputs.name }}"
-
-          if [ -z "$TAG" ]; then
-            echo "::error::No resolved tag — refusing to touch any releases."
+          set -euo pipefail
+          if [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            echo "::error::Release workflow must run from a version tag."
             exit 1
           fi
 
-          # Look up a release whose tag_name is EXACTLY this tag. `gh api` returns
-          # 404 when none exists; that is the normal first-release case, not an
-          # error.
-          RELEASE_ID=$(gh api "repos/${REPO}/releases/tags/${TAG}" \
-            --jq '.id' 2>/dev/null || true)
-
-          if [ -n "$RELEASE_ID" ]; then
-            echo "Removing stale release for '${TAG}' (id=${RELEASE_ID}) so it can be republished..."
-            gh api --method DELETE "repos/${REPO}/releases/${RELEASE_ID}" \
-              || echo "  could not delete release ${RELEASE_ID} (continuing)"
-          else
-            echo "No existing release for '${TAG}' — nothing to clear."
+          # The application currently uses a two-component versionName (for example
+          # 1.4). Accept two or three numeric components so the tag validator matches
+          # the project's actual version scheme while still rejecting rolling/loose tags.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag: $TAG"
+            exit 1
           fi
+
+          TAG_COMMIT=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$TAG" --jq '.object.sha')
+          TAG_TYPE=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$TAG" --jq '.object.type')
+          if [ "$TAG_TYPE" = "tag" ]; then
+            TAG_COMMIT=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$TAG_COMMIT" --jq '.object.sha')
+          fi
+
+          if [ "$TAG_COMMIT" != "$WORKFLOW_SHA" ]; then
+            echo "::error::Tag $TAG points to $TAG_COMMIT but workflow checked out $WORKFLOW_SHA."
+            exit 1
+          fi
+
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Version releases are immutable; bump versionName and create a new tag."
+            exit 1
+          fi
+
+          VERSION_NAME=$(grep -m1 'versionName' app/build.gradle | grep -oP '"\K[^"]+')
+          EXPECTED_TAG="v${VERSION_NAME}"
+          if [ "$TAG" != "$EXPECTED_TAG" ]; then
+            echo "::error::Tag $TAG does not match app versionName $VERSION_NAME."
+            exit 1
+          fi
+
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "Validated immutable release tag $TAG at $TAG_COMMIT."
 
       # ── Compose the release body (install + SC-04 verification data) ─────────
       # Built as a file rather than an inline `body:` string so the checksums and
