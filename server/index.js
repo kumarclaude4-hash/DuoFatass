@@ -761,10 +761,10 @@ const adminLockoutWorkerClient = (() => {
   const workerSecret = process.env.ADMIN_LOCKOUT_WORKER_SECRET;
   if (!workerUrl || !workerSecret) {
     console.warn(
-      "admin lockout: ADMIN_LOCKOUT_WORKER_URL/ADMIN_LOCKOUT_WORKER_SECRET " +
-      "not fully set — falling back to process-local lockout state, which does NOT survive " +
-      "a restart or span multiple instances. Set both to enable the durable, " +
-      "Durable-Object-backed, atomic lockout (S04-L3)."
+      "admin lockout/auth rate limits: ADMIN_LOCKOUT_WORKER_URL/ADMIN_LOCKOUT_WORKER_SECRET " +
+      "not fully set — falling back to process-local counters, which do NOT survive " +
+      "a restart or span multiple instances. Set both to enable shared Durable-Object-backed " +
+      "admin lockout and authenticated endpoint rate limits."
     );
     return null;
   }
@@ -788,15 +788,17 @@ const adminLockoutStore = createAdminLockoutStore({
   onError: (op, err) => console.warn(`admin lockout: Worker/Durable Object ${op} failed, using local fallback:`, err.message),
 });
 if (adminLockoutWorkerClient) {
-  console.log("admin lockout: Durable-Object-backed (durable across restarts/instances, atomic under concurrency)");
+  console.log("admin lockout + authenticated API rate limits: Durable-Object-backed "
+      + "(shared across restarts/instances, atomic under concurrency)");
 }
 
 // S04-M1: see the comment on checkWaitlistIpRateLimit above — same fix. The
 // admin lockout is the highest-value target of this class of bypass (it
 // gates the operator panel), so it must not be left keyed by raw IPv6
-// address while the lower-stakes limiters get the fix. IP normalization is
-// applied inside adminLockoutStore itself (via the normalizeIp option above),
-// not here, so both the Redis-backed and local-fallback paths get it.
+// address. IP normalization is applied inside adminLockoutStore itself (via
+// the normalizeIp option above), not here, so both the Durable Object and
+// local-fallback paths get it. Authenticated user limits use separate SHA-256
+// UID+endpoint keys through authRateLimitStore.
 async function adminIpLocked(ip) {
   return adminLockoutStore.isLocked(ip);
 }
