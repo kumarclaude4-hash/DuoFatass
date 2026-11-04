@@ -41,8 +41,22 @@ import { AdminLockoutCounter } from './adminLockoutDurableObject.js';
 function makeFakeStorage(delayMs = 5) {
   const map = new Map();
   const delay = () => new Promise((resolve) => setTimeout(resolve, delayMs));
+  let alarmAt = null;
   return {
     map,
+    get alarmAt() { return alarmAt; },
+    async setAlarm(timestamp) {
+      await delay();
+      alarmAt = timestamp;
+    },
+    async getAlarm() {
+      await delay();
+      return alarmAt;
+    },
+    async deleteAlarm() {
+      await delay();
+      alarmAt = null;
+    },
     async get(key) {
       await delay();
       return map.has(key) ? map.get(key) : undefined;
@@ -184,6 +198,38 @@ test('malformed JSON body returns 400 rather than throwing', async () => {
     body: '{not json',
   }));
   assert.equal(res.status, 400);
+});
+
+
+test('record schedules expiry and alarm deletes the stored counter after its window', async () => {
+  const storage = makeFakeStorage(0);
+  const stub = makeDO(storage);
+  const before = Date.now();
+  const body = await bodyOf(await stub.fetch(recordRequest({ maxFails: 5, windowMs: 80 })));
+  assert.equal(storage.alarmAt, body.windowStart + 80);
+  assert.ok(storage.map.has('record'));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await stub.alarm();
+  assert.equal(storage.map.has('record'), false);
+});
+
+test('an early alarm reschedules instead of deleting a live counter', async () => {
+  const storage = makeFakeStorage(0);
+  const stub = makeDO(storage);
+  const body = await bodyOf(await stub.fetch(recordRequest({ maxFails: 5, windowMs: 1000 })));
+  await stub.alarm();
+  assert.equal(storage.map.has('record'), true);
+  assert.equal(storage.alarmAt, body.windowStart + 1000);
+});
+
+test('reset cancels the scheduled expiry alarm', async () => {
+  const storage = makeFakeStorage(0);
+  const stub = makeDO(storage);
+  await stub.fetch(recordRequest({ maxFails: 5, windowMs: 1000 }));
+  assert.notEqual(storage.alarmAt, null);
+  await stub.fetch(resetRequest());
+  assert.equal(storage.map.has('record'), false);
+  assert.equal(storage.alarmAt, null);
 });
 
 // ─── Concurrency: the actual requirement under test ─────────────────────────
