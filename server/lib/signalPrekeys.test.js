@@ -75,6 +75,43 @@ test("a retry cannot resurrect an already consumed pre-key", () => {
   assert.deepEqual(signalPrekeys.appendPreKeys(current, retriedBatch), current);
 });
 
+test("server high-water mark blocks retired IDs after the active pool drains", () => {
+  const first = signalPrekeys.appendPreKeysWithHighWaterMark(
+    [publicKey(50)], [publicKey(51), publicKey(52)], 100, 50
+  );
+  assert.deepEqual(first.oneTimePreKeys, [publicKey(50), publicKey(51), publicKey(52)]);
+  assert.equal(first.highWaterMark, 52);
+
+  const drained = signalPrekeys.appendPreKeysWithHighWaterMark(
+    [], [publicKey(51), publicKey(52), publicKey(53)], 100, first.highWaterMark
+  );
+  assert.deepEqual(drained.oneTimePreKeys, [publicKey(53)]);
+  assert.equal(drained.highWaterMark, 53);
+});
+
+test("pre-key high-water mark accepts a legitimate 24-bit ID wrap", () => {
+  const result = signalPrekeys.appendPreKeysWithHighWaterMark(
+    [publicKey(0xFFFFFE)],
+    [publicKey(0xFFFFFF), publicKey(1), publicKey(2)],
+    100,
+    0xFFFFFE
+  );
+  assert.deepEqual(result.oneTimePreKeys, [
+    publicKey(0xFFFFFE), publicKey(0xFFFFFF), publicKey(1), publicKey(2),
+  ]);
+  assert.equal(result.highWaterMark, 2);
+});
+
+test("empty legacy bundle requires a client first-ID bootstrap", () => {
+  assert.throws(
+    () => signalPrekeys.appendPreKeysWithHighWaterMark([], [publicKey(51)]),
+    /first batch ID required/
+  );
+  const result = signalPrekeys.appendPreKeysWithHighWaterMark([], [publicKey(51)], 100, null, 51);
+  assert.deepEqual(result.oneTimePreKeys, [publicKey(51)]);
+  assert.equal(result.highWaterMark, 51);
+});
+
 test("rejects a reused ID carrying a different public key", () => {
   assert.throws(
     () => signalPrekeys.appendPreKeys([publicKey(1)], [publicKey(1, 8)]),

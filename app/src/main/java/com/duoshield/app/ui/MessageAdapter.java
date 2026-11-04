@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.duoshield.app.R;
 import com.duoshield.app.models.Message;
 import com.duoshield.app.util.DateHeaderHelper;
@@ -746,7 +747,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                 byte[] cachedThumb = com.duoshield.app.util.B2StorageHelper.getCachedThumb(vidRef);
                 byte[] stamp = com.duoshield.app.util.InlineThumb.decode(msg.getThumb(), vidKey);
                 if (cachedThumb != null) {
-                    Glide.with(ctx).load(cachedThumb).centerCrop().into(h.videoThumbnail);
+                    Glide.with(ctx).load(cachedThumb).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(h.videoThumbnail);
                 } else if (stamp != null) {
                     // The sender extracted this frame from the local file before uploading, so
                     // it ships inside the message document. Rendering it here replaces what
@@ -755,7 +756,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                     // NOT kick off loadVideoThumbnail as a follow-up: the inline frame is the
                     // same frame, so the download would buy nothing but bandwidth and, on a
                     // 2 GB device, a very real OOM risk.
-                    Glide.with(ctx).load(stamp).centerCrop().into(h.videoThumbnail);
+                    Glide.with(ctx).load(stamp).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(h.videoThumbnail);
                 } else if (com.duoshield.app.util.B2StorageHelper
                         .isLocallyAvailable(ctx, vidRef)) {
                     // Legacy video with no inline thumb. Only extract a frame when the
@@ -774,7 +775,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                             new com.duoshield.app.util.B2StorageHelper.ThumbnailCallback() {
                         @Override public void onLoaded(byte[] jpegBytes) {
                             if (vidRef.equals(h.videoThumbnail.getTag())) {
-                                Glide.with(ctx).load(jpegBytes).centerCrop().into(h.videoThumbnail);
+                                Glide.with(ctx).load(jpegBytes).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(h.videoThumbnail);
                             }
                         }
                         @Override public void onError(Exception e) {
@@ -953,7 +954,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                 // Check the in-memory cache first — avoids showing a placeholder for already-loaded images
                 byte[] cached = com.duoshield.app.util.B2StorageHelper.getCached(imgRef);
                 if (cached != null) {
-                    Glide.with(ctx).load(cached).centerCrop().into(h.imageView);
+                    Glide.with(ctx).load(cached).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(h.imageView);
                 } else {
                     // Inline thumbnail first: a ~1.5 KB stamp that arrived with the message
                     // document, so the bubble shows the actual photo — blurry but correctly
@@ -962,7 +963,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                     byte[] stamp = com.duoshield.app.util.InlineThumb.decode(
                             msg.getThumb(), imgKey);
                     if (stamp != null) {
-                        Glide.with(ctx).load(stamp).centerCrop().into(h.imageView);
+                        Glide.with(ctx).load(stamp).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(h.imageView);
                     } else {
                         Glide.with(ctx).load(R.drawable.ic_image).centerCrop().into(h.imageView);
                     }
@@ -970,7 +971,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                             new com.duoshield.app.util.B2StorageHelper.MediaCallback() {
                         @Override public void onLoaded(byte[] plainBytes) {
                             if (imgRef.equals(h.imageView.getTag())) {
-                                Glide.with(ctx).load(plainBytes).centerCrop().into(h.imageView);
+                                Glide.with(ctx).load(plainBytes).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(h.imageView);
                             }
                         }
                         @Override public void onError(Exception e) {
@@ -1209,7 +1210,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                 if (com.duoshield.app.util.B2StorageHelper.isB2Path(url)) {
                     byte[] cached = com.duoshield.app.util.B2StorageHelper.getCached(url);
                     if (cached != null) {
-                        Glide.with(ctx).load(cached).centerCrop().into(slot);
+                        Glide.with(ctx).load(cached).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(slot);
                     } else {
                         // Paint the inline stamp before anything else. An album grid is the
                         // worst case for the old behaviour: four video slots meant four full
@@ -1217,7 +1218,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                         byte[] slotStamp =
                                 com.duoshield.app.util.InlineThumb.decode(itemThumb, key);
                         if (slotStamp != null) {
-                            Glide.with(ctx).load(slotStamp).centerCrop().into(slot);
+                            Glide.with(ctx).load(slotStamp).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(slot);
                         } else {
                             Glide.with(ctx).load(R.drawable.ic_image).centerCrop().into(slot);
                         }
@@ -1227,7 +1228,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                             byte[] cachedThumb =
                                     com.duoshield.app.util.B2StorageHelper.getCachedThumb(url);
                             if (cachedThumb != null) {
-                                Glide.with(ctx).load(cachedThumb).centerCrop().into(slot);
+                                Glide.with(ctx).load(cachedThumb).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(slot);
                             } else if (slotStamp == null
                                     && com.duoshield.app.util.B2StorageHelper
                                             .isLocallyAvailable(ctx, url)) {
@@ -1239,7 +1240,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                                         new com.duoshield.app.util.B2StorageHelper.ThumbnailCallback() {
                                     @Override public void onLoaded(byte[] jpegBytes) {
                                         if (finalUrl.equals(slot.getTag())) {
-                                            Glide.with(ctx).load(jpegBytes).centerCrop().into(slot);
+                                            Glide.with(ctx).load(jpegBytes).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(slot);
                                         }
                                     }
                                     @Override public void onError(Exception e) {}
@@ -1250,7 +1251,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                                 new com.duoshield.app.util.B2StorageHelper.MediaCallback() {
                                     @Override public void onLoaded(byte[] plainBytes) {
                                         if (finalUrl.equals(slot.getTag())) {
-                                            Glide.with(ctx).load(plainBytes).centerCrop().into(slot);
+                                            Glide.with(ctx).load(plainBytes).diskCacheStrategy(DiskCacheStrategy.NONE).centerCrop().into(slot);
                                         }
                                     }
                                     @Override public void onError(Exception e) {}

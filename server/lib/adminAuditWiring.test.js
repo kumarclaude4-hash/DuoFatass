@@ -173,47 +173,41 @@ test("S05-M1: waitlist requestId is never logged to stdout in the clear", () => 
   );
 });
 
-// ── S05-H2 wiring test ────────────────────────────────────────────────────────
-//
-// Same "wiring, not existence" caveat as above: this proves the deny route,
-// admin-auth gate, status transition, and audit call are all present and in
-// the right order, as text. It does not prove a request reaches Firestore
-// (BLOCKED here — no emulator/credentials).
+// ── S05-H2 / invite-management wiring tests ──────────────────────────────────
+// The legacy waitlist approve/deny API has been replaced by operator-issued
+// hashed invites. Guard the current create/revoke paths, not deleted routes.
 
-test("S05-H2: POST /admin/api/waitlist/deny exists, is admin-gated, and sets status: denied", () => {
-  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/waitlist/deny"');
-  assert.ok(routeStart > 0, "no POST /admin/api/waitlist/deny route found — the deny path is missing");
-
-  // Bound the slice to this handler only, so matches from /approve above it
-  // (or /admin/api/locked below it) cannot make these assertions pass
-  // spuriously.
-  const nextRouteStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/locked"', routeStart);
-  assert.ok(nextRouteStart > routeStart, "could not bound the deny handler");
+test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
+  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/create"');
+  const nextRouteStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"', routeStart);
+  assert.ok(routeStart > 0 && nextRouteStart > routeStart, "current invite create route missing");
   const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
+  assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite create must authenticate before reading its body");
+  assert.ok(handler.includes("invite.hashInviteToken(rawToken)"), "only a token hash may be persisted");
+  assert.ok(handler.includes('status: "active"'), "new invites must start active");
+  assert.ok(handler.includes('auditAdminEvent("invite_created"'), "invite creation must be audited");
+  const createWriteStart = handler.indexOf("await ref.create({");
+  const createWriteEnd = handler.indexOf("});", createWriteStart);
+  assert.ok(createWriteStart >= 0 && createWriteEnd > createWriteStart, "invite write payload missing");
+  const storedRecord = handler.slice(createWriteStart, createWriteEnd);
+  assert.match(storedRecord, /tokenHash:\s*invite\.hashInviteToken\(rawToken\)/);
+  assert.match(storedRecord, /tokenFingerprint:\s*invite\.tokenFingerprint\(rawToken\)/);
+  assert.doesNotMatch(storedRecord, /(?:^|\\n)\\s*token\\s*:/m,
+    "Firestore may store only tokenHash/tokenFingerprint, never the one-time raw token");
+});
 
-  // S05-L2: the deny route (like every other admin POST route) now runs
-  // requireAdminAuth() via requireAdminAuthThenBody() BEFORE the body is
-  // read, rather than inside the body's "end" callback — asserting the
-  // wrapper call here is how this test proves that ordering, not just that
-  // auth happens somewhere in the handler.
-  assert.ok(
-    handler.includes("requireAdminAuthThenBody(req, res"),
-    "the deny endpoint must be gated by requireAdminAuth *before* its body is read " +
-    "(via requireAdminAuthThenBody), same as every other /admin/api POST route"
-  );
-  assert.ok(
-    /status\s*!==\s*"pending"/.test(handler),
-    "deny must reject a requestId that is not currently pending (no re-denying approved/denied docs)"
-  );
-  assert.ok(
-    /status:\s*"denied"/.test(handler),
-    "deny must set status: \"denied\" — the finding's fix explicitly asks for a denied status " +
-    "distinct from pending/approved/used"
-  );
-  assert.ok(
-    handler.includes('auditAdminEvent("waitlist_denied"'),
-    "a denial must leave a durable audit trail, same as approval"
-  );
+test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-checked, and audited", () => {
+  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"');
+  const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "GET" && req.url === "/admin/api/locked"', routeStart);
+  assert.ok(routeStart > 0, "current invite revoke route missing");
+  const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart > routeStart ? nextRouteStart : routeStart + 5000);
+  assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite revoke must authenticate before reading its body");
+  assert.ok(handler.includes("db.runTransaction(async (tx) =>"), "invite revoke must be transactional");
+  assert.ok(handler.includes('current !== "active"'), "used/expired/revoked invites must not be re-revoked");
+  assert.ok(handler.includes('status: "revoked"'), "revocation must persist its state");
+  assert.ok(handler.includes('auditAdminEvent("invite_revoked"'), "invite revocation must be audited");
+  assert.doesNotMatch(SERVER_SOURCE, /req\.url === "\/admin\/api\/waitlist\/(?:approve|deny)"/,
+    "retired waitlist write routes must not silently reappear");
 });
 
 // ── S05-M3 wiring tests ──────────────────────────────────────────────────

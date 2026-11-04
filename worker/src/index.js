@@ -643,9 +643,10 @@ export default {
       });
     }
 
-    // ── /adminLockout — atomic brute-force lockout counter for the Render ────
-    // admin panel, gated by ADMIN_LOCKOUT_SECRET (server-to-server only, not
-    // an operator-facing view like /stats). See adminLockoutDurableObject.js
+    // ── /adminLockout — atomic fixed-window counters for the Render server ──
+    // Includes admin brute-force lockout and namespaced authenticated API
+    // rate-limit buckets; gated by ADMIN_LOCKOUT_SECRET (server-to-server
+    // only, not an operator-facing view like /stats). See adminLockoutDurableObject.js
     // for why this is a Durable Object rather than a KV counter, and
     // server/lib/adminLockoutWorkerClient.js for the caller.
     //

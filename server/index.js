@@ -15,6 +15,7 @@ const { sanitizeMigratedUserFields, isValidDisplayName } = require("./lib/profil
 const { createAdminLockoutStore } = require("./lib/adminLockoutStore");
 const { createAdminSessionStore } = require("./lib/adminSessionStore");
 const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClient");
+const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
 
 let serviceAccount;
@@ -480,36 +481,15 @@ const AUTH_RATE_LIMITS = {
   signalClaimPreKey: 30,
   acknowledgeRotation: 3,
 };
-const authRateLimits = new Map(); // uid → { counts: {ep: n}, windowStart }
-
-function checkAuthRateLimit(uid, endpoint) {
-  const now   = Date.now();
+// Authenticated endpoint limits use the same namespaced Durable Object counter
+// as the admin brute-force gate when the Worker credentials are configured.
+// The local bounded fallback preserves availability during an operator setup
+// gap or short Worker outage, but is intentionally not described as global.
+async function checkAuthRateLimit(uid, endpoint) {
   const limit = AUTH_RATE_LIMITS[endpoint] || 30;
-  const rec   = authRateLimits.get(uid);
-  // Per-endpoint fixed window. Reuse the pure windowing helper by projecting the
-  // multi-endpoint record down to this endpoint's { count, windowStart }.
-  const projected = rec
-    ? { count: rec.counts[endpoint] || 0, windowStart: rec.windowStart }
-    : undefined;
-  const { allowed, record } = pure.evaluateFixedWindow(projected, now, AUTH_RATE_WINDOW_MS, limit);
-  if (!allowed) return false;
-
-  if (!rec || now - rec.windowStart >= AUTH_RATE_WINDOW_MS) {
-    // Window rolled over (or first hit): start a fresh multi-endpoint record.
-    authRateLimits.set(uid, { counts: { [endpoint]: record.count }, windowStart: record.windowStart });
-  } else {
-    rec.counts[endpoint] = record.count;
-  }
-  return true;
+  const result = await authRateLimitStore.check(uid, endpoint, limit);
+  return result.allowed;
 }
-
-// Purge stale auth rate-limit entries every 5 minutes.
-setInterval(() => {
-  const cutoff = Date.now() - AUTH_RATE_WINDOW_MS;
-  for (const [uid, rec] of authRateLimits) {
-    if (rec.windowStart < cutoff) authRateLimits.delete(uid);
-  }
-}, 5 * 60 * 1000);
 
 // ── /turnCredentials daily aggregate cap (S04-M2) ─────────────────────────────
 // The per-minute bucket above (turnCredentials: 20) still allows ~28,800 mints
@@ -781,15 +761,24 @@ const adminLockoutWorkerClient = (() => {
   const workerSecret = process.env.ADMIN_LOCKOUT_WORKER_SECRET;
   if (!workerUrl || !workerSecret) {
     console.warn(
-      "admin lockout: ADMIN_LOCKOUT_WORKER_URL/ADMIN_LOCKOUT_WORKER_SECRET " +
-      "not fully set — falling back to process-local lockout state, which does NOT survive " +
-      "a restart or span multiple instances. Set both to enable the durable, " +
-      "Durable-Object-backed, atomic lockout (S04-L3)."
+      "admin lockout/auth rate limits: ADMIN_LOCKOUT_WORKER_URL/ADMIN_LOCKOUT_WORKER_SECRET " +
+      "not fully set — falling back to process-local counters, which do NOT survive " +
+      "a restart or span multiple instances. Set both to enable shared Durable-Object-backed " +
+      "admin lockout and authenticated endpoint rate limits."
     );
     return null;
   }
   return createAdminLockoutWorkerClient({ workerUrl, workerSecret });
 })();
+
+const authRateLimitStore = createAuthRateLimitStore({
+  client: adminLockoutWorkerClient,
+  windowMs: AUTH_RATE_WINDOW_MS,
+  onError: (op, err) => console.warn(
+    `auth rate limit: Durable Object ${op} failed; using bounded process-local fallback:`,
+    err.message
+  ),
+});
 
 const adminLockoutStore = createAdminLockoutStore({
   client: adminLockoutWorkerClient,
@@ -799,15 +788,17 @@ const adminLockoutStore = createAdminLockoutStore({
   onError: (op, err) => console.warn(`admin lockout: Worker/Durable Object ${op} failed, using local fallback:`, err.message),
 });
 if (adminLockoutWorkerClient) {
-  console.log("admin lockout: Durable-Object-backed (durable across restarts/instances, atomic under concurrency)");
+  console.log("admin lockout + authenticated API rate limits: Durable-Object-backed "
+      + "(shared across restarts/instances, atomic under concurrency)");
 }
 
 // S04-M1: see the comment on checkWaitlistIpRateLimit above — same fix. The
 // admin lockout is the highest-value target of this class of bypass (it
 // gates the operator panel), so it must not be left keyed by raw IPv6
-// address while the lower-stakes limiters get the fix. IP normalization is
-// applied inside adminLockoutStore itself (via the normalizeIp option above),
-// not here, so both the Redis-backed and local-fallback paths get it.
+// address. IP normalization is applied inside adminLockoutStore itself (via
+// the normalizeIp option above), not here, so both the Durable Object and
+// local-fallback paths get it. Authenticated user limits use separate SHA-256
+// UID+endpoint keys through authRateLimitStore.
 async function adminIpLocked(ip) {
   return adminLockoutStore.isLocked(ip);
 }
@@ -2762,7 +2753,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!checkAuthRateLimit(decodedToken.uid, "migrateUid")) {
+        if (!(await checkAuthRateLimit(decodedToken.uid, "migrateUid"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -2993,7 +2984,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!checkAuthRateLimit(decodedToken.uid, "acknowledgeRotation")) {
+        if (!(await checkAuthRateLimit(decodedToken.uid, "acknowledgeRotation"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -3099,7 +3090,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!checkAuthRateLimit(decodedToken.uid, "createChat")) {
+        if (!(await checkAuthRateLimit(decodedToken.uid, "createChat"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -3225,7 +3216,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!checkAuthRateLimit(uid, "mediaToken")) {
+        if (!(await checkAuthRateLimit(uid, "mediaToken"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -3320,7 +3311,7 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!checkAuthRateLimit(uid, "signalRegisterBundle")) {
+        if (!(await checkAuthRateLimit(uid, "signalRegisterBundle"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3344,7 +3335,12 @@ const server = http.createServer((req, res) => {
           return;
         }
         const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
-        await ref.set({ ...bundle, updatedAt: FieldValue.serverTimestamp() });
+        await ref.set({
+          ...bundle,
+          // Server-owned marker used to prevent a retry from re-adding claimed keys.
+          oneTimePreKeyIdHighWaterMark: signalPrekeys.getPreKeyHighWaterMark(bundle.oneTimePreKeys),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
         res.end(JSON.stringify({ uploaded: true }));
       } catch (e) {
@@ -3371,7 +3367,7 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!checkAuthRateLimit(uid, "signalAppendPreKeys")) {
+        if (!(await checkAuthRateLimit(uid, "signalAppendPreKeys"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3389,7 +3385,12 @@ const server = http.createServer((req, res) => {
           return;
         }
         const additions = parsed.oneTimePreKeys;
-        if (!signalPrekeys.validPreKeyList(additions, 25)) {
+        const firstPreKeyId = parsed.firstPreKeyId;
+        if (!signalPrekeys.validPreKeyList(additions, 25)
+            || (firstPreKeyId !== undefined
+                && (!Number.isInteger(firstPreKeyId)
+                    || !additions.length
+                    || additions[0].id !== firstPreKeyId))) {
           res.writeHead(400, { "Content-Type": "text/plain" });
           res.end("Invalid one-time pre-keys");
           return;
@@ -3399,10 +3400,20 @@ const server = http.createServer((req, res) => {
           const snap = await tx.get(ref);
           if (!snap.exists) throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
           const current = snap.data();
-          const merged = signalPrekeys.appendPreKeys(current.oneTimePreKeys || [], additions);
-          if (merged.length === (current.oneTimePreKeys || []).length) return "unchanged";
+          const merged = signalPrekeys.appendPreKeysWithHighWaterMark(
+            current.oneTimePreKeys || [],
+            additions,
+            signalPrekeys.MAX_ONE_TIME_PREKEYS,
+            current.oneTimePreKeyIdHighWaterMark,
+            firstPreKeyId
+          );
+          const existing = current.oneTimePreKeys || [];
+          const unchanged = merged.oneTimePreKeys.length === existing.length
+            && merged.highWaterMark === current.oneTimePreKeyIdHighWaterMark;
+          if (unchanged) return "unchanged";
           tx.update(ref, {
-            oneTimePreKeys: merged,
+            oneTimePreKeys: merged.oneTimePreKeys,
+            oneTimePreKeyIdHighWaterMark: merged.highWaterMark,
             updatedAt: FieldValue.serverTimestamp(),
           });
           return "updated";
@@ -3436,7 +3447,7 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!checkAuthRateLimit(uid, "signalUpdatePreKey")) {
+        if (!(await checkAuthRateLimit(uid, "signalUpdatePreKey"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3503,7 +3514,7 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!checkAuthRateLimit(callerUid, "signalClaimPreKey")) {
+        if (!(await checkAuthRateLimit(callerUid, "signalClaimPreKey"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3556,6 +3567,9 @@ const server = http.createServer((req, res) => {
           if (response.oneTimePreKeys.length) {
             tx.update(bundleRef, {
               oneTimePreKeys: remaining.oneTimePreKeys,
+              oneTimePreKeyIdHighWaterMark: signalPrekeys.validId(source.oneTimePreKeyIdHighWaterMark)
+                ? source.oneTimePreKeyIdHighWaterMark
+                : signalPrekeys.getPreKeyHighWaterMark(source.oneTimePreKeys || []),
               updatedAt: FieldValue.serverTimestamp(),
             });
           }
@@ -3601,7 +3615,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!checkAuthRateLimit(turnUid, "turnCredentials")) {
+        if (!(await checkAuthRateLimit(turnUid, "turnCredentials"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -3715,104 +3729,35 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ── GET /status — machine-readable JSON stats ────────────────────────────────
+  // ── GET /status — minimal public liveness response (S04-I1) ─────────────────
+  // Delivery counters and process timing are operator telemetry, not public API.
   if (parsedUrl === "/status") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: "running",
-      startedAt: stats.startedAt,
-      uptime: Math.floor(process.uptime()) + "s",
-      delivered: stats.delivered,
-      groupDelivered: stats.groupDelivered,
-      skippedMissingToken: stats.skippedMissingToken,
-      skippedOld: stats.skippedOld,
-      failed: stats.failed,
-    }));
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ status: "running" }));
     return;
   }
 
-  // ── GET / — live HTML dashboard ──────────���────────────────────────────────────
+  // ── GET / — static service liveness page (S04-I1) ──────────────────────────
   if ((req.method === "GET" || req.method === "HEAD") && (parsedUrl === "/" || parsedUrl === "")) {
-    const uptime  = Math.floor(process.uptime());
-    const hours   = Math.floor(uptime / 3600);
-    const minutes = Math.floor((uptime % 3600) / 60);
-    const seconds = uptime % 60;
-    const uptimeStr = `${hours}h ${minutes}m ${seconds}s`;
-    const total = stats.delivered + stats.groupDelivered;
-    const html = `<!DOCTYPE html>
+    const html = `<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <meta http-equiv="refresh" content="30"/>
-  <title>DuoFat Push Server</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-         background:#0a0e1a;color:#e2e8f0;min-height:100vh;
-         display:flex;flex-direction:column;align-items:center;
-         justify-content:center;padding:24px}
-    h1{font-size:1.6rem;font-weight:700;color:#00c9e0;margin-bottom:4px}
-    .sub{font-size:.85rem;color:#64748b;margin-bottom:36px}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
-          gap:16px;width:100%;max-width:720px}
-    .card{background:#0f1620;border:1px solid #1e293b;border-radius:12px;
-          padding:20px 24px}
-    .card .label{font-size:.75rem;color:#64748b;text-transform:uppercase;
-                 letter-spacing:.08em;margin-bottom:6px}
-    .card .value{font-size:2rem;font-weight:700;color:#f8fafc}
-    .card .value.green{color:#22c55e}
-    .card .value.red{color:#ef4444}
-    .card .value.cyan{color:#00c9e0}
-    .dot{display:inline-block;width:8px;height:8px;border-radius:50%;
-         background:#22c55e;margin-right:6px;animation:pulse 2s infinite}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-    .footer{margin-top:28px;font-size:.75rem;color:#334155}
-    a{color:#00c9e0;text-decoration:none}
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DuoShield Push Server</title>
 </head>
 <body>
-  <h1><span class="dot"></span>DuoFat Push Server</h1>
-  <p class="sub">Started ${stats.startedAt} &nbsp;·&nbsp; Auto-refreshes every 30 s</p>
-  <div class="grid">
-    <div class="card">
-      <div class="label">Uptime</div>
-      <div class="value cyan">${uptimeStr}</div>
-    </div>
-    <div class="card">
-      <div class="label">1-to-1 Delivered</div>
-      <div class="value green">${stats.delivered}</div>
-    </div>
-    <div class="card">
-      <div class="label">Group Delivered</div>
-      <div class="value green">${stats.groupDelivered}</div>
-    </div>
-    <div class="card">
-      <div class="label">Total Sent</div>
-      <div class="value">${total}</div>
-    </div>
-    <div class="card">
-      <div class="label">No Token (skipped)</div>
-      <div class="value">${stats.skippedMissingToken}</div>
-    </div>
-    <div class="card">
-      <div class="label">Too Old (skipped)</div>
-      <div class="value">${stats.skippedOld}</div>
-    </div>
-    <div class="card">
-      <div class="label">Failed</div>
-      <div class="value ${stats.failed > 0 ? "red" : ""}">${stats.failed}</div>
-    </div>
-  </div>
-  <p class="footer">
-    JSON: <a href="/status">/status</a> &nbsp;·&nbsp;
-    Health: <a href="/health">/health</a>
-  </p>
+  <main>
+    <h1>DuoShield Push Server</h1>
+    <p>Service is running.</p>
+    <p>Health endpoint: <a href="/health">/health</a></p>
+  </main>
 </body>
 </html>`;
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": CSP_DASHBOARD,
+      "Cache-Control": "no-store",
     });
     res.end(html);
     return;
@@ -3920,7 +3865,7 @@ const server = http.createServer((req, res) => {
         let lpUid;
         try { lpUid = (await admin.auth().verifyIdToken(tok, true)).uid; }
         catch { res.writeHead(401); res.end("Invalid token"); return; }
-        if (!checkAuthRateLimit(lpUid, "linkPreview")) {
+        if (!(await checkAuthRateLimit(lpUid, "linkPreview"))) {
           res.writeHead(429); res.end("Rate limit exceeded — retry in 60 s"); return;
         }
 
@@ -4078,7 +4023,7 @@ const server = http.createServer((req, res) => {
         let callerUid;
         try { callerUid = (await admin.auth().verifyIdToken(tok, true)).uid; }
         catch { res.writeHead(401); res.end("Invalid token"); return; }
-        if (!checkAuthRateLimit(callerUid, "removeGroupMember")) {
+        if (!(await checkAuthRateLimit(callerUid, "removeGroupMember"))) {
           res.writeHead(429); res.end("Rate limit exceeded — retry in 60 s"); return;
         }
         let groupId, memberUid;
@@ -4146,7 +4091,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!checkAuthRateLimit(uid, "requestLockNonce")) {
+        if (!(await checkAuthRateLimit(uid, "requestLockNonce"))) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;

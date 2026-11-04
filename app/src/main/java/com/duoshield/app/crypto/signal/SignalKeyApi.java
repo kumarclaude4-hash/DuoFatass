@@ -52,8 +52,13 @@ final class SignalKeyApi {
         post("/signal/registerBundle", body);
     }
 
-    static void appendPreKeys(List<Map<String, Object>> entries) throws Exception {
+    static void appendPreKeys(List<Map<String, Object>> entries, int firstPreKeyId) throws Exception {
+        if (entries == null || entries.isEmpty() || entries.get(0).get("id") == null
+                || ((Number) entries.get(0).get("id")).intValue() != firstPreKeyId) {
+            throw new IllegalArgumentException("First pre-key ID must match the append batch");
+        }
         JSONObject body = new JSONObject();
+        body.put("firstPreKeyId", firstPreKeyId);
         body.put("oneTimePreKeys", toJsonArray(entries));
         post("/signal/appendPreKeys", body);
     }

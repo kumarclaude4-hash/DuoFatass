@@ -97,9 +97,11 @@ public final class SignalPreKeyRefresher {
         // ── 1. Generate fresh Curve25519 key pairs ────────────────────────────
         int startId = SignalKeyManager.getAndIncrementNextPreKeyId(ctx, BATCH_SIZE);
         List<PreKeyRecord> newKeys = new ArrayList<>(BATCH_SIZE);
+        int nextId = startId;
         for (int i = 0; i < BATCH_SIZE; i++) {
             ECKeyPair kp = Curve.generateKeyPair();
-            newKeys.add(new PreKeyRecord(startId + i, kp));
+            newKeys.add(new PreKeyRecord(nextId, kp));
+            nextId = nextId >= 0xFFFFFF ? 1 : nextId + 1;
         }
 
         // ── 2. Persist private bytes + update IDs CSV in SecurePrefs ─────────
@@ -119,7 +121,7 @@ public final class SignalPreKeyRefresher {
 
         // ── 4. Append through the authenticated, transaction-backed server API ──
         // Private halves remain in SecurePrefs; only bounded public entries are sent.
-        SignalKeyApi.appendPreKeys(publicEntries);
+        SignalKeyApi.appendPreKeys(publicEntries, startId);
         Log.d(TAG, "Uploaded " + BATCH_SIZE + " pre-keys through the server API (IDs "
                 + startId + " – " + (startId + BATCH_SIZE - 1) + ").");
     }

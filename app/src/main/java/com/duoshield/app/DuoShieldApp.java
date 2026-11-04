@@ -33,10 +33,22 @@ import org.signal.libsignal.protocol.ecc.Curve;
 public class DuoShieldApp extends Application implements Configuration.Provider {
 
     private static final String TAG = "DuoShieldApp";
+    private static final String PREF_GLIDE_CACHE_MIGRATION = "duoshield_cache_migration";
+    private static final String KEY_GLIDE_PRIVATE_MEDIA_CACHE_PURGED =
+            "glide_private_media_disk_cache_purged_v1";
 
     @Override
     public void onCreate() {
         super.onCreate();
+
+        // S08-H3 upgrade cleanup: older releases used Glide's shared disk cache
+        // for decrypted private B2 media. New MessageAdapter requests disable
+        // disk caching, but an upgraded install can still have old plaintext
+        // cache entries. Purge the old Glide disk cache once, off the main
+        // thread, before the user can scroll message history. The completion
+        // marker is written only after clearDiskCache() succeeds, so a process
+        // death or I/O failure retries on the next launch.
+        purgeLegacyPrivateMediaCacheOnce();
 
         // ── S10-N1: App Check provider registration ────────────────────────────
         // Registers the attestation provider that lets Firestore/Storage tell a
@@ -189,6 +201,33 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
         AppLockManager.init(this);
 
         scheduleDeferredStartupWork();
+    }
+
+    /**
+     * Removes decrypted private-media entries left by app versions whose
+     * MessageAdapter requests used Glide's persistent disk cache.
+     */
+    private void purgeLegacyPrivateMediaCacheOnce() {
+        android.content.SharedPreferences migrationPrefs = getSharedPreferences(
+                PREF_GLIDE_CACHE_MIGRATION, MODE_PRIVATE);
+        if (migrationPrefs.getBoolean(KEY_GLIDE_PRIVATE_MEDIA_CACHE_PURGED, false)) return;
+
+        Thread cleanup = new Thread(() -> {
+            try {
+                Glide.get(getApplicationContext()).clearDiskCache();
+                boolean recorded = migrationPrefs.edit()
+                        .putBoolean(KEY_GLIDE_PRIVATE_MEDIA_CACHE_PURGED, true)
+                        .commit();
+                if (!recorded) {
+                    Log.w(TAG, "Legacy private-media cache was cleared, but its migration marker "
+                            + "could not be persisted; cleanup will retry next launch.");
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Legacy private-media cache cleanup failed; will retry next launch.", e);
+            }
+        }, "glide-legacy-cache-purge");
+        cleanup.setDaemon(true);
+        cleanup.start();
     }
 
     /**
