@@ -357,7 +357,14 @@ service cloud.firestore {
                       && request.resource.data.sender == request.auth.uid
                       && request.resource.data.isEncrypted == true
                       && request.resource.data.text is string
-                      && request.resource.data.text.size() < 100000;
+                      && request.resource.data.text.size() < 100000
+                      // S07-L1: newly-created non-empty ciphertext must be bound
+                      // to its (groupId, sender, messageId) via AES-GCM AAD.
+                      // Empty text is intentionally retained for media/album
+                      // records, which carry encrypted media keys separately.
+                      && (request.resource.data.text == ''
+                          || (request.resource.data.aadV1 == true
+                              && request.resource.data.id == msgId));
         // Messages are append-only — no update allowed (prevents silent edit injection).
         // delete is restricted to the original sender so they can retract their own messages.
         //
