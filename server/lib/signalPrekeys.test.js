@@ -92,6 +92,14 @@ test("rotation duplicate detection is idempotent and compares every field", () =
   assert.equal(signalPrekeys.sameKyberPreKey(kyber, { ...kyber, id: 2 }), false);
 });
 
+test("stored bundle validation rejects malformed identity and signed key data", () => {
+  const good = validBundle();
+  assert.equal(signalPrekeys.validStoredBundle(good), true);
+  assert.equal(signalPrekeys.validStoredBundle({ ...good, identityKey: "bad" }), false);
+  assert.equal(signalPrekeys.validStoredBundle({ ...good, signedPreKey: null }), false);
+  assert.equal(signalPrekeys.validStoredBundle({ ...good, oneTimePreKeys: [{ id: 1, publicKey: "bad" }] }), false);
+});
+
 test("claim returns exactly one pre-key and leaves it out of the stored bundle", () => {
   const original = validBundle();
   const { remaining, response, claimed } = signalPrekeys.claimOneTimePreKey(original);
