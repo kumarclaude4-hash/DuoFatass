@@ -901,6 +901,26 @@ public final class B2StorageHelper {
     }
 
     /**
+     * Preloads and verifies media during account restore without persisting decrypted bytes.
+     * Must be called from a background thread. Oversized entries are not retained in RAM.
+     *
+     * <p>Kept as a public compatibility hook for {@code MediaRestoreHelper}; this method
+     * deliberately does not create a disk cache entry.
+     */
+    public static void preCacheSync(Context ctx, String b2Path, String keyBase64) {
+        if (b2Path == null || b2Path.isEmpty()) return;
+        if (MEDIA_CACHE.get(b2Path) != null) return;
+        try {
+            byte[] raw = downloadFile(b2Path);
+            byte[] plain = decryptAfterDownload(raw, keyBase64);
+            cachePut(b2Path, plain);
+            Log.d(TAG, "preCacheSync: verified " + b2Path + " (" + plain.length + " B)");
+        } catch (Exception e) {
+            Log.w(TAG, "preCacheSync: skipped " + b2Path + " — " + e.getMessage());
+        }
+    }
+
+    /**
      * Removes legacy plaintext media-cache files created by older app versions.
      * Cache files are disposable; the encrypted remote object remains authoritative.
      * Must be called from a background thread.
