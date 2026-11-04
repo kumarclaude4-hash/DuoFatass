@@ -186,7 +186,12 @@ test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
   assert.ok(handler.includes("invite.hashInviteToken(rawToken)"), "only a token hash may be persisted");
   assert.ok(handler.includes('status: "active"'), "new invites must start active");
   assert.ok(handler.includes('auditAdminEvent("invite_created"'), "invite creation must be audited");
-  assert.doesNotMatch(handler, /token:\s*rawToken/, "the raw invite token must not be stored");
+  const createWriteStart = handler.indexOf("await ref.create({");
+  const createWriteEnd = handler.indexOf("});", createWriteStart);
+  const storedRecord = handler.slice(createWriteStart, createWriteEnd);
+  assert.ok(createWriteStart >= 0 && createWriteEnd > createWriteStart, "invite write payload missing");
+  assert.doesNotMatch(storedRecord, /(^|\\n)\\s*token\\s*:/, "the raw token must not be persisted");
+  assert.match(storedRecord, /tokenHash:\\s*invite\\.hashInviteToken\\(rawToken\\)/);
 });
 
 test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-checked, and audited", () => {
