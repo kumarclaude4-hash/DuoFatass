@@ -31,15 +31,13 @@ import java.util.concurrent.Executors;
  *
  * <h3>What happens inside {@link #establishSession}:</h3>
  * <ol>
- *   <li>Fetch the recipient's public key bundle from Firestore
- *       {@code /users/{recipientUid}/public_keys/bundle}.</li>
- *   <li>Pick the first available one-time pre-key from the bundle.</li>
+ *   <li>Request the recipient's public key bundle from the authenticated server API.</li>
+ *   <li>The server atomically claims one one-time pre-key and returns it with the bundle.</li>
  *   <li>Construct a {@link PreKeyBundle} and call
  *       {@link SessionBuilder#process(PreKeyBundle)} — this runs the full X3DH
  *       handshake and stores the resulting Double Ratchet session in Room DB via
  *       {@link DuoShieldSignalStore}.</li>
- *   <li>Atomically remove the consumed one-time pre-key from the recipient's
- *       Firestore document so it cannot be reused.</li>
+
  * </ol>
  *
  * After this call succeeds, {@code DuoShieldSignalStore} holds a live
