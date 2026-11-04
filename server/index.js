@@ -3335,7 +3335,12 @@ const server = http.createServer((req, res) => {
           return;
         }
         const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
-        await ref.set({ ...bundle, updatedAt: FieldValue.serverTimestamp() });
+        await ref.set({
+          ...bundle,
+          // Server-owned marker used to prevent a retry from re-adding claimed keys.
+          oneTimePreKeyIdHighWaterMark: signalPrekeys.getPreKeyHighWaterMark(bundle.oneTimePreKeys),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
         res.end(JSON.stringify({ uploaded: true }));
       } catch (e) {
@@ -3380,7 +3385,12 @@ const server = http.createServer((req, res) => {
           return;
         }
         const additions = parsed.oneTimePreKeys;
-        if (!signalPrekeys.validPreKeyList(additions, 25)) {
+        const firstPreKeyId = parsed.firstPreKeyId;
+        if (!signalPrekeys.validPreKeyList(additions, 25)
+            || (firstPreKeyId !== undefined
+                && (!Number.isInteger(firstPreKeyId)
+                    || !additions.length
+                    || additions[0].id !== firstPreKeyId))) {
           res.writeHead(400, { "Content-Type": "text/plain" });
           res.end("Invalid one-time pre-keys");
           return;
@@ -3390,10 +3400,20 @@ const server = http.createServer((req, res) => {
           const snap = await tx.get(ref);
           if (!snap.exists) throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
           const current = snap.data();
-          const merged = signalPrekeys.appendPreKeys(current.oneTimePreKeys || [], additions);
-          if (merged.length === (current.oneTimePreKeys || []).length) return "unchanged";
+          const merged = signalPrekeys.appendPreKeysWithHighWaterMark(
+            current.oneTimePreKeys || [],
+            additions,
+            signalPrekeys.MAX_ONE_TIME_PREKEYS,
+            current.oneTimePreKeyIdHighWaterMark,
+            firstPreKeyId
+          );
+          const existing = current.oneTimePreKeys || [];
+          const unchanged = merged.oneTimePreKeys.length === existing.length
+            && merged.highWaterMark === current.oneTimePreKeyIdHighWaterMark;
+          if (unchanged) return "unchanged";
           tx.update(ref, {
-            oneTimePreKeys: merged,
+            oneTimePreKeys: merged.oneTimePreKeys,
+            oneTimePreKeyIdHighWaterMark: merged.highWaterMark,
             updatedAt: FieldValue.serverTimestamp(),
           });
           return "updated";
@@ -3547,6 +3567,9 @@ const server = http.createServer((req, res) => {
           if (response.oneTimePreKeys.length) {
             tx.update(bundleRef, {
               oneTimePreKeys: remaining.oneTimePreKeys,
+              oneTimePreKeyIdHighWaterMark: signalPrekeys.validId(source.oneTimePreKeyIdHighWaterMark)
+                ? source.oneTimePreKeyIdHighWaterMark
+                : signalPrekeys.getPreKeyHighWaterMark(source.oneTimePreKeys || []),
               updatedAt: FieldValue.serverTimestamp(),
             });
           }
