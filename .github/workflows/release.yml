@@ -308,7 +308,10 @@ jobs:
             exit 1
           fi
 
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+          # The application currently uses a two-component versionName (for example
+          # 1.4). Accept two or three numeric components so the tag validator matches
+          # the project's actual version scheme while still rejecting rolling/loose tags.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Invalid release tag: $TAG"
             exit 1
           fi
