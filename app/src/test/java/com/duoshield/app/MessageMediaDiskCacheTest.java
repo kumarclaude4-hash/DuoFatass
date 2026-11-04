@@ -41,4 +41,21 @@ public class MessageMediaDiskCacheTest {
         }
         assertEquals("Expected every B2 byte-array request to be covered", 11, count);
     }
+    @Test
+    public void upgradedInstallsPurgeLegacyGlideDiskCacheOffMainThread() throws IOException {
+        Path path = Paths.get("../app/src/main/java/com/duoshield/app/DuoShieldApp.java");
+        if (!Files.isRegularFile(path)) {
+            path = Paths.get("src/main/java/com/duoshield/app/DuoShieldApp.java");
+        }
+        String source = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+        assertTrue("A one-time migration marker must guard the legacy cache purge.",
+                source.contains("glide_private_media_disk_cache_purged_v1"));
+        assertTrue("The legacy cache purge must use Glide.clearDiskCache().",
+                source.contains("Glide.get(getApplicationContext()).clearDiskCache()"));
+        assertTrue("The marker must be persisted only after clearDiskCache returns.",
+                source.indexOf("clearDiskCache()") < source.indexOf(".putBoolean(KEY_GLIDE_PRIVATE_MEDIA_CACHE_PURGED, true)"));
+        assertTrue("Legacy private-media cache cleanup must run on a background thread.",
+                source.contains("new Thread(() -> {") && source.contains("glide-legacy-cache-purge"));
+    }
+
 }
