@@ -69,6 +69,12 @@ test("appending the same generated batch a second time is idempotent", () => {
   assert.deepEqual(signalPrekeys.appendPreKeys(batch, batch), batch);
 });
 
+test("a retry cannot resurrect an already consumed pre-key", () => {
+  const current = [publicKey(11, 2)];
+  const retriedBatch = [publicKey(10), publicKey(11, 2)];
+  assert.deepEqual(signalPrekeys.appendPreKeys(current, retriedBatch), current);
+});
+
 test("rejects a reused ID carrying a different public key", () => {
   assert.throws(
     () => signalPrekeys.appendPreKeys([publicKey(1)], [publicKey(1, 8)]),
