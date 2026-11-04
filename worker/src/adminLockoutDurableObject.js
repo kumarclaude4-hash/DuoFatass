@@ -72,9 +72,10 @@ function json(data, status = 200) {
 }
 
 export class AdminLockoutCounter {
-  constructor(state, env) {
+  constructor(state, env, { now = () => Date.now() } = {}) {
     this.state = state;
     this.env = env;
+    this.now = now;
   }
 
   async alarm() {
@@ -91,7 +92,7 @@ export class AdminLockoutCounter {
       ? existing.windowMs
       : DEFAULT_WINDOW_MS;
     const expiresAt = existing.windowStart + lifetime;
-    if (Date.now() >= expiresAt) {
+    if (this.now() >= expiresAt) {
       await this.state.storage.deleteAlarm();
       // Delete the entire SQLite-backed DO storage, not just the value: this
       // deallocates the idle per-bucket instance's storage after expiry.
@@ -117,7 +118,7 @@ export class AdminLockoutCounter {
     const { action } = body;
     const windowMs = Number.isFinite(body.windowMs) && body.windowMs > 0 ? body.windowMs : DEFAULT_WINDOW_MS;
     const maxFails = Number.isFinite(body.maxFails) && body.maxFails > 0 ? body.maxFails : DEFAULT_MAX_FAILS;
-    const now = Date.now();
+    const now = this.now();
 
     // Every branch below reads then writes `this.state.storage` at most
     // once each, with no I/O to anything else in between — this is what the
