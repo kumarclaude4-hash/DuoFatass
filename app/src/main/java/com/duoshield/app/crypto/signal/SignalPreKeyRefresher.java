@@ -4,8 +4,6 @@ import android.content.Context;
 import android.util.Base64;
 import android.util.Log;
 
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
 
 import org.signal.libsignal.protocol.ecc.Curve;
 import org.signal.libsignal.protocol.ecc.ECKeyPair;
@@ -96,12 +94,6 @@ public final class SignalPreKeyRefresher {
     // ── Private: replenishment ────────────────────────────────────────────────
 
     private static void replenish(Context ctx) throws Exception {
-        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-        if (user == null) {
-            Log.w(TAG, "Cannot replenish — no signed-in user.");
-            return;
-        }
-
         // ── 1. Generate fresh Curve25519 key pairs ────────────────────────────
         int startId = SignalKeyManager.getAndIncrementNextPreKeyId(ctx, BATCH_SIZE);
         List<PreKeyRecord> newKeys = new ArrayList<>(BATCH_SIZE);
