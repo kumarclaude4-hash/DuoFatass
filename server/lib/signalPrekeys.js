@@ -112,7 +112,12 @@ function appendPreKeys(existing, additions, max = MAX_ONE_TIME_PREKEYS) {
 }
 
 function claimOneTimePreKey(bundle) {
-  if (!bundle || typeof bundle !== "object" || Array.isArray(bundle)) {
+  if (!bundle || typeof bundle !== "object" || Array.isArray(bundle)
+      || !isBase64(bundle.identityKey, 33, 33)
+      || !Number.isInteger(bundle.registrationId)
+      || bundle.registrationId < 1 || bundle.registrationId > 16383
+      || !validSignedPreKey(bundle.signedPreKey)
+      || (bundle.kyberPreKey !== undefined && !validKyberPreKey(bundle.kyberPreKey))) {
     throw new TypeError("Invalid Signal key bundle");
   }
   const keys = Array.isArray(bundle.oneTimePreKeys) ? bundle.oneTimePreKeys.slice() : [];
