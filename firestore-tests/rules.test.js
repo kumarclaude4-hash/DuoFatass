@@ -725,6 +725,50 @@ describe('/groups/{groupId}/messages/{msgId}', () => {
   });
 });
 
+
+  test('S07-L1: non-empty new ciphertext must set aadV1 and matching message id', async () => {
+    await assertFails(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_no_aad`).set({
+        id: 'msg_no_aad',
+        sender: 'bob',
+        text: 'ciphertext_without_aad_marker',
+        isEncrypted: true,
+      })
+    );
+    await assertFails(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_wrong_id`).set({
+        id: 'some_other_document',
+        sender: 'bob',
+        text: 'ciphertext_with_wrong_id',
+        isEncrypted: true,
+        aadV1: true,
+      })
+    );
+  });
+
+  test('S07-L1: new AAD-bound ciphertext with matching message id is accepted', async () => {
+    await assertSucceeds(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_aad`).set({
+        id: 'msg_aad',
+        sender: 'bob',
+        text: 'ciphertext_with_aad',
+        isEncrypted: true,
+        aadV1: true,
+      })
+    );
+  });
+
+  test('S07-L1: empty-text media message remains compatible without aadV1', async () => {
+    await assertSucceeds(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_media_without_aad`).set({
+        id: 'msg_media_without_aad',
+        sender: 'bob',
+        text: '',
+        isEncrypted: true,
+        type: 'image',
+      })
+    );
+  });
 describe('/groups/{groupId}/keys/{memberUid}', () => {
   const GROUP_ID = 'group_1';
 
