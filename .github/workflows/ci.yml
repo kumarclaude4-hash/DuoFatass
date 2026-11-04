@@ -34,17 +34,22 @@ jobs:
         working-directory: server
         run: npm ci
 
-      - name: Run complete server test suite
+      - name: Check server syntax and run complete test suite
         working-directory: server
-        run: npm test
+        run: |
+          node --check index.js
+          npm test
 
       - name: Install Worker dependencies
         working-directory: worker
         run: npm ci
 
-      - name: Run complete Worker test suite
+      - name: Check Worker syntax and run complete test suite
         working-directory: worker
-        run: npm test
+        run: |
+          node --check src/index.js
+          node --check src/adminLockoutDurableObject.js
+          npm test
 
   # SC-01: gate the vendored libsignal JAR before anything builds with it.
   #
