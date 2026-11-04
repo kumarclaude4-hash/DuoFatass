@@ -12,8 +12,6 @@ import android.util.Log;
 import com.duoshield.app.util.SecurePrefs;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FieldValue;
-import com.google.firebase.firestore.FirebaseFirestore;
 
 import org.signal.libsignal.protocol.IdentityKey;
 import org.signal.libsignal.protocol.IdentityKeyPair;
@@ -552,24 +550,17 @@ public final class SignalKeyManager {
     }
 
     private static void uploadRotatedKyberPreKey(Context ctx, KyberPreKeyRecord kpk) {
-        com.google.firebase.auth.FirebaseUser user =
-                FirebaseAuth.getInstance().getCurrentUser();
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
             Log.w(TAG, "Cannot upload rotated Kyber pre-key — no signed-in user.");
             return;
         }
-
-        Map<String, Object> kpkMap = buildKyberPreKeyMap(kpk);
-        FirebaseFirestore.getInstance()
-                .collection("users").document(user.getUid())
-                .collection("public_keys").document("bundle")
-                .update("kyberPreKey", kpkMap,
-                        "updatedAt",   FieldValue.serverTimestamp())
-                .addOnSuccessListener(v ->
-                        Log.d(TAG, "Rotated Kyber pre-key uploaded (id=" + kpk.getId() + ")."))
-                .addOnFailureListener(e ->
-                        Log.e(TAG, "Kyber pre-key Firestore upload failed — will retry on "
-                                + "next rotation.", e));
+        try {
+            SignalKeyApi.updatePreKey("kyberPreKey", buildKyberPreKeyMap(kpk));
+            Log.d(TAG, "Rotated Kyber pre-key uploaded (id=" + kpk.getId() + ").");
+        } catch (Exception e) {
+            Log.e(TAG, "Kyber pre-key upload failed — will retry on next rotation.", e);
+        }
     }
 
     private static Map<String, Object> buildKyberPreKeyMap(KyberPreKeyRecord kpk) {
@@ -608,24 +599,18 @@ public final class SignalKeyManager {
             Log.w(TAG, "Cannot upload rotated SPK — no signed-in user.");
             return;
         }
-
         Map<String, Object> spkMap = new HashMap<>();
         spkMap.put("id",        spk.getId());
         spkMap.put("publicKey", Base64.encodeToString(
                 spk.getKeyPair().getPublicKey().serialize(), Base64.NO_WRAP));
         spkMap.put("signature", Base64.encodeToString(spk.getSignature(), Base64.NO_WRAP));
         spkMap.put("timestamp", spk.getTimestamp());
-
-        FirebaseFirestore.getInstance()
-                .collection("users").document(user.getUid())
-                .collection("public_keys").document("bundle")
-                .update("signedPreKey",  spkMap,
-                        "updatedAt",     FieldValue.serverTimestamp())
-                .addOnSuccessListener(v ->
-                        Log.d(TAG, "Rotated SPK uploaded to Firestore (id=" + spk.getId() + ")."))
-                .addOnFailureListener(e ->
-                        Log.e(TAG, "Rotated SPK Firestore upload failed — will retry on next "
-                                + "rotation cycle.", e));
+        try {
+            SignalKeyApi.updatePreKey("signedPreKey", spkMap);
+            Log.d(TAG, "Rotated signed pre-key uploaded (id=" + spk.getId() + ").");
+        } catch (Exception e) {
+            Log.e(TAG, "Signed pre-key upload failed — will retry on next rotation cycle.", e);
+        }
     }
 
     /**
@@ -918,19 +903,16 @@ public final class SignalKeyManager {
         if (kyberMap != null) bundle.put("kyberPreKey", kyberMap);
         bundle.put("updatedAt",      FieldValue.serverTimestamp());
 
-        FirebaseFirestore.getInstance()
-                .collection("users").document(uid)
-                .collection("public_keys").document("bundle")
-                .set(bundle)
-                .addOnSuccessListener(v -> {
-                    Log.d(TAG, "Public key bundle uploaded to Firestore ✓  uid=" + uid);
-                    if (onSuccess != null)
-                        new Handler(Looper.getMainLooper()).post(onSuccess);
-                })
-                .addOnFailureListener(e -> {
-                    Log.e(TAG, "Firestore upload failed for uid=" + LogRedact.uid(uid), e);
-                    if (onFailure != null)
-                        new Handler(Looper.getMainLooper()).post(onFailure);
-                });
+        try {
+            // UID is always derived from the verified Firebase ID token by the server.
+            SignalKeyApi.registerBundle(bundle);
+            Log.d(TAG, "Public Signal key bundle uploaded via server ✓ uid=" + LogRedact.uid(uid));
+            if (onSuccess != null)
+                new Handler(Looper.getMainLooper()).post(onSuccess);
+        } catch (Exception e) {
+            Log.e(TAG, "Signal key bundle upload failed for uid=" + LogRedact.uid(uid), e);
+            if (onFailure != null)
+                new Handler(Looper.getMainLooper()).post(onFailure);
+        }
     }
 }
