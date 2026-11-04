@@ -654,7 +654,13 @@ test('S03-M3: DELETE fails closed when replay KV lookup throws', async () => {
     body: 'abc',
   }), env, ctx);
   assert.equal(put.status, 200);
-  env.RATE_KV.get = async () => { throw new Error('simulated KV outage'); };
+  const originalGet = env.RATE_KV.get.bind(env.RATE_KV);
+  env.RATE_KV.get = async (kvKey) => {
+    if (typeof kvKey === 'string' && kvKey.includes('delete:')) {
+      throw new Error('simulated replay KV outage');
+    }
+    return originalGet(kvKey);
+  };
 
   const deleteToken = await mintToken('delete', key, holder);
   const deletion = await worker.fetch(new Request(`https://worker.example/${key}`, {
