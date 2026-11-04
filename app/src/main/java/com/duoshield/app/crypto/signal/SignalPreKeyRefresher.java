@@ -30,9 +30,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *       thread generates {@value #BATCH_SIZE} new Curve25519 key pairs.</li>
  *   <li>Private bytes are stored in {@link com.duoshield.app.util.SecurePrefs}
  *       via {@link SignalKeyManager#storeNewPreKeys}.</li>
- *   <li>Public bytes are appended to the Firestore bundle at
- *       {@code /users/{uid}/public_keys/bundle.oneTimePreKeys} using
- *       {@code FieldValue.arrayUnion} so existing keys are not displaced.</li>
+ *   <li>Public bytes are appended through the authenticated server API, which
+ *       validates uniqueness and performs a transaction so existing keys are not displaced.</li>
  * </ol>
  *
  * <h3>Guarantees</h3>
@@ -40,8 +39,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>Only one replenishment runs at a time (guarded by {@link AtomicBoolean}).</li>
  *   <li>Pre-key IDs are monotonically increasing and stored in
  *       {@link SignalKeyManager#KEY_PREKEY_NEXT_ID} to prevent reuse.</li>
- *   <li>Firestore failure is non-fatal — the local pool is updated regardless,
- *       so the next replenishment attempt will upload the same keys.</li>
+ *   <li>Server upload failure is logged. The private keys remain stored locally;
+ *       a later replenishment attempt can retry with newly generated keys.</li>
  * </ul>
  */
 public final class SignalPreKeyRefresher {
