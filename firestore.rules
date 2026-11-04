@@ -75,41 +75,21 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == uid;
 
       // public_keys subcollection: owner can write their own bundle.
-      // Any authenticated user can UPDATE (not create/delete) the bundle to
-      // consume a one-time prekey — required for X3DH forward secrecy.
+      // Prekey consumption is server-mediated. Clients may read public bundles,
+      // but no client (including the owner) may mutate this shared bundle directly.
+      // The authenticated /consumePreKey endpoint performs atomic one-time-key
+      // consumption using the Admin SDK after verifying conversation membership.
       // Without this rule, consumeOtpkOnFirestore() always gets PERMISSION_DENIED
       // and index-0 is silently reused for every new session (BUG-F01 / BUG-F05).
       match /public_keys/{doc} {
         allow read:   if request.auth != null;
         allow create: if request.auth != null && request.auth.uid == uid;
-        // Cross-user update is scoped to ONLY the one-time-prekey list (and its
-        // update timestamp) so a stranger consuming a prekey can never also
-        // overwrite identityKey/signedPreKey (which would enable an X3DH MITM).
-        //
-        // S01-H1: the keys-only `hasOnly` scope above restricts WHICH fields a
-        // stranger may touch, but not the VALUES written to them. A stranger
-        // could therefore replace `oneTimePreKeys` with an empty list (wiping the
-        // pool → forced index-0 reuse / DoS) or with attacker-generated prekeys
-        // they hold the private half of (seeding a future X3DH interception).
-        // Legitimate cross-user consumption is FieldValue.arrayRemove(entry)
-        // (SignalSessionManager.consumeOtpkWithRetry), which can only ever SHRINK
-        // the list — so the cross-user branch now additionally requires the list
-        // size to strictly decrease. Owner writes (request.auth.uid == uid) stay
-        // unconstrained and continue to handle refresh growth (arrayUnion).
-        // NOTE: rules cannot pin individual array elements, so a stranger could
-        // still shrink to a different smaller set; arrayRemove never does this,
-        // and the size-decrease invariant closes the wipe/grow/same-size-swap
-        // vectors that made this High. Emulator-verified in S3-15b.
-        allow update: if request.auth != null
-                      && (
-                        request.auth.uid == uid
-                        || (
-                          request.resource.data.diff(resource.data).affectedKeys()
-                            .hasOnly(['oneTimePreKeys', 'updatedAt'])
-                          && request.resource.data.oneTimePreKeys.size()
-                             < resource.data.oneTimePreKeys.size()
-                        )
-                      );
+        // All public-key bundle mutations are server-mediated. A client-side
+        // owner check is insufficient here because the document contains both
+        // long-lived identity material and an array of consumable one-time keys;
+        // server Admin SDK transactions preserve the bundle while atomically
+        // consuming exactly the selected key.
+        allow update: if false;
         allow delete: if request.auth != null && request.auth.uid == uid;
       }
 
