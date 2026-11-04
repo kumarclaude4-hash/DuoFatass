@@ -190,7 +190,7 @@ test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
   const createWriteEnd = handler.indexOf("});", createWriteStart);
   const storedRecord = handler.slice(createWriteStart, createWriteEnd);
   assert.ok(createWriteStart >= 0 && createWriteEnd > createWriteStart, "invite write payload missing");
-  assert.doesNotMatch(storedRecord, /(^|\\n)\\s*token\\s*:/, "the raw token must not be persisted");
+  assert.doesNotMatch(storedRecord, /^\\s*token\\s*:/m, "the raw token must not be persisted");
   assert.match(storedRecord, /tokenHash:\\s*invite\\.hashInviteToken\\(rawToken\\)/);
 });
 
