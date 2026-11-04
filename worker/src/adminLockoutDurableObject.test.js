@@ -77,8 +77,8 @@ function makeFakeStorage(delayMs = 5) {
   };
 }
 
-function makeDO(storage) {
-  return new AdminLockoutCounter({ storage }, {});
+function makeDO(storage, clock = () => Date.now()) {
+  return new AdminLockoutCounter({ storage }, {}, { now: clock });
 }
 
 function recordRequest({ windowMs, maxFails } = {}) {
@@ -151,20 +151,22 @@ test('reaching exactly maxFails locks; one below does not', async () => {
 });
 
 test('window expiration starts a fresh count instead of accumulating forever', async () => {
-  const stub = makeDO(makeFakeStorage(0));
+  let now = 1_000;
+  const stub = makeDO(makeFakeStorage(0), () => now);
   await stub.fetch(recordRequest({ maxFails: 10, windowMs: 50 }));
-  await new Promise((r) => setTimeout(r, 80)); // let the 50ms window lapse
+  now += 51;
   const body = await bodyOf(await stub.fetch(recordRequest({ maxFails: 10, windowMs: 50 })));
   assert.equal(body.count, 1, 'count should have reset to 1 in the new window');
   assert.equal(body.locked, false);
 });
 
 test('status after window expiration reports not-locked and count 0 even if the stored record is stale', async () => {
-  const stub = makeDO(makeFakeStorage(0));
+  let now = 2_000;
+  const stub = makeDO(makeFakeStorage(0), () => now);
   for (let i = 0; i < 10; i++) await stub.fetch(recordRequest({ maxFails: 10, windowMs: 50 }));
   let body = await bodyOf(await stub.fetch(statusRequest({ maxFails: 10, windowMs: 50 })));
   assert.equal(body.locked, true);
-  await new Promise((r) => setTimeout(r, 80));
+  now += 51;
   body = await bodyOf(await stub.fetch(statusRequest({ maxFails: 10, windowMs: 50 })));
   assert.equal(body.locked, false);
   assert.equal(body.count, 0);
