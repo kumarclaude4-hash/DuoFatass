@@ -42,10 +42,16 @@ function validSignedPreKey(entry) {
       key === "id" || key === "publicKey" || key === "signature" || key === "timestamp");
 }
 
+function sameSignedPreKey(current, next) {
+  return current && next && current.id === next.id
+    && current.publicKey === next.publicKey
+    && current.signature === next.signature
+    && current.timestamp === next.timestamp;
+}
+
 function validKyberPreKey(entry) {
   // DuoShield currently generates libsignal KYBER_1024 public keys. Its
-  // serialized KEMPublicKey is 1568 bytes; keep the accepted value exact so
-  // arbitrary attacker-controlled payloads cannot be stored as "Kyber keys".
+  // serialized KEMPublicKey is 1568 bytes; keep the accepted value exact.
   return !!entry && typeof entry === "object" && !Array.isArray(entry)
     && validId(entry.id)
     && isBase64(entry.publicKey, 1568, 1568)
@@ -53,6 +59,13 @@ function validKyberPreKey(entry) {
     && Number.isSafeInteger(entry.timestamp) && entry.timestamp > 0
     && Object.keys(entry).every(key =>
       key === "id" || key === "publicKey" || key === "signature" || key === "timestamp");
+}
+
+function sameKyberPreKey(current, next) {
+  return current && next && current.id === next.id
+    && current.publicKey === next.publicKey
+    && current.signature === next.signature
+    && current.timestamp === next.timestamp;
 }
 
 function validPreKeyList(entries, max = MAX_ONE_TIME_PREKEYS) {
@@ -114,7 +127,9 @@ module.exports = {
   MAX_ONE_TIME_PREKEYS,
   validPublicPreKey,
   validSignedPreKey,
+  sameSignedPreKey,
   validKyberPreKey,
+  sameKyberPreKey,
   validPreKeyList,
   validInitialBundle,
   appendPreKeys,
