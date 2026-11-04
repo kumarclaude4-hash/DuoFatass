@@ -729,16 +729,8 @@ public final class B2StorageHelper {
             new Handler(Looper.getMainLooper()).post(() -> cb.onLoaded(cached));
             return;
         }
-        // 2. Persistent disk cache
-        if (ctx != null) {
-            byte[] disk = readDiskCache(ctx, b2Path);
-            if (disk != null) {
-                cachePut(b2Path, disk);
-                new Handler(Looper.getMainLooper()).post(() -> cb.onLoaded(disk));
-                return;
-            }
-        }
-        // 3. Download from B2 (with automatic retry) — deduplicated
+        // 2. Download from B2 (with automatic retry) — deduplicated.
+        // Decrypted media is never persisted to disk; only the bounded in-memory LRU is used.
         synchronized (IN_FLIGHT) {
             List<MediaCallback> waiters = IN_FLIGHT.get(b2Path);
             if (waiters != null) { waiters.add(cb); return; }
@@ -755,7 +747,6 @@ public final class B2StorageHelper {
                 byte[] raw   = downloadFile(b2Path);
                 byte[] plain = decryptAfterDownload(raw, keyBase64);
                 cachePut(b2Path, plain);
-                if (fCtx != null) writeDiskCache(fCtx, b2Path, plain);
                 new Handler(Looper.getMainLooper()).post(() -> {
                     for (MediaCallback c : waiters) c.onLoaded(plain);
                 });
@@ -795,10 +786,9 @@ public final class B2StorageHelper {
      */
     public static boolean isLocallyAvailable(Context ctx, String b2Path) {
         if (b2Path == null || b2Path.isEmpty()) return false;
-        if (MEDIA_CACHE.get(b2Path) != null) return true;
-        if (ctx == null) return false;
-        File f = diskCacheFile(ctx, b2Path);
-        return f != null && f.exists() && f.length() > 0;
+        // No decrypted media is persisted. A process restart requires a fresh
+        // authenticated download and decryption.
+        return MEDIA_CACHE.get(b2Path) != null;
     }
 
     // ── Video thumbnail generation (encrypted videos) ──────────────────────────
@@ -920,128 +910,40 @@ public final class B2StorageHelper {
         }
     }
 
-    // ── Persistent disk cache helpers ─────────────────────────────────────────
-
-    private static final String DISK_CACHE_DIR      = "b2_cache";
-    /** Maximum total size of the on-disk media cache in bytes (100 MB).
-     *  On a POCO C51 (64 GB eMMC 5.1) the available storage shrinks quickly
-     *  once MIUI system files, photos, and app data are accounted for.
-     *  LRU eviction (oldest-first) keeps the cache bounded without a wipe. */
-    private static final long   DISK_CACHE_MAX_BYTES = 100L * 1024 * 1024;
-
-    private static File diskCacheFile(Context ctx, String b2Path) {
-        try {
-            // Use SHA-256 of the b2Path as the filename to avoid path-separator issues
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(b2Path.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
-            for (byte b : hash) hex.append(String.format("%02x", b));
-            File dir = new File(ctx.getFilesDir(), DISK_CACHE_DIR);
-            if (!dir.exists()) dir.mkdirs();
-            return new File(dir, hex.toString());
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static byte[] readDiskCache(Context ctx, String b2Path) {
-        File f = diskCacheFile(ctx, b2Path);
-        if (f == null || !f.exists()) return null;
-        try (FileInputStream fis = new FileInputStream(f)) {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream((int) f.length());
-            byte[] buf = new byte[BUFFER_SIZE];
-            int n;
-            while ((n = fis.read(buf)) != -1) baos.write(buf, 0, n);
-            return baos.toByteArray();
-        } catch (Exception e) {
-            Log.w(TAG, "readDiskCache failed for " + b2Path, e);
-            return null;
-        }
-    }
-
-    private static void writeDiskCache(Context ctx, String b2Path, byte[] plain) {
-        File f = diskCacheFile(ctx, b2Path);
-        if (f == null) return;
-        try (FileOutputStream fos = new FileOutputStream(f)) {
-            fos.write(plain);
-        } catch (Exception e) {
-            Log.w(TAG, "writeDiskCache failed for " + b2Path, e);
-            return;
-        }
-        // Enforce the 100 MB cap after each write (oldest-first LRU eviction).
-        // Called from a MEDIA_POOL background thread so disk I/O is safe here.
-        enforceDiskCacheLimit(ctx);
-    }
+    // ── Legacy plaintext cache cleanup ────────────────────────────────────────
 
     /**
-     * Evicts the oldest cache files until total size is below {@link #DISK_CACHE_MAX_BYTES}.
-     * Uses last-modified time as the LRU proxy; files untouched longest are deleted first.
-     * Must be called from a background thread (performs file I/O).
-     */
-    private static void enforceDiskCacheLimit(Context ctx) {
-        try {
-            File dir = new File(ctx.getFilesDir(), DISK_CACHE_DIR);
-            File[] files = dir.listFiles();
-            if (files == null || files.length == 0) return;
-
-            // Calculate total cache size
-            long totalBytes = 0;
-            for (File f : files) totalBytes += f.length();
-            if (totalBytes <= DISK_CACHE_MAX_BYTES) return;
-
-            // Sort oldest-first by last-modified time
-            java.util.Arrays.sort(files, (a, b) ->
-                    Long.compare(a.lastModified(), b.lastModified()));
-
-            // Evict oldest until under the limit
-            for (File f : files) {
-                if (totalBytes <= DISK_CACHE_MAX_BYTES) break;
-                long sz = f.length();
-                if (f.delete()) {
-                    totalBytes -= sz;
-                    Log.d(TAG, "diskCache evicted: " + f.getName() + " (" + sz + " B)");
-                }
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "enforceDiskCacheLimit failed: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Pre-populates the disk cache for a set of media paths.
-     * Used by {@link com.duoshield.app.backup.MediaRestoreHelper} during account restore.
-     * Must be called from a background thread.
+     * Compatibility no-op. Restore flows must not pre-populate a persistent cache
+     * containing decrypted message media.
      */
     public static void preCacheSync(Context ctx, String b2Path, String keyBase64) {
-        if (ctx == null || b2Path == null || b2Path.isEmpty()) return;
-        // Already cached — skip download
-        if (MEDIA_CACHE.get(b2Path) != null) return;
-        File f = diskCacheFile(ctx, b2Path);
-        if (f != null && f.exists()) return;
-        try {
-            byte[] raw   = downloadFile(b2Path);
-            byte[] plain = decryptAfterDownload(raw, keyBase64);
-            cachePut(b2Path, plain);
-            writeDiskCache(ctx, b2Path, plain);
-            Log.d(TAG, "preCacheSync: cached " + b2Path + " (" + plain.length + " B)");
-        } catch (Exception e) {
-            Log.w(TAG, "preCacheSync: skipped " + b2Path + " — " + e.getMessage());
-        }
+        // Intentionally no-op: plaintext media is never cached on disk.
     }
 
     /**
-     * Deletes all files in the persistent disk cache.
-     * Call from {@link com.duoshield.app.util.WipeHelper} during a full wipe.
+     * Removes plaintext cache files created by older app versions and clears
+     * volatile decrypted media during account changes or a local wipe.
      */
     public static void clearDiskCache(Context ctx) {
-        if (ctx == null) return;
-        File dir = new File(ctx.getFilesDir(), DISK_CACHE_DIR);
-        if (!dir.exists()) return;
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File f : files) f.delete();
+        if (ctx != null) {
+            File dir = new File(ctx.getFilesDir(), "b2_cache");
+            if (dir.exists()) {
+                File[] files = dir.listFiles();
+                if (files != null) {
+                    for (File file : files) {
+                        if (!file.delete()) {
+                            Log.w(TAG, "Unable to remove legacy plaintext cache file: "
+                                    + file.getName());
+                        }
+                    }
+                }
+                if (dir.exists() && !dir.delete()) {
+                    Log.w(TAG, "Unable to remove legacy plaintext cache directory");
+                }
+            }
+        }
         MEDIA_CACHE.evictAll();
-        Log.d(TAG, "clearDiskCache: wiped " + (files.length) + " cached files.");
+        THUMB_CACHE.evictAll();
     }
 
     // ── Delete ────────────────────────────────────────────────────────────────
@@ -2097,13 +1999,10 @@ public final class B2StorageHelper {
      * just "a file on disk". On a 2 GB device with roughly 150–190 MB of usable heap that
      * turns a 200 MB video from slow into a certain {@code OutOfMemoryError}.
      *
-     * <p>Resolution order mirrors {@link #loadMedia}:
+     * <p>Resolution order:
      * <ol>
-     *   <li>In-memory LRU hit — already in RAM, so just write it out.</li>
-     *   <li>Disk-cache hit — stream-copied to {@code dest}; the cache entry is left in place
-     *       so the caller can freely delete {@code dest} without evicting the cache.</li>
-     *   <li>Live download — streamed to disk and decrypted in place via
-     *       {@link #downloadAndDecryptToFile}, then stream-copied into the disk cache.</li>
+     *   <li>Bounded in-memory LRU hit — written to the caller's temporary destination.</li>
+     *   <li>Live authenticated download and streaming decryption to that destination.</li>
      * </ol>
      *
      * <p>Unlike {@link #loadMedia} this does not deduplicate concurrent requests through
@@ -2112,7 +2011,7 @@ public final class B2StorageHelper {
      * inherently one-at-a-time rather than the many-rows-at-once pattern that made
      * deduplication worthwhile for avatars.
      *
-     * @param ctx  optional — when non-null the persistent disk cache is read and populated.
+     * @param ctx  retained for API compatibility; no plaintext disk cache is used.
      * @param dest file to write the plaintext into; its parent directory must exist.
      */
     public static void loadMediaToFile(Context ctx, String b2Path, String keyBase64,
@@ -2147,20 +2046,10 @@ public final class B2StorageHelper {
                         fos.write(cached);
                     }
                 } else {
-                    File cacheFile = fCtx != null ? diskCacheFile(fCtx, b2Path) : null;
-                    if (cacheFile != null && cacheFile.exists() && cacheFile.length() > 0) {
-                        copyFile(cacheFile, dest);
-                        // Refresh the LRU timestamp so enforceDiskCacheLimit() does not treat a
-                        // repeatedly-viewed video as the coldest file in the cache.
-                        //noinspection ResultOfMethodCallIgnored
-                        cacheFile.setLastModified(System.currentTimeMillis());
+                    if (chunked) {
+                        downloadAndDecryptChunkedToFile(b2Path, keyBase64, dest);
                     } else {
-                        if (chunked) {
-                            downloadAndDecryptChunkedToFile(b2Path, keyBase64, dest);
-                        } else {
-                            downloadAndDecryptToFile(b2Path, keyBase64, dest);
-                        }
-                        if (fCtx != null) writeDiskCacheFromFile(fCtx, b2Path, dest);
+                        downloadAndDecryptToFile(b2Path, keyBase64, dest);
                     }
                 }
                 new Handler(Looper.getMainLooper()).post(() -> cb.onReady(dest));
@@ -2171,40 +2060,6 @@ public final class B2StorageHelper {
                 new Handler(Looper.getMainLooper()).post(() -> cb.onError(e));
             }
         });
-    }
-
-    /**
-     * File-to-file variant of {@link #writeDiskCache} — populates the disk cache from an
-     * existing plaintext file instead of a {@code byte[]}, so the streaming path never has to
-     * read the plaintext back into memory just to cache it. Must be called from a background
-     * thread.
-     */
-    private static void writeDiskCacheFromFile(Context ctx, String b2Path, File src) {
-        File f = diskCacheFile(ctx, b2Path);
-        if (f == null) return;
-        // A file that cannot coexist with the cache budget must not enter the cache. Caching it
-        // anyway would make enforceDiskCacheLimit() delete every other entry trying to get back
-        // under the cap and still overshoot, so one oversized video would wipe the entire cache
-        // and not even be retained itself. Half the budget is the threshold rather than the
-        // whole of it so a single large entry can never monopolise the cache.
-        long srcLen = src.length();
-        if (srcLen > DISK_CACHE_MAX_BYTES / 2) {
-            Log.d(TAG, "writeDiskCacheFromFile: skipping oversized " + b2Path
-                    + " (" + srcLen + " B)");
-            return;
-        }
-        try {
-            copyFile(src, f);
-        } catch (Exception e) {
-            // A partial copy is worse than no copy: a truncated cache file still passes the
-            // exists() && length() > 0 test in loadMediaToFile and would be served as if it
-            // were the whole video.
-            Log.w(TAG, "writeDiskCacheFromFile failed for " + b2Path, e);
-            //noinspection ResultOfMethodCallIgnored
-            f.delete();
-            return;
-        }
-        enforceDiskCacheLimit(ctx);
     }
 
     // ── Chunked, range-addressable media format (v2) ───────────────────────────
