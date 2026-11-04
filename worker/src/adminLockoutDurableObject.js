@@ -45,8 +45,8 @@
 // secrets, or raw UIDs. Auth limiter keys are SHA-256 namespaced identifiers.
 // A Durable Object alarm deletes each record when its window expires so
 // inactive users/endpoints do not leave permanent rows behind. This Durable Object is called
-// with a single atomic RPC per admin lockout operation (`record` /
-// `status` / `reset`), not raw get/put/delete, precisely because the
+// with a single atomic RPC per counter operation (`record` / `status` /
+// `reset`), not raw get/put/delete, precisely because the
 // atomicity guarantee lives in "one instance processes one request fully
 // before starting the next", not in any single storage call.
 //
