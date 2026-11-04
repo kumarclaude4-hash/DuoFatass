@@ -3391,18 +3391,20 @@ const server = http.createServer((req, res) => {
           return;
         }
         const ref = db.collection("users").doc(uid).collection("public_keys").doc("bundle");
-        await db.runTransaction(async (tx) => {
+        const outcome = await db.runTransaction(async (tx) => {
           const snap = await tx.get(ref);
           if (!snap.exists) throw Object.assign(new Error("Signal bundle not found"), { status: 404 });
           const current = snap.data();
           const merged = signalPrekeys.appendPreKeys(current.oneTimePreKeys || [], additions);
+          if (merged.length === (current.oneTimePreKeys || []).length) return "unchanged";
           tx.update(ref, {
             oneTimePreKeys: merged,
             updatedAt: FieldValue.serverTimestamp(),
           });
+          return "updated";
         });
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ appended: additions.length }));
+        res.end(JSON.stringify({ appended: additions.length, outcome }));
       } catch (e) {
         if (e.status) {
           res.writeHead(e.status, { "Content-Type": "text/plain" });
