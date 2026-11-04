@@ -42,6 +42,10 @@ test("rejects a malformed identity key, registration id, and signature", () => {
   const badSignature = validBundle();
   badSignature.signedPreKey.signature = "AA==";
   assert.equal(signalPrekeys.validInitialBundle(badSignature), false);
+
+  const badKyber = validBundle();
+  badKyber.kyberPreKey.publicKey = b64(1567);
+  assert.equal(signalPrekeys.validInitialBundle(badKyber), false);
 });
 
 test("rejects duplicate, malformed, and oversized one-time pre-key lists", () => {
