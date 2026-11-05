@@ -138,15 +138,19 @@ test("S05-M1: no admin action writes adminAuditLog directly, bypassing the pseud
   // `adminIp: getClientIp(req)` — the sink was correct, but most of its
   // callers weren't using it. "The function exists and is correct" is not
   // evidence that every write site goes through it.
-  const allWrites = SERVER_SOURCE.match(/db\.collection\("adminAuditLog"\)\.add\(/g) || [];
+  // Strip comments before checking the executable sink; comments that quote
+  // the old vulnerable pattern must not be mistaken for live write call sites.
+  const executableSource = SERVER_SOURCE
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  const allWrites = executableSource.match(/db\.collection\("adminAuditLog"\)\s*\.add\s*\(/g) || [];
   // Exactly one is legitimate: the sink's own definition. Any more means some
   // call site is writing directly instead of going through auditAdminEvent().
   assert.strictEqual(
     allWrites.length,
     1,
-    `expected exactly 1 db.collection("adminAuditLog").add(...) call site (auditAdminEvent()'s own ` +
-    `definition), found ${allWrites.length} — every OTHER admin action must route through ` +
-    `auditAdminEvent() so adminIp is always pseudonymised, not write directly`
+    `expected exactly 1 executable adminAuditLog .add() call site, found ${allWrites.length} — ` +
+    `every other admin action must route through the pseudonymising sink`
   );
 });
 
