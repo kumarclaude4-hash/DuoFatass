@@ -18,6 +18,7 @@ const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClie
 const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
 const { createInviteStore } = require("./lib/inviteStore");
+const { claimIdentityInTransaction } = require("./lib/identityClaim");
 
 let serviceAccount;
 try {
@@ -2582,101 +2583,24 @@ const server = http.createServer((req, res) => {
 
         const incomingHash = sha256hex(identityPubKeyHex);
 
-        const idRef = db.collection("identities").doc(userId);
-
-        // F2 fix: claim the identities slot atomically before minting the token.
-        // We run a Firestore transaction that either:
-        //   a) Creates the doc for a new account (first caller wins; second sees it exists
-        //      and verifies the hash — preventing concurrent first-claim races), or
-        //   b) Verifies the hash for an existing account.
-        // Only after the transaction succeeds do we mint the token, so there is no window
-        // between "account doesn't exist" and "doc written".
-        let isNewAccount = false;
-        await db.runTransaction(async (tx) => {
-          // ── S06-H1 / S06-C2 part 1: refuse to mint for a locked account ──────
-          // The duress latch has to be enforced where the credential is issued.
-          // Previously `accountLock` was consulted in exactly one place — a
-          // client-side `if` in RestoreFromSeedActivity that runs *after*
-          // signInWithCustomToken had already succeeded — so an adversary
-          // holding a coerced seed could call this endpoint directly, get a
-          // valid token for the victim's uid, and read `backups/{uid}` over the
-          // Firestore REST API without ever executing the check.
-          //
-          // Read inside the transaction (not before it) so a concurrent
-          // /duress-lock write cannot interleave between the check and the mint.
-          const lockSnap = await tx.get(db.collection("accountLock").doc(userId));
-          if (lockSnap.exists && lockSnap.data().locked === true) {
-            // Reuse the existing 403 string verbatim: a locked account must stay
-            // indistinguishable from a wrong seed or an unapproved invite, which
-            // is the deniability property RestoreFromSeedActivity is careful
-            // about client-side. Do not add a distinct message or status here.
-            throw Object.assign(new Error("Access request not approved"), { status: 403 });
-          }
-
-          const snap = await tx.get(idRef);
-          if (!snap.exists) {
-            // New account — invite-only. Modern invite tokens are stored hash-only
-            // and consumed in this same transaction as the identity claim. A narrow
-            // legacy branch permits only already-approved 32-hex waitlist IDs while
-            // pre-deployment approvals drain; no endpoint creates new legacy IDs.
-            const normalizedInvite = invite.normalizeInviteToken(inviteToken);
-            if (!normalizedInvite) {
-              throw Object.assign(new Error("Valid invite required"), { status: 403 });
-            }
-
-            if (invite.isInviteToken(normalizedInvite)) {
-              await inviteStore.redeemInTransaction(tx, userId, normalizedInvite, req);
-            } else if (/^[0-9a-f]{32}$/.test(normalizedInvite)) {
-              const legacyRef = db.collection("waitlist").doc(normalizedInvite);
-              const legacySnap = await tx.get(legacyRef);
-              if (!legacySnap.exists || legacySnap.data().status !== "approved") {
-                throw Object.assign(new Error("Valid invite required"), { status: 403 });
-              }
-              tx.update(legacyRef, {
-                status: "used",
-                usedByUserId: userId,
-                usedAt: FieldValue.serverTimestamp(),
-              });
-              auditAdminEventInTransaction(tx, "invite_redeemed", req, { userIdTag: uidTag(userId) });
-            } else {
-              throw Object.assign(new Error("Valid invite required"), { status: 403 });
-            }
-
-            // First claim — atomically write the identity binding
-            tx.set(idRef, {
-              uid:                userId,
-              identityPubKeyHash: incomingHash,
-              createdAt:          FieldValue.serverTimestamp(),
-            });
-            isNewAccount = true;
-          } else {
-            // Existing account — re-verify the binding inside the transaction.
-            //
-            // S07-H1: this check used to read `if (storedHash && storedHash !==
-            // incomingHash)`, which failed **open**. An identity document with a
-            // missing, empty, or non-string `identityPubKeyHash` — a partially
-            // written record, a legacy doc from before the field existed, or one
-            // created by any other write path — made the guard vacuous, so the
-            // caller was handed a token for that uid without proving anything at
-            // all. A record we cannot evaluate must be treated as a failure to
-            // prove ownership, never as permission.
-            const storedHash = snap.data().identityPubKeyHash;
-            if (typeof storedHash !== "string" || storedHash.length !== 64) {
-              // Deliberately reuses the "Key mismatch" 403 rather than reporting
-              // "unverifiable account": the response must not distinguish a
-              // damaged identity record from a wrong key, or it becomes an
-              // oracle for probing which uids are in a weak state.
-              console.error(
-                `mintToken: identity doc for uid=${uidTag(userId)} has no usable ` +
-                `identityPubKeyHash — refusing to mint (S07-H1 fail-closed)`
-              );
-              throw Object.assign(new Error("Key mismatch"), { status: 403 });
-            }
-            if (!timingSafeEqualHex(storedHash, incomingHash)) {
-              throw Object.assign(new Error("Key mismatch"), { status: 403 });
-            }
-          }
-        });
+        // F2 / S05-H2: the same helper is exercised against the Firestore
+        // emulator in identityClaim.firestore.integration.test.js. Keep the
+        // HTTP route responsible for authentication and proof-of-possession;
+        // delegate only the atomic lock/invite/identity transaction.
+        const claim = await db.runTransaction((tx) => claimIdentityInTransaction({
+          tx,
+          firestore: db,
+          FieldValue,
+          inviteStore,
+          invite,
+          userId,
+          incomingHash,
+          inviteToken,
+          requestContext: req,
+          auditAdminEventInTransaction,
+          tagUserId: uidTag,
+        }));
+        const isNewAccount = claim.isNewAccount;
 
         // Mint custom token — uid = userId (permanent, seed-derived)
         // Token is minted only after the atomic identity-claim succeeds.
