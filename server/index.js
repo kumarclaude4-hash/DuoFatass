@@ -17,6 +17,7 @@ const { createAdminSessionStore } = require("./lib/adminSessionStore");
 const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClient");
 const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
+const { createInviteStore } = require("./lib/inviteStore");
 
 let serviceAccount;
 try {
@@ -847,38 +848,38 @@ async function resetAdminAuthFailures(ip) {
 // a login would become an availability problem, and a failed write is itself
 // logged. adminAuditLog is server-only (`allow read, write: if false` in
 // firestore.rules), so entries cannot be read or tampered with by any client.
+function buildAdminAuditRecord(action, req, extra = {}) {
+  const headers = req && req.headers ? req.headers : {};
+  return {
+    action,
+    // S05-M1: keep a rotating pseudonymous IP tag, never the raw address.
+    adminIp: ipTag(getClientIp(req)),
+    userAgent: String(headers["user-agent"] || "").slice(0, 200),
+    at: FieldValue.serverTimestamp(),
+    ...extra,
+  };
+}
+
 function auditAdminEvent(action, req, extra = {}) {
   db.collection("adminAuditLog")
-    .add({
-      action,
-      // S05-M1: this used to be `getClientIp(req)` — the raw IP — written to
-      // a permanent, no-TTL Firestore collection. adminAuditLog is worse than
-      // a console log in exactly the way SEC-L01 (above) was written to
-      // prevent: console output on Render rotates, this collection does not,
-      // and the record is a join (IP + timestamp + action), not an isolated
-      // value. `ipTag()` keeps the "same operator across two rows?"
-      // correlation the finding asked to preserve, while an adversary who
-      // reaches this collection (Firestore access or a legal order) no
-      // longer gets a directly-identifying, resolvable IP for free.
-      //
-      // Caveat, documented rather than hidden: LOG_PEPPER is per-process and
-      // never persisted (see its own comment above), so a server restart
-      // makes pre-restart and post-restart tags uncorrelatable — acceptable
-      // for "was this the same operator in one incident window?", not
-      // sufficient for "was this the same operator six months apart?". That
-      // tradeoff is the durable-audit vs. non-identifying tension the
-      // finding calls out explicitly; this fix takes the non-identifying
-      // side, matching its prescribed resolution.
-      adminIp: ipTag(getClientIp(req)),
-      // Retained because a rotating tag with a constant user-agent (or vice
-      // versa) is the signal that distinguishes one operator on mobile data
-      // from a distributed guessing attempt.
-      userAgent: String(req.headers["user-agent"] || "").slice(0, 200),
-      at: FieldValue.serverTimestamp(),
-      ...extra,
-    })
+    .add(buildAdminAuditRecord(action, req, extra))
     .catch((err) => console.warn(`[admin] audit write failed (${action}):`, err.message));
 }
+
+// Invite mutations use this transactional variant so the lifecycle change and
+// the forensic record either both commit or both roll back.
+function auditAdminEventInTransaction(tx, action, req, extra = {}) {
+  const ref = db.collection("adminAuditLog").doc();
+  tx.create(ref, buildAdminAuditRecord(action, req, extra));
+}
+
+const inviteStore = createInviteStore({
+  firestore: db,
+  FieldValue,
+  Timestamp: admin.firestore.Timestamp,
+  tagUserId: uidTag,
+  stageAudit: auditAdminEventInTransaction,
+});
 
 // Constant-time comparison so token-guessing can't be timed byte-by-byte.
 // Implementation lives in ./lib/pure (unit-tested there).
@@ -2624,21 +2625,7 @@ const server = http.createServer((req, res) => {
             }
 
             if (invite.isInviteToken(normalizedInvite)) {
-              const tokenHash = invite.hashInviteToken(normalizedInvite);
-              const inviteQuery = db.collection("invites").where("tokenHash", "==", tokenHash).limit(1);
-              const inviteSnap = await tx.get(inviteQuery);
-              if (inviteSnap.empty) {
-                throw Object.assign(new Error("Valid invite required"), { status: 403 });
-              }
-              const inviteDoc = inviteSnap.docs[0];
-              if (invite.inviteStatus(inviteDoc.data()) !== "active") {
-                throw Object.assign(new Error("Valid invite required"), { status: 403 });
-              }
-              tx.update(inviteDoc.ref, {
-                status: "used",
-                usedByUserId: userId,
-                usedAt: FieldValue.serverTimestamp(),
-              });
+              await inviteStore.redeemInTransaction(tx, userId, normalizedInvite, req);
             } else if (/^[0-9a-f]{32}$/.test(normalizedInvite)) {
               const legacyRef = db.collection("waitlist").doc(normalizedInvite);
               const legacySnap = await tx.get(legacyRef);
@@ -2650,6 +2637,7 @@ const server = http.createServer((req, res) => {
                 usedByUserId: userId,
                 usedAt: FieldValue.serverTimestamp(),
               });
+              auditAdminEventInTransaction(tx, "invite_redeemed", req, { userIdTag: uidTag(userId) });
             } else {
               throw Object.assign(new Error("Valid invite required"), { status: 403 });
             }
@@ -2689,11 +2677,6 @@ const server = http.createServer((req, res) => {
             }
           }
         });
-
-        if (isNewAccount) {
-          // Never attach the bearer token or its hash to audit records.
-          auditAdminEvent("invite_redeemed", req, { userIdTag: uidTag(userId) });
-        }
 
         // Mint custom token — uid = userId (permanent, seed-derived)
         // Token is minted only after the atomic identity-claim succeeds.
@@ -2744,11 +2727,7 @@ const server = http.createServer((req, res) => {
         try { token = invite.normalizeInviteToken(JSON.parse(body).inviteToken); } catch { /* generic invalid */ }
         let valid = false;
         if (invite.isInviteToken(token)) {
-          const snap = await db.collection("invites")
-            .where("tokenHash", "==", invite.hashInviteToken(token))
-            .limit(1)
-            .get();
-          valid = !snap.empty && invite.inviteStatus(snap.docs[0].data()) === "active";
+          valid = await inviteStore.isActive(token);
         } else if (/^[0-9a-f]{32}$/.test(token)) {
           // Bounded migration support for previously approved waitlist IDs.
           const legacy = await db.collection("waitlist").doc(token).get();
@@ -3933,7 +3912,18 @@ const server = http.createServer((req, res) => {
           res.writeHead(400); res.end("Invalid URL scheme"); return;
         }
         if (isBlockedPreviewHost(parsed.hostname)) {
-          res.writeHead(403); res.end("Forbidden address"); return;
+          // Stable, non-oracular result shape for the Android client. Do not
+          // echo the guard reason or DNS/private-address details.
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          res.end(JSON.stringify({
+            url: targetUrl,
+            domain: parsed.hostname.replace(/^www\./, ""),
+            status: "blocked",
+          }));
+          return;
         }
 
         try {
@@ -3955,8 +3945,17 @@ const server = http.createServer((req, res) => {
           // originally-submitted address (what the sender actually typed/
           // pasted into the chat), only `domain` — the field the UI renders
           // as the card's identity — changes.
-          const preview = { url: targetUrl, domain: pure.previewDomainFromUrl(finalUrl, parsed.hostname) };
-          if (r.ok && (r.headers.get("content-type") || "").includes("text/html")) {
+          const preview = {
+            url: targetUrl,
+            domain: pure.previewDomainFromUrl(finalUrl, parsed.hostname),
+            status: "ok",
+          };
+          const contentType = String(r.headers.get("content-type") || "").toLowerCase();
+          if (!r.ok) {
+            preview.status = "upstream_error";
+          } else if (!contentType.includes("text/html")) {
+            preview.status = "unsupported_content";
+          } else {
             // S04-H2: `await r.text()` buffered the ENTIRE body before this
             // `.slice()` could bound it, so a host that streams gigabytes (or
             // advertises a small page and then doesn't stop) exhausted the heap
@@ -3971,6 +3970,7 @@ const server = http.createServer((req, res) => {
                      || html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
             const ogI = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']{4,500})["']/i)
                      || html.match(/<meta[^>]+content=["']([^"']{4,500})["'][^>]+property=["']og:image["']/i);
+            preview.status = (!ogT && !ogI) ? "no_metadata" : "ok";
             if (ogT) {
               // Decode the most common HTML entities that appear in <title> and
               // og:title content (&amp; &lt; &gt; &quot; &#39; &#NNN; &#xHHH;).
@@ -4053,9 +4053,19 @@ const server = http.createServer((req, res) => {
             cleanupPreview();
           }
         } catch (fetchErr) {
-          console.warn("/linkPreview fetch failed:", fetchErr.message);
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ url: targetUrl, domain: parsed.hostname.replace(/^www\./, "") }));
+          // The client gets a stable retry/UI category, never the exception
+          // text (which can contain internal hostnames, DNS answers or paths).
+          const status = pure.linkPreviewFailureStatus(fetchErr);
+          console.warn("/linkPreview fetch failed:", status);
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          res.end(JSON.stringify({
+            url: targetUrl,
+            domain: parsed.hostname.replace(/^www\./, ""),
+            status,
+          }));
         }
       } catch (e) {
         console.error("/linkPreview error:", e.message);
@@ -4602,61 +4612,14 @@ const server = http.createServer((req, res) => {
       if (!(await requireAdminAuth(req, res))) return;
       try {
         const requestUrl = new URL(req.url, "http://localhost");
-        const wantedStatus = requestUrl.searchParams.get("status") || "all";
-        const search = (requestUrl.searchParams.get("search") || "").trim().toLowerCase();
-        const pageSize = Math.min(100, Math.max(10, Number(requestUrl.searchParams.get("pageSize")) || 25));
-        const cursor = invite.decodeCursor(requestUrl.searchParams.get("cursor"));
-        if (!["all", "active", "used", "expired", "revoked"].includes(wantedStatus) || search.length > 80) {
-          throw new TypeError("Invalid filter");
-        }
-
-        // Bounded scan with deterministic in-memory ordering avoids requiring a
-        // fragile matrix of Firestore composite indexes for derived expiry + search.
-        const [snap, totalSnapshot] = await Promise.all([
-          db.collection("invites").orderBy("createdAt", "desc").limit(1000).get(),
-          db.collection("invites").count().get(),
-        ]);
-        const totalCount = Number(totalSnapshot.data().count) || 0;
-        const now = Date.now();
-        let records = snap.docs.map((d) => {
-          const data = d.data();
-          const createdAtMs = invite.timestampMs(data.createdAt);
-          return {
-            id: d.id,
-            label: data.label || "",
-            notes: data.notes || "",
-            fingerprint: data.tokenFingerprint || "",
-            status: invite.inviteStatus(data, now),
-            createdAt: createdAtMs ? new Date(createdAtMs).toISOString() : null,
-            createdAtMs,
-            expiresAt: invite.timestampMs(data.expiresAt) ? new Date(invite.timestampMs(data.expiresAt)).toISOString() : null,
-            usedAt: invite.timestampMs(data.usedAt) ? new Date(invite.timestampMs(data.usedAt)).toISOString() : null,
-            usedByUserId: data.usedByUserId || null,
-            revokedAt: invite.timestampMs(data.revokedAt) ? new Date(invite.timestampMs(data.revokedAt)).toISOString() : null,
-          };
+        const data = await inviteStore.list({
+          status: requestUrl.searchParams.get("status") || "all",
+          search: requestUrl.searchParams.get("search") || "",
+          pageSize: requestUrl.searchParams.get("pageSize"),
+          cursor: requestUrl.searchParams.get("cursor"),
         });
-        const counts = { active: 0, used: 0, expired: 0, revoked: 0 };
-        for (const record of records) counts[record.status]++;
-        records = records
-          .filter((r) => wantedStatus === "all" || r.status === wantedStatus)
-          .filter((r) => !search || r.label.toLowerCase().includes(search))
-          .sort((a, b) => b.createdAtMs - a.createdAtMs || b.id.localeCompare(a.id));
-        if (cursor) {
-          records = records.filter((r) => r.createdAtMs < cursor.createdAtMs ||
-            (r.createdAtMs === cursor.createdAtMs && r.id < cursor.id));
-        }
-        const page = records.slice(0, pageSize);
-        const nextCursor = records.length > pageSize && page.length
-          ? invite.encodeCursor(page[page.length - 1].createdAtMs, page[page.length - 1].id)
-          : null;
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          items: page.map(({ createdAtMs, ...item }) => item),
-          nextCursor,
-          counts,
-          totalCount,
-          capped: totalCount > snap.size,
-        }));
+        res.end(JSON.stringify(data));
       } catch (e) {
         if (e instanceof TypeError) {
           res.writeHead(400, { "Content-Type": "text/plain" });
@@ -4672,22 +4635,9 @@ const server = http.createServer((req, res) => {
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch { throw new TypeError("Invalid JSON"); }
-        const input = invite.validateCreateInput(parsed);
-        const rawToken = invite.createInviteToken();
-        const ref = db.collection("invites").doc();
-        await ref.create({
-          tokenHash: invite.hashInviteToken(rawToken),
-          tokenFingerprint: invite.tokenFingerprint(rawToken),
-          status: "active",
-          label: input.label,
-          labelSearch: input.labelSearch,
-          notes: input.notes,
-          createdAt: FieldValue.serverTimestamp(),
-          expiresAt: admin.firestore.Timestamp.fromMillis(input.expiresAtMs),
-        });
-        auditAdminEvent("invite_created", req, { inviteId: ref.id });
+        const created = await inviteStore.create(parsed, req);
         res.writeHead(201, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ id: ref.id, token: rawToken }));
+        res.end(JSON.stringify(created));
       } catch (e) {
         if (e instanceof TypeError) {
           res.writeHead(400, { "Content-Type": "text/plain" });
@@ -4703,26 +4653,13 @@ const server = http.createServer((req, res) => {
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch { throw new TypeError("Invalid JSON"); }
-        const inviteId = typeof parsed.inviteId === "string" ? parsed.inviteId : "";
-        const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
-        if (!/^[A-Za-z0-9_-]{10,40}$/.test(inviteId) || reason.length > 200) throw new TypeError("Invalid revoke request");
-        const ref = db.collection("invites").doc(inviteId);
-        let conflict = null;
-        let missing = false;
-        await db.runTransaction(async (tx) => {
-          const snap = await tx.get(ref);
-          if (!snap.exists) { missing = true; return; }
-          const current = invite.inviteStatus(snap.data());
-          if (current !== "active") { conflict = current; return; }
-          tx.update(ref, {
-            status: "revoked",
-            revokedAt: FieldValue.serverTimestamp(),
-            revocationReason: reason,
-          });
-        });
-        if (missing) { res.writeHead(404); res.end("Invite not found"); return; }
-        if (conflict) { res.writeHead(409); res.end(`Invite is ${conflict}`); return; }
-        auditAdminEvent("invite_revoked", req, { inviteId });
+        const outcome = await inviteStore.revoke(parsed && parsed.inviteId, parsed && parsed.reason, req);
+        if (outcome.status === "missing") { res.writeHead(404); res.end("Invite not found"); return; }
+        if (outcome.status === "conflict") {
+          res.writeHead(409);
+          res.end(`Invite is ${outcome.current}`);
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
       } catch (e) {

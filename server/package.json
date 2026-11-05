@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:firestore-integration": "node --test lib/*.firestore.integration.test.js"
   },
   "engines": {
     "node": "20"

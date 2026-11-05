@@ -361,6 +361,23 @@ function normalizeIpForRateLimit(ip) {
 // server/index.js so the unused signing path can no longer imply the server
 // needs `B2_KEY_ID` / `B2_APPLICATION_KEY`.
 
+// Maps a failed /linkPreview fetch to a small, stable client contract.
+// Never return the underlying error text: it can contain internal hostnames,
+// DNS answers, URLs, or network topology. These labels describe the retry/UI
+// class only, not the target's private state.
+function linkPreviewFailureStatus(error) {
+  const message = error && typeof error.message === "string" ? error.message : "";
+  if (/^Blocked redirect target\b|^Blocked preview target\b/.test(message)) {
+    return "blocked";
+  }
+  const code = error && (error.code || (error.cause && error.cause.code));
+  if ((error && error.name === "AbortError") ||
+      ["ABORT_ERR", "ETIMEDOUT", "ECONNABORTED", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT"].includes(code)) {
+    return "timeout";
+  }
+  return "unavailable";
+}
+
 // ── /acknowledgeRotation transaction decision (pure) ─────────────────────────
 // S06-M6: the four-branch decision inside /acknowledgeRotation's Firestore
 // transaction had no regression coverage — the same gap S06-L1 closed for
@@ -417,6 +434,7 @@ module.exports = {
   getCookie,
   isBlockedPreviewHost,
   previewDomainFromUrl,
+  linkPreviewFailureStatus,
   clampTurnCredentialTtlSeconds,
   resolveNonceExpiry,
   isNonceUsable,

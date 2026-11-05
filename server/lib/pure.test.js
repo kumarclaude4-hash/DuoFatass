@@ -620,6 +620,32 @@ test("timingSafeEqualHex rejects malformed hex instead of comparing a prefix", (
   assert.equal(pure.timingSafeEqualHex("abc", "abd"), false);
 });
 
+// ── Link-preview failure contract (S04-I3) ───────────────────────────────────
+
+test("linkPreviewFailureStatus classifies SSRF blocks without exposing the rejected host", () => {
+  assert.equal(
+    pure.linkPreviewFailureStatus(new Error("Blocked redirect target (private address): 10.0.0.8")),
+    "blocked"
+  );
+  assert.equal(
+    pure.linkPreviewFailureStatus(new Error("Blocked preview target: localhost")),
+    "blocked"
+  );
+});
+
+test("linkPreviewFailureStatus recognizes abort and socket timeout variants", () => {
+  assert.equal(pure.linkPreviewFailureStatus(Object.assign(new Error("aborted"), { name: "AbortError" })), "timeout");
+  assert.equal(pure.linkPreviewFailureStatus(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })), "timeout");
+  assert.equal(pure.linkPreviewFailureStatus(Object.assign(new Error("timeout"), { cause: { code: "UND_ERR_HEADERS_TIMEOUT" } })), "timeout");
+});
+
+test("linkPreviewFailureStatus fails closed to a generic label for unknown errors", () => {
+  const status = pure.linkPreviewFailureStatus(new Error("upstream error from private-host.internal/path"));
+  assert.equal(status, "unavailable");
+  assert.equal(status.includes("private-host"), false);
+  assert.equal(pure.linkPreviewFailureStatus(null), "unavailable");
+});
+
 // ── decideRotationAcknowledgement (S06-M6) ────────────────────────────────────
 
 test("decideRotationAcknowledgement: no lock doc — nothing to acknowledge, no write", () => {
