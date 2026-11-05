@@ -11,8 +11,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -53,13 +51,12 @@ public class LinkPreviewFetcher {
     // ── Internal state ────────────────────────────────────────────────────────
 
     /**
-     * Bounded in-memory cache.  A plain {@code ConcurrentHashMap} grows without
-     * limit — in long chat sessions with many unique URLs this could eventually
-     * cause an OOM.  The cap of 200 entries is ~200 KB for typical preview
-     * objects (BUG-LP01).
+     * Bounded in-memory LRU cache. Successful results and failed lookups each
+     * occupy one entry, preventing repeated requests for a URL that has already
+     * failed. The cap of 200 entries limits memory use (BUG-LP01).
      */
     private static final int                   MAX_CACHE   = 200;
-    private static final Map<String, Preview>  cache       = new ConcurrentHashMap<>();
+    private static final LinkPreviewCache<Preview> cache = new LinkPreviewCache<>(MAX_CACHE);
     private static final ExecutorService       executor    = Executors.newFixedThreadPool(2);
     private static final Handler               mainHandler = new Handler(Looper.getMainLooper());
 
@@ -71,19 +68,16 @@ public class LinkPreviewFetcher {
      * the main thread.  {@code null} is passed back when the fetch fails.
      */
     public static void fetch(String url, Callback callback) {
-        if (cache.containsKey(url)) {
-            callback.onResult(cache.get(url));
+        LinkPreviewCache.Lookup<Preview> cached = cache.get(url);
+        if (cached.found) {
+            callback.onResult(cached.value);
             return;
         }
         executor.execute(() -> {
             Preview preview = fetchViaServer(url);
-            // Evict oldest entry if cache is at capacity.
-            if (cache.size() >= MAX_CACHE) {
-                String oldest = cache.keySet().iterator().next();
-                cache.remove(oldest);
-            }
-            // Store null to mark permanently-failed URLs so they are not retried
-            // this session.
+            // The cache represents a failed fetch with an explicit negative
+            // entry; it never inserts null into a map implementation that
+            // forbids null values. The bounded LRU cache also evicts atomically.
             cache.put(url, preview);
             mainHandler.post(() -> callback.onResult(preview));
         });
