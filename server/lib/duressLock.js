@@ -57,17 +57,17 @@ async function consumeDuressLockNonceInTransaction({
   }
   const lockRef = firestore.collection(accountLockCollection).doc(uid);
 
-  // A consumed nonce is kept until expiresAt TTL specifically to make a lost
-  // HTTP response/retry idempotent. Confirm only when the matching account is
-  // still latched by this duress flow; never turn a consumed nonce into a
-  // general success oracle for another kind of account lock.
+  // consumedAt is written in the same transaction as the original accountLock
+  // write. It is therefore the durable proof that this nonce already committed.
+  // A retry after a lost HTTP response must acknowledge that commit even if an
+  // operator has since unfrozen the account; it must not re-lock that account.
+  // The current lock state is returned separately so the route can avoid
+  // revoking sessions again after an intentional administrative unfreeze.
   if (nonceData.consumedAt) {
     const lockSnapshot = await tx.get(lockRef);
     const lockData = lockSnapshot.exists ? (lockSnapshot.data() || {}) : {};
-    if (lockData.locked === true && lockData.lockedBy === "duress") {
-      return { uid, alreadyLocked: true };
-    }
-    return { status: 403, message: "Invalid or already-consumed nonce" };
+    const lockStillActive = lockData.locked === true && lockData.lockedBy === "duress";
+    return { uid, alreadyLocked: true, lockStillActive };
   }
 
   if (!pure.isNonceUsable(uid, nonceData.expiresAt, now)) {
