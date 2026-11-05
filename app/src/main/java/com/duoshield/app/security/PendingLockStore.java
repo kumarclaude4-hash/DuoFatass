@@ -29,9 +29,12 @@ import com.duoshield.app.util.SecurePrefs;
  * The lock <em>decision</em> becomes durable before any erasure runs, in a container the
  * wipe deliberately preserves ({@link SecurePrefs#getSessionState}) — mirroring how the
  * device gate is kept structurally isolated from every wipe path. A launch-time drain
- * ({@link DuressManager#drainPendingLockIntent}) retries it, so the lock survives
- * reboots, force-stops, and an indefinitely offline device rather than expiring with a
- * one-hour nonce.
+ * ({@link DuressManager#drainPendingLockIntent}) retries it while the stored nonce is
+ * valid. If that one-hour credential expires, the intent remains; when the same account
+ * next establishes a valid foreground session, credential maintenance can issue a fresh
+ * nonce, replace the token only for that same uid, and retry. If the account never
+ * authenticates again, the server-side lock cannot be guaranteed and the intent remains
+ * an explicit local indication that the account may still be unlocked.
  *
  * <p>The credential problem is solved by moving the nonce fetch <strong>off</strong> the
  * duress path: {@link DuressManager#maintainLockCredential} pre-fetches and rotates a
