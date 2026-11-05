@@ -6,13 +6,13 @@ import android.util.Base64;
 import android.util.Log;
 
 import com.duoshield.app.db.AppDatabase;
+import com.duoshield.app.db.SignalSessionDao;
 import com.duoshield.app.models.SignalSessionRecord;
 import com.duoshield.app.util.LogRedact;
 import com.duoshield.app.util.SecurePrefs;
 
 import org.signal.libsignal.protocol.IdentityKey;
 import org.signal.libsignal.protocol.IdentityKeyPair;
-import org.signal.libsignal.protocol.InvalidKeyException;
 import org.signal.libsignal.protocol.InvalidKeyIdException;
 import org.signal.libsignal.protocol.SignalProtocolAddress;
 import org.signal.libsignal.protocol.state.IdentityKeyStore;
@@ -77,6 +77,8 @@ public final class DuoShieldSignalStore
     private static final String KEY_TRUST_BY_FP_PREFIX        = "signal_trusted_key_fp_";
 
     private final Context ctx;
+    private final SharedPreferences securePrefsOverride;
+    private final SignalSessionDao sessionDaoOverride;
 
     /**
      * Process-lifetime singleton.
@@ -100,7 +102,28 @@ public final class DuoShieldSignalStore
     }
 
     private DuoShieldSignalStore(Context ctx) {
+        this(ctx, null, null);
+    }
+
+    /**
+     * Test seam for exercising the trust-migration and ratchet-store failure
+     * paths without opening the device Keystore or the production SQLCipher DB.
+     * Production construction continues to use SecurePrefs and AppDatabase.
+     */
+    DuoShieldSignalStore(Context ctx, SharedPreferences securePrefs,
+                         SignalSessionDao sessionDao) {
         this.ctx = ctx.getApplicationContext();
+        this.securePrefsOverride = securePrefs;
+        this.sessionDaoOverride = sessionDao;
+    }
+
+    private SharedPreferences securePrefs() {
+        return securePrefsOverride != null ? securePrefsOverride : SecurePrefs.get(ctx);
+    }
+
+    private SignalSessionDao sessionDao() {
+        return sessionDaoOverride != null
+                ? sessionDaoOverride : AppDatabase.getInstance(ctx).signalSessionDao();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -160,35 +183,83 @@ public final class DuoShieldSignalStore
      * @return {@code null} if no trust record exists yet for this address (first
      *         contact); otherwise {fingerprintHex, base64(serializedKey)}.
      */
-    private String[] readTrustRecord(SignalProtocolAddress address) {
-        SharedPreferences prefs = SecurePrefs.get(ctx);
+    /**
+     * Decode a persisted identity-key encoding strictly. Android's Base64
+     * decoder is intentionally lenient and may ignore non-alphabet characters;
+     * accepting that behavior for a trust record can turn corrupted bytes into
+     * a different key. Every value written by this class uses NO_WRAP, so the
+     * canonical re-encoding must match the stored value byte-for-byte.
+     */
+    private static byte[] decodeStoredIdentityBase64(String encoded, String description) {
+        if (encoded == null || encoded.isEmpty()) {
+            throw new TrustRecordCorruptionException(description + " is empty");
+        }
+        final byte[] decoded;
+        try {
+            decoded = Base64.decode(encoded, Base64.NO_WRAP);
+        } catch (IllegalArgumentException e) {
+            throw new TrustRecordCorruptionException(description + " is not valid Base64", e);
+        }
+        if (decoded.length == 0
+                || !Base64.encodeToString(decoded, Base64.NO_WRAP).equals(encoded)) {
+            throw new TrustRecordCorruptionException(
+                    description + " is not canonical Base64");
+        }
+        return decoded;
+    }
+
+    String[] readTrustRecord(SignalProtocolAddress address) {
+        SharedPreferences prefs = securePrefs();
         String pointerKey = KEY_FP_POINTER_PREFIX + address.toString();
         String fp = prefs.getString(pointerKey, null);
         if (fp != null) {
             String b64 = prefs.getString(KEY_TRUST_BY_FP_PREFIX + fp, null);
-            if (b64 != null) return new String[]{fp, b64};
-            // Pointer exists but the fp-keyed record is missing (shouldn't normally
-            // happen) — fall through to the legacy path below rather than treating
-            // this as "no trust record", so we don't silently regress to TOFU.
+            if (b64 != null) {
+                byte[] serialized = decodeStoredIdentityBase64(
+                        b64, "Fingerprint-keyed identity trust record");
+                String actualFingerprint = fingerprintOf(serialized);
+                if (!actualFingerprint.equals(fp)) {
+                    throw new TrustRecordCorruptionException(
+                            "Fingerprint pointer does not match its backing identity record");
+                }
+                return new String[]{fp, b64};
+            }
+            // A dangling pointer is not a first-contact state. Try the legacy
+            // record as a recoverable migration source, but never silently return
+            // null when both representations are absent: callers interpret null
+            // as TOFU and would otherwise accept an unverified replacement key.
         }
-        // One-time migration: no fingerprint-keyed record yet — check the legacy
-        // uid-keyed record and, if present, migrate it forward.
+        // One-time migration: no usable fingerprint-keyed record yet — check the
+        // legacy uid-keyed record and, if present, migrate it forward.
         String legacyKey = KEY_TRUSTED_IDENTITY_PREFIX + address.toString();
         String legacyB64 = prefs.getString(legacyKey, null);
-        if (legacyB64 == null) return null; // genuinely first contact
-        String legacyFp = fingerprintOf(Base64.decode(legacyB64, Base64.NO_WRAP));
+        if (legacyB64 == null) {
+            if (fp != null) {
+                throw new TrustRecordCorruptionException(
+                        "Stored identity trust pointer has no backing record");
+            }
+            return null; // genuinely first contact: neither pointer nor legacy record exists
+        }
+        final byte[] legacyBytes = decodeStoredIdentityBase64(
+                legacyB64, "Legacy identity trust record");
+        String legacyFp = fingerprintOf(legacyBytes);
+        if (fp != null && !fp.equals(legacyFp)) {
+            throw new TrustRecordCorruptionException(
+                    "Dangling fingerprint pointer conflicts with the legacy identity record");
+        }
         prefs.edit()
             .putString(KEY_TRUST_BY_FP_PREFIX + legacyFp, legacyB64)
             .putString(pointerKey, legacyFp)
             .apply();
-        Log.i(TAG, "Migrated legacy uid-keyed trust record for " + address
+        Log.i(TAG, "Migrated legacy uid-keyed trust record for "
+                + LogRedact.uid(address.getName()) + "." + address.getDeviceId()
                 + " to fingerprint-keyed storage (S07-M2)");
         return new String[]{legacyFp, legacyB64};
     }
 
     @Override
     public boolean saveIdentity(SignalProtocolAddress address, IdentityKey identityKey) {
-        SharedPreferences prefs = SecurePrefs.get(ctx);
+        SharedPreferences prefs = securePrefs();
         String[] existingRecord = readTrustRecord(address); // may migrate a legacy record
         String incomingB64 = Base64.encodeToString(identityKey.serialize(), Base64.NO_WRAP);
         String incomingFp  = fingerprintOf(identityKey.serialize());
@@ -253,6 +324,23 @@ public final class DuoShieldSignalStore
      * match what we last trusted for this address"); what changed is where that
      * "what we last trusted" record lives — see {@link #readTrustRecord}.
      */
+    /**
+     * Raised when a previously stored trust record is internally inconsistent
+     * or cannot be decoded. It is intentionally distinct from {@code null},
+     * which represents genuine first contact and permits TOFU.
+     */
+    public static final class TrustRecordCorruptionException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        TrustRecordCorruptionException(String message) {
+            super(message);
+        }
+
+        TrustRecordCorruptionException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     @Override
     public boolean isTrustedIdentity(SignalProtocolAddress address,
                                      IdentityKey identityKey,
@@ -283,12 +371,19 @@ public final class DuoShieldSignalStore
         if (record == null) return null;
         String b64 = record[1];
         try {
-            return new IdentityKey(Base64.decode(b64, Base64.NO_WRAP), 0);
-        } catch (InvalidKeyException e) {
-            // S07-L4/S10-N2: same redaction rationale as saveIdentity() above.
+            return new IdentityKey(
+                    decodeStoredIdentityBase64(b64, "Stored identity trust record"), 0);
+        } catch (TrustRecordCorruptionException e) {
+            throw e;
+        } catch (Exception e) {
+            // A corrupt stored trust record must not be reported as "no prior
+            // identity": isTrustedIdentity treats null as first contact (TOFU).
+            // Fail closed so corruption cannot silently downgrade trust.
             Log.e(TAG, "Failed to deserialise stored identity for "
-                    + LogRedact.uid(address.getName()), e);
-            return null;
+                    + LogRedact.uid(address.getName()) + " ("
+                    + e.getClass().getSimpleName() + "); refusing TOFU fallback.");
+            throw new TrustRecordCorruptionException(
+                    "Stored identity trust record is invalid", e);
         }
     }
 
@@ -413,8 +508,7 @@ public final class DuoShieldSignalStore
     @Override
     public SessionRecord loadSession(SignalProtocolAddress address) {
         String key = toKey(address);
-        SignalSessionRecord row = AppDatabase.getInstance(ctx)
-                .signalSessionDao().load(key);
+        SignalSessionRecord row = sessionDao().load(key);
         if (row == null) {
             return new SessionRecord(); // fresh (empty) session — genuinely no prior session
         }
@@ -428,7 +522,7 @@ public final class DuoShieldSignalStore
             // a fresh session, so the caller sees an explicit, typed failure
             // rather than a decryption/encryption that succeeds against the
             // wrong ratchet state with no indication anything went wrong.
-            AppDatabase.getInstance(ctx).signalSessionDao().delete(key);
+            sessionDao().delete(key);
             // S07-L4/S10-N2: `key` embeds address.getName() (the peer uid) — redact
             // it before logging at a level (Log.e) that survives release builds.
             String redactedKey = LogRedact.uid(address.getName()) + "." + address.getDeviceId();
@@ -445,7 +539,7 @@ public final class DuoShieldSignalStore
         try {
             SignalSessionRecord row = new SignalSessionRecord(
                     key, record.serialize(), System.currentTimeMillis());
-            AppDatabase.getInstance(ctx).signalSessionDao().store(row);
+            sessionDao().store(row);
         } catch (Exception e) {
             // S07-L4/S10-N2: `key` embeds address.getName() (the peer uid) — redact
             // it before logging at a level (Log.e) that survives release builds.
@@ -457,12 +551,12 @@ public final class DuoShieldSignalStore
     @Override
     public boolean containsSession(SignalProtocolAddress address) {
         String key = toKey(address);
-        return AppDatabase.getInstance(ctx).signalSessionDao().count(key) > 0;
+        return sessionDao().count(key) > 0;
     }
 
     @Override
     public void deleteSession(SignalProtocolAddress address) {
-        AppDatabase.getInstance(ctx).signalSessionDao().delete(toKey(address));
+        sessionDao().delete(toKey(address));
     }
 
     @Override
@@ -478,13 +572,12 @@ public final class DuoShieldSignalStore
 
     @Override
     public void deleteAllSessions(String name) {
-        AppDatabase.getInstance(ctx).signalSessionDao().deleteAllForName(name);
+        sessionDao().deleteAllForName(name);
     }
 
     @Override
     public List<Integer> getSubDeviceSessions(String name) {
-        List<String> addresses = AppDatabase.getInstance(ctx)
-                .signalSessionDao().getAddressesForName(name);
+        List<String> addresses = sessionDao().getAddressesForName(name);
         List<Integer> deviceIds = new ArrayList<>();
         for (String addr : addresses) {
             int dot = addr.lastIndexOf('.');

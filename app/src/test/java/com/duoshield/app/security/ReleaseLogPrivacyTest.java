@@ -79,6 +79,17 @@ public class ReleaseLogPrivacyTest {
                 "Failed to export media (" + QUOTE_PLUS_EXCEPTION_TYPE));
     }
 
+    @Test
+    public void signalTrustMigrationLogsDoNotExposeRawPeerAddress() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/crypto/signal/DuoShieldSignalStore.java");
+        assertTrue(source.contains("LogRedact.uid(address.getName())"));
+        assertFalse(source.contains(
+                "Migrated legacy uid-keyed trust record for \" + address"));
+        assertFalse(source.contains(
+                "Failed to deserialise stored identity for \" + address.getName()"));
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 7 && dir != null; i++) {
