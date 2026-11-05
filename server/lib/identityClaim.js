@@ -76,7 +76,7 @@ async function claimIdentityInTransaction({
     // Missing, malformed or mismatched identity material is a failure to prove
     // ownership; never interpret it as an unbound account.
     if (typeof storedHash !== "string" ||
-        !/^[0-9a-f]{64}$/.test(storedHash) ||
+        !/^[0-9a-fA-F]{64}$/.test(storedHash) ||
         !pure.timingSafeEqualHex(storedHash, incomingHash)) {
       throw Object.assign(new Error("Key mismatch"), { status: 403 });
     }
