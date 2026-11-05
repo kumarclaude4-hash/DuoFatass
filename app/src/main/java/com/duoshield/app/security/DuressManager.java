@@ -971,7 +971,7 @@ public class DuressManager {
      * Requests a single-use account-lock nonce from the push server, authenticated
      * with the supplied Firebase ID token. The nonce is used by {@link AccountLockWorker}
      * as a retry credential — it has no auth power of its own, is uid-bound server-side,
-     * expires in 24 hours, and is deleted after one successful {@code /duress-lock} call.
+     * expires in one hour and is marked consumed atomically with the lock. A pending intent can receive a fresh uid-bound nonce after the same account next authenticates.
      *
      * <p>Must NOT be called on the main thread (blocking HTTP call).
      *
