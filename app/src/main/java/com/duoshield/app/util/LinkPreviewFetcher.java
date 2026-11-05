@@ -51,10 +51,9 @@ public class LinkPreviewFetcher {
     // ── Internal state ────────────────────────────────────────────────────────
 
     /**
-     * Bounded in-memory cache.  A plain {@code ConcurrentHashMap} grows without
-     * limit — in long chat sessions with many unique URLs this could eventually
-     * cause an OOM.  The cap of 200 entries is ~200 KB for typical preview
-     * objects (BUG-LP01).
+     * Bounded in-memory LRU cache. Successful results and failed lookups each
+     * occupy one entry, preventing repeated requests for a URL that has already
+     * failed. The cap of 200 entries limits memory use (BUG-LP01).
      */
     private static final int                   MAX_CACHE   = 200;
     private static final LinkPreviewCache<Preview> cache = new LinkPreviewCache<>(MAX_CACHE);
