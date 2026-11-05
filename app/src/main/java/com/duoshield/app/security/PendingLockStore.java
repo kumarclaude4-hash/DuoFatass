@@ -158,6 +158,7 @@ public final class PendingLockStore {
                     .putString(KEY_SUBJECT, uid)
                     .putLong(KEY_INTENT_TS, System.currentTimeMillis());
             if (nonce != null && !nonce.isEmpty()) ed.putString(KEY_INTENT_TOKEN, nonce);
+            else ed.remove(KEY_INTENT_TOKEN); // never inherit a previous account's credential
             ed.commit();
         } catch (Exception ignored) {}
     }
@@ -175,6 +176,25 @@ public final class PendingLockStore {
     public static String getIntentToken(Context ctx) {
         try { return sp(ctx).getString(KEY_INTENT_TOKEN, null); }
         catch (Exception e) { return null; }
+    }
+
+    /**
+     * Replaces an expired/old intent credential only when the pending intent is
+     * still for the same uid that authenticated the newly issued nonce. This is
+     * called after sign-in/foreground credential refresh; it must never retarget
+     * a pending lock for a different account.
+     */
+    public static boolean replaceIntentTokenIfSubjectMatches(Context ctx, String uid, String nonce) {
+        if (ctx == null || uid == null || uid.isEmpty() || nonce == null || nonce.isEmpty()) {
+            return false;
+        }
+        try {
+            SharedPreferences prefs = sp(ctx);
+            if (!uid.equals(prefs.getString(KEY_SUBJECT, null))) return false;
+            return prefs.edit().putString(KEY_INTENT_TOKEN, nonce).commit();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
