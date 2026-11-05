@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.duoshield.app.crypto.GroupCipherHelper;
+import com.duoshield.app.security.GroupKeyAuthorizationPolicy;
 import com.duoshield.app.crypto.signal.SignalCipherHelper;
 import com.duoshield.app.db.AppDatabase;
 import com.duoshield.app.models.Group;
@@ -405,7 +406,7 @@ public class GroupChatActivity extends BaseActivity {
               // no basis to trust this key doc's sender at all, so it must fail
               // CLOSED: null/missing creatorUid now denies unconditionally, exactly
               // like a mismatched one.
-              if (creatorUid == null || !creatorUid.equals(sender)) {
+              if (!GroupKeyAuthorizationPolicy.isAuthorizedCreator(creatorUid, sender)) {
                   // S07-L4/S10-N2: creatorUid is a peer uid too — redact it, same as
                   // sender, before logging at a level (Log.w) that survives release
                   // builds (proguard-rules.pro keeps Log.w/Log.e deliberately).
