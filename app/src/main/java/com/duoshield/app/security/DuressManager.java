@@ -824,7 +824,7 @@ public class DuressManager {
      * covered without needing network at the worst possible moment.
      *
      * <p>No-ops silently offline, when signed out, or when the existing warm token is
-     * still fresh (age &lt; 12 hours — nonces expire at 24h server-side, so this keeps
+     * still fresh (age &lt; 30 minutes — nonces expire after one hour server-side, so this keeps
      * a wide safety margin without hammering {@code /requestLockNonce} every launch).
      * Safe to call from the main thread; the network call itself runs on a background
      * thread.
@@ -928,8 +928,8 @@ public class DuressManager {
                 PendingLockStore.clearLockIntent(appCtx);
                 android.util.Log.i("DuressManager", "Drained pending lock intent — confirmed.");
             } else if (code >= 400 && code < 500 && code != 408 && code != 425 && code != 429) {
-                // With idempotent nonce consumption, a successfully consumed nonce
-                // returns 200 only while the matching duress lock remains latched.
+                // A consumed nonce returns 200 as an idempotent acknowledgement of the
+                // original atomic lock commit (even if an admin has since unfrozen it).
                 // Any permanent 4xx therefore means the lock was NOT confirmed.
                 // Keep the intent: maintainLockCredential() can replace this stale
                 // nonce after the same account next has a valid foreground session.
