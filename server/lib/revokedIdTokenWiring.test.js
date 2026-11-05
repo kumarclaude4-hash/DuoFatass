@@ -14,6 +14,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
 // the client has already signed out and cannot present an ID token.
 const ROUTES = [
   "/migrateUid",
+  "/acknowledgeRotation",
   "/createChat",
   "/turnCredentials",
   "/mediaToken",
