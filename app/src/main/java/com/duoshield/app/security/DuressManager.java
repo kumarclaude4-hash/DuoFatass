@@ -24,6 +24,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.security.spec.KeySpec;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
@@ -52,6 +53,7 @@ public class DuressManager {
     // Server-issued fallback nonces expire after one hour. Refresh with a
     // safety margin so an ordinary foreground session does not keep a dead token.
     private static final long LOCK_NONCE_REFRESH_INTERVAL_MS = 30L * 60 * 1000;
+    private static final AtomicBoolean LOCK_CREDENTIAL_REFRESH_IN_FLIGHT = new AtomicBoolean(false);
 
     /**
      * Neutral replacement for the old {@code duress_wipe_in_progress} flag.
@@ -834,6 +836,10 @@ public class DuressManager {
         if (user == null) return;
         final Context appCtx = context.getApplicationContext();
         if (PendingLockStore.getWarmTokenAgeMs(appCtx) < LOCK_NONCE_REFRESH_INTERVAL_MS) return;
+        // Multiple Activity.onStart callbacks must not issue parallel nonces.
+        // /requestLockNonce intentionally prunes older outstanding nonces per uid;
+        // serializing this refresh prevents a late response from replacing a newer token.
+        if (!LOCK_CREDENTIAL_REFRESH_IN_FLIGHT.compareAndSet(false, true)) return;
 
         new Thread(() -> {
             try {
@@ -875,6 +881,8 @@ public class DuressManager {
             } catch (Exception e) {
                 android.util.Log.w("DuressManager",
                         "maintainLockCredential failed (non-fatal): " + e.getMessage());
+            } finally {
+                LOCK_CREDENTIAL_REFRESH_IN_FLIGHT.set(false);
             }
         }, "duress-credential-maintain").start();
     }
