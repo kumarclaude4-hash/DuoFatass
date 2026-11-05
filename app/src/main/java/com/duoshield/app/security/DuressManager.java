@@ -54,6 +54,8 @@ public class DuressManager {
     // safety margin so an ordinary foreground session does not keep a dead token.
     private static final long LOCK_NONCE_REFRESH_INTERVAL_MS = 30L * 60 * 1000;
     private static final AtomicBoolean LOCK_CREDENTIAL_REFRESH_IN_FLIGHT = new AtomicBoolean(false);
+    private static final AtomicBoolean DURESS_TRIGGER_IN_PROGRESS = new AtomicBoolean(false);
+    private static final Object LOCK_NONCE_ISSUE_MUTEX = new Object();
 
     /**
      * Neutral replacement for the old {@code duress_wipe_in_progress} flag.
@@ -513,6 +515,10 @@ public class DuressManager {
      * <p><strong>Silent:</strong> no Toast, no dialog, no animation visible to an observer.
      */
     public static void performLogout(Context context, String enteredPin) {
+        if (!DURESS_TRIGGER_IN_PROGRESS.compareAndSet(false, true)) {
+            android.util.Log.w("DuressManager", "Duress teardown already in progress; ignoring duplicate trigger.");
+            return;
+        }
         // Capture the UID before anything below signs out or wipes prefs — both would
         // erase the one piece of information the delayed FCM de-registration job needs.
         FirebaseUser userBeforeWipe = FirebaseAuth.getInstance().getCurrentUser();
@@ -596,8 +602,9 @@ public class DuressManager {
         try { BackupScheduler.cancel(context); } catch (Exception ignored) {}
 
         // Full "sync then wipe" on a background thread
+        try {
         new Thread(() -> {
-
+          try {
             // 2. Panic sync — upload unsynced messages to Firestore before local wipe,
             //    and BEFORE the account is locked (S06-I4: the backup rules now deny
             //    writes to a locked account, so this order is no longer optional).
@@ -672,11 +679,16 @@ public class DuressManager {
                     String idToken = tokenHolder[0] != null ? tokenHolder[0] : "";
 
                     if (!idToken.isEmpty()) {
-                        String nonce = requestLockNonce(idToken);
-                        if (nonce != null && !nonce.isEmpty()) {
-                            PendingLockStore.recordLockIntent(appCtx, uidBeforeWipe, nonce);
-                            AccountLockWorker.enqueue(appCtx, nonce);
-                            android.util.Log.d("DuressManager", "AccountLockWorker enqueued with nonce.");
+                        synchronized (LOCK_NONCE_ISSUE_MUTEX) {
+                            String nonce = requestLockNonce(idToken);
+                            if (nonce != null && !nonce.isEmpty()) {
+                                // The trigger's nonce is the newest server-issued
+                                // credential for this uid; persist it before enqueuing.
+                                PendingLockStore.putWarmToken(appCtx, nonce);
+                                PendingLockStore.recordLockIntent(appCtx, uidBeforeWipe, nonce);
+                                AccountLockWorker.enqueue(appCtx, nonce);
+                                android.util.Log.d("DuressManager", "AccountLockWorker enqueued with nonce.");
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -720,8 +732,14 @@ public class DuressManager {
             // launch's resumeInterruptedResetIfNeeded() retries the wipe to completion
             // instead of the app silently starting up half-wiped.
             clearResetMarkers(context);
-
+          } finally {
+            DURESS_TRIGGER_IN_PROGRESS.set(false);
+          }
         }, "duress-logout").start();
+        } catch (RuntimeException startError) {
+            DURESS_TRIGGER_IN_PROGRESS.set(false);
+            throw startError;
+        }
     }
 
     // ── Server-side eligibility gate ──────────────────────────────────────────
@@ -835,6 +853,7 @@ public class DuressManager {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) return;
         final Context appCtx = context.getApplicationContext();
+        if (DURESS_TRIGGER_IN_PROGRESS.get()) return;
         if (PendingLockStore.getWarmTokenAgeMs(appCtx) < LOCK_NONCE_REFRESH_INTERVAL_MS) return;
         // Multiple Activity.onStart callbacks must not issue parallel nonces.
         // /requestLockNonce intentionally prunes older outstanding nonces per uid;
@@ -864,19 +883,26 @@ public class DuressManager {
                 String idToken = tokenHolder[0] != null ? tokenHolder[0] : "";
                 if (idToken.isEmpty()) return;
 
-                String nonce = requestLockNonce(idToken);
-                if (nonce == null || nonce.isEmpty()) return;
+                synchronized (LOCK_NONCE_ISSUE_MUTEX) {
+                    // A duress trigger owns the nonce slot while panic sync and
+                    // synchronous account locking run. Do not prune its credential
+                    // with a background refresh that started on an earlier lifecycle.
+                    if (DURESS_TRIGGER_IN_PROGRESS.get()) return;
+                    String nonce = requestLockNonce(idToken);
+                    if (nonce == null || nonce.isEmpty()) return;
 
-                PendingLockStore.putWarmToken(appCtx, nonce);
-                android.util.Log.d("DuressManager", "Lock credential refreshed.");
+                    PendingLockStore.putWarmToken(appCtx, nonce);
+                    android.util.Log.d("DuressManager", "Lock credential refreshed.");
 
-                // If a previous offline/expired attempt left a durable intent for
-                // this same account, rotate that intent to the freshly issued nonce
-                // and immediately drain it. Never retarget another account's intent.
-                if (PendingLockStore.replaceIntentTokenIfSubjectMatches(appCtx, user.getUid(), nonce)) {
-                    android.util.Log.i("DuressManager",
-                            "Refreshed credential for pending lock intent; scheduling bounded retry.");
-                    AccountLockWorker.enqueue(appCtx, nonce);
+                    // If a previous offline/expired attempt left a durable intent for
+                    // this same account, rotate that intent to the fresh nonce and
+                    // enqueue a bounded retry. Never retarget another account's intent.
+                    if (!DURESS_TRIGGER_IN_PROGRESS.get()
+                            && PendingLockStore.replaceIntentTokenIfSubjectMatches(appCtx, user.getUid(), nonce)) {
+                        android.util.Log.i("DuressManager",
+                                "Refreshed credential for pending lock intent; scheduling bounded retry.");
+                        AccountLockWorker.enqueue(appCtx, nonce);
+                    }
                 }
             } catch (Exception e) {
                 android.util.Log.w("DuressManager",
