@@ -88,4 +88,56 @@ async function consumeDuressLockNonceInTransaction({
   return { uid, alreadyLocked: false };
 }
 
-module.exports = { consumeDuressLockNonceInTransaction };
+/**
+ * Prunes only unconsumed nonce credentials for a uid.
+ *
+ * Consumed records are idempotency receipts for a lock transaction whose HTTP
+ * response may have been lost. Keep those receipts until their expiresAt TTL;
+ * deleting them while issuing a replacement nonce can turn a delayed retry into
+ * an apparent failure and can cause a client to re-lock an account an operator
+ * has already unfrozen.
+ *
+ * Batches are kept below Firestore's 500-write ceiling.
+ */
+async function pruneOutstandingDuressNonces({
+  firestore,
+  uid,
+  nonceCollection = "_duressNonces",
+  batchSize = 450,
+} = {}) {
+  if (!firestore || typeof firestore.collection !== "function") {
+    throw new TypeError("pruneOutstandingDuressNonces requires Firestore");
+  }
+  if (typeof uid !== "string" || uid.length === 0 || uid.length > 128 ||
+      uid.trim() !== uid || uid.includes("/")) {
+    throw new TypeError("pruneOutstandingDuressNonces requires a valid uid");
+  }
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 450) {
+    throw new TypeError("batchSize must be an integer between 1 and 450");
+  }
+
+  const snapshot = await firestore.collection(nonceCollection)
+    .where("uid", "==", uid)
+    .get();
+  const outstanding = snapshot.docs.filter((doc) =>
+    !(doc.data() || {}).consumedAt
+  );
+
+  for (let offset = 0; offset < outstanding.length; offset += batchSize) {
+    const batch = firestore.batch();
+    for (const doc of outstanding.slice(offset, offset + batchSize)) {
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+  }
+
+  return {
+    deleted: outstanding.length,
+    retainedConsumed: snapshot.size - outstanding.length,
+  };
+}
+
+module.exports = {
+  consumeDuressLockNonceInTransaction,
+  pruneOutstandingDuressNonces,
+};
