@@ -10,7 +10,7 @@ import com.duoshield.app.util.SecurePrefs;
  *
  * <h3>Why this exists (S06-H3)</h3>
  * The duress path used to have two ways to set {@code accountLock}, and <em>both</em>
- * required network at, or within 24 hours of, trigger time:
+ * required a valid server nonce at trigger time; the nonce itself expires after one hour:
  * <ul>
  *   <li>A synchronous Firestore {@code set()}. Offline, the SDK queues it locally — and
  *       then the wipe destroys the app's storage, so the queued mutation is deleted
@@ -31,7 +31,7 @@ import com.duoshield.app.util.SecurePrefs;
  * device gate is kept structurally isolated from every wipe path. A launch-time drain
  * ({@link DuressManager#drainPendingLockIntent}) retries it, so the lock survives
  * reboots, force-stops, and an indefinitely offline device rather than expiring with a
- * 24-hour nonce.
+ * one-hour nonce.
  *
  * <p>The credential problem is solved by moving the nonce fetch <strong>off</strong> the
  * duress path: {@link DuressManager#maintainLockCredential} pre-fetches and rotates a
@@ -199,9 +199,8 @@ public final class PendingLockStore {
 
     /**
      * Destroys the intent. Call this <strong>only</strong> once the server has
-     * confirmed the lock (or has told us the nonce was already consumed, which means
-     * the same thing). Clearing it on any other failure path is how the old design
-     * lost locks silently.
+     * confirmed the lock with a 200/204 response. An invalid, expired, or unknown
+     * nonce is not evidence that a lock landed; those paths must retain the intent.
      */
     public static void clearLockIntent(Context ctx) {
         try {
