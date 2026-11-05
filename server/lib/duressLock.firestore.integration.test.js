@@ -112,9 +112,10 @@ if (!emulatorHost) {
     assert.equal((await dbA.collection(nonceCollection).doc(expiredNonce).get()).exists, false);
     assert.equal((await dbA.collection(accountLockCollection).doc(expiredUid).get()).exists, false);
 
-    // A consumed token is not a blanket success: if an operator has since
-    // unlocked the account or the lock no longer bears the duress marker, replay
-    // is denied rather than re-locking an unrelated state.
+    // A consumedAt marker proves the original lock transaction committed.
+    // If an operator has since unfrozen the account, retry confirms that historical
+    // commit without re-locking the account; the HTTP route must not re-revoke
+    // sessions after an intentional administrative unfreeze.
     const unlockedNonce = makeNonce();
     const unlockedUid = makeUid("unlocked");
     await dbA.collection(nonceCollection).doc(unlockedNonce).set({
@@ -126,8 +127,15 @@ if (!emulatorHost) {
       locked: false,
       lockedBy: "admin",
     });
-    const invalidReplay = await consume(dbA, unlockedNonce);
-    assert.deepEqual(invalidReplay, { status: 403, message: "Invalid or already-consumed nonce" });
+    const historicalReplay = await consume(dbA, unlockedNonce);
+    assert.deepEqual(historicalReplay, {
+      uid: unlockedUid,
+      alreadyLocked: true,
+      lockStillActive: false,
+    });
+    const afterUnfreezeReplay = await dbA.collection(accountLockCollection).doc(unlockedUid).get();
+    assert.equal(afterUnfreezeReplay.data().locked, false);
+    assert.equal(afterUnfreezeReplay.data().lockedBy, "admin");
 
     // A malformed stored uid is treated as corrupt server state, deleted,
     // and never allowed to construct a Firestore document reference.
