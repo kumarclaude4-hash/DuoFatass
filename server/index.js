@@ -2625,21 +2625,7 @@ const server = http.createServer((req, res) => {
             }
 
             if (invite.isInviteToken(normalizedInvite)) {
-              const tokenHash = invite.hashInviteToken(normalizedInvite);
-              const inviteQuery = db.collection("invites").where("tokenHash", "==", tokenHash).limit(1);
-              const inviteSnap = await tx.get(inviteQuery);
-              if (inviteSnap.empty) {
-                throw Object.assign(new Error("Valid invite required"), { status: 403 });
-              }
-              const inviteDoc = inviteSnap.docs[0];
-              if (invite.inviteStatus(inviteDoc.data()) !== "active") {
-                throw Object.assign(new Error("Valid invite required"), { status: 403 });
-              }
-              tx.update(inviteDoc.ref, {
-                status: "used",
-                usedByUserId: userId,
-                usedAt: FieldValue.serverTimestamp(),
-              });
+              await inviteStore.redeemInTransaction(tx, userId, normalizedInvite, req);
             } else if (/^[0-9a-f]{32}$/.test(normalizedInvite)) {
               const legacyRef = db.collection("waitlist").doc(normalizedInvite);
               const legacySnap = await tx.get(legacyRef);
@@ -2651,6 +2637,7 @@ const server = http.createServer((req, res) => {
                 usedByUserId: userId,
                 usedAt: FieldValue.serverTimestamp(),
               });
+              auditAdminEventInTransaction(tx, "invite_redeemed", req, { userIdTag: uidTag(userId) });
             } else {
               throw Object.assign(new Error("Valid invite required"), { status: 403 });
             }
@@ -2690,11 +2677,6 @@ const server = http.createServer((req, res) => {
             }
           }
         });
-
-        if (isNewAccount) {
-          // Never attach the bearer token or its hash to audit records.
-          auditAdminEvent("invite_redeemed", req, { userIdTag: uidTag(userId) });
-        }
 
         // Mint custom token — uid = userId (permanent, seed-derived)
         // Token is minted only after the atomic identity-claim succeeds.
@@ -2745,11 +2727,7 @@ const server = http.createServer((req, res) => {
         try { token = invite.normalizeInviteToken(JSON.parse(body).inviteToken); } catch { /* generic invalid */ }
         let valid = false;
         if (invite.isInviteToken(token)) {
-          const snap = await db.collection("invites")
-            .where("tokenHash", "==", invite.hashInviteToken(token))
-            .limit(1)
-            .get();
-          valid = !snap.empty && invite.inviteStatus(snap.docs[0].data()) === "active";
+          valid = await inviteStore.isActive(token);
         } else if (/^[0-9a-f]{32}$/.test(token)) {
           // Bounded migration support for previously approved waitlist IDs.
           const legacy = await db.collection("waitlist").doc(token).get();
@@ -4634,61 +4612,14 @@ const server = http.createServer((req, res) => {
       if (!(await requireAdminAuth(req, res))) return;
       try {
         const requestUrl = new URL(req.url, "http://localhost");
-        const wantedStatus = requestUrl.searchParams.get("status") || "all";
-        const search = (requestUrl.searchParams.get("search") || "").trim().toLowerCase();
-        const pageSize = Math.min(100, Math.max(10, Number(requestUrl.searchParams.get("pageSize")) || 25));
-        const cursor = invite.decodeCursor(requestUrl.searchParams.get("cursor"));
-        if (!["all", "active", "used", "expired", "revoked"].includes(wantedStatus) || search.length > 80) {
-          throw new TypeError("Invalid filter");
-        }
-
-        // Bounded scan with deterministic in-memory ordering avoids requiring a
-        // fragile matrix of Firestore composite indexes for derived expiry + search.
-        const [snap, totalSnapshot] = await Promise.all([
-          db.collection("invites").orderBy("createdAt", "desc").limit(1000).get(),
-          db.collection("invites").count().get(),
-        ]);
-        const totalCount = Number(totalSnapshot.data().count) || 0;
-        const now = Date.now();
-        let records = snap.docs.map((d) => {
-          const data = d.data();
-          const createdAtMs = invite.timestampMs(data.createdAt);
-          return {
-            id: d.id,
-            label: data.label || "",
-            notes: data.notes || "",
-            fingerprint: data.tokenFingerprint || "",
-            status: invite.inviteStatus(data, now),
-            createdAt: createdAtMs ? new Date(createdAtMs).toISOString() : null,
-            createdAtMs,
-            expiresAt: invite.timestampMs(data.expiresAt) ? new Date(invite.timestampMs(data.expiresAt)).toISOString() : null,
-            usedAt: invite.timestampMs(data.usedAt) ? new Date(invite.timestampMs(data.usedAt)).toISOString() : null,
-            usedByUserId: data.usedByUserId || null,
-            revokedAt: invite.timestampMs(data.revokedAt) ? new Date(invite.timestampMs(data.revokedAt)).toISOString() : null,
-          };
+        const data = await inviteStore.list({
+          status: requestUrl.searchParams.get("status") || "all",
+          search: requestUrl.searchParams.get("search") || "",
+          pageSize: requestUrl.searchParams.get("pageSize"),
+          cursor: requestUrl.searchParams.get("cursor"),
         });
-        const counts = { active: 0, used: 0, expired: 0, revoked: 0 };
-        for (const record of records) counts[record.status]++;
-        records = records
-          .filter((r) => wantedStatus === "all" || r.status === wantedStatus)
-          .filter((r) => !search || r.label.toLowerCase().includes(search))
-          .sort((a, b) => b.createdAtMs - a.createdAtMs || b.id.localeCompare(a.id));
-        if (cursor) {
-          records = records.filter((r) => r.createdAtMs < cursor.createdAtMs ||
-            (r.createdAtMs === cursor.createdAtMs && r.id < cursor.id));
-        }
-        const page = records.slice(0, pageSize);
-        const nextCursor = records.length > pageSize && page.length
-          ? invite.encodeCursor(page[page.length - 1].createdAtMs, page[page.length - 1].id)
-          : null;
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          items: page.map(({ createdAtMs, ...item }) => item),
-          nextCursor,
-          counts,
-          totalCount,
-          capped: totalCount > snap.size,
-        }));
+        res.end(JSON.stringify(data));
       } catch (e) {
         if (e instanceof TypeError) {
           res.writeHead(400, { "Content-Type": "text/plain" });
@@ -4704,22 +4635,9 @@ const server = http.createServer((req, res) => {
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch { throw new TypeError("Invalid JSON"); }
-        const input = invite.validateCreateInput(parsed);
-        const rawToken = invite.createInviteToken();
-        const ref = db.collection("invites").doc();
-        await ref.create({
-          tokenHash: invite.hashInviteToken(rawToken),
-          tokenFingerprint: invite.tokenFingerprint(rawToken),
-          status: "active",
-          label: input.label,
-          labelSearch: input.labelSearch,
-          notes: input.notes,
-          createdAt: FieldValue.serverTimestamp(),
-          expiresAt: admin.firestore.Timestamp.fromMillis(input.expiresAtMs),
-        });
-        auditAdminEvent("invite_created", req, { inviteId: ref.id });
+        const created = await inviteStore.create(parsed, req);
         res.writeHead(201, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ id: ref.id, token: rawToken }));
+        res.end(JSON.stringify(created));
       } catch (e) {
         if (e instanceof TypeError) {
           res.writeHead(400, { "Content-Type": "text/plain" });
@@ -4735,26 +4653,13 @@ const server = http.createServer((req, res) => {
       try {
         let parsed;
         try { parsed = JSON.parse(body); } catch { throw new TypeError("Invalid JSON"); }
-        const inviteId = typeof parsed.inviteId === "string" ? parsed.inviteId : "";
-        const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
-        if (!/^[A-Za-z0-9_-]{10,40}$/.test(inviteId) || reason.length > 200) throw new TypeError("Invalid revoke request");
-        const ref = db.collection("invites").doc(inviteId);
-        let conflict = null;
-        let missing = false;
-        await db.runTransaction(async (tx) => {
-          const snap = await tx.get(ref);
-          if (!snap.exists) { missing = true; return; }
-          const current = invite.inviteStatus(snap.data());
-          if (current !== "active") { conflict = current; return; }
-          tx.update(ref, {
-            status: "revoked",
-            revokedAt: FieldValue.serverTimestamp(),
-            revocationReason: reason,
-          });
-        });
-        if (missing) { res.writeHead(404); res.end("Invite not found"); return; }
-        if (conflict) { res.writeHead(409); res.end(`Invite is ${conflict}`); return; }
-        auditAdminEvent("invite_revoked", req, { inviteId });
+        const outcome = await inviteStore.revoke(parsed && parsed.inviteId, parsed && parsed.reason, req);
+        if (outcome.status === "missing") { res.writeHead(404); res.end("Invite not found"); return; }
+        if (outcome.status === "conflict") {
+          res.writeHead(409);
+          res.end(`Invite is ${outcome.current}`);
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
       } catch (e) {
