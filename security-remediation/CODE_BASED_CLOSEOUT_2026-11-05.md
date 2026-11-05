@@ -48,6 +48,8 @@ Those are prior run results, not fresh results for this branch. Do not infer tha
 
 No production Firebase, Cloudflare, Backblaze, Render, GitHub secret or signing-key value was read, printed, changed, rotated or revoked. No production Firestore rules, Worker binding, environment variable, TTL policy or App Check enforcement setting was changed. No production identity or media operation was exercised.
 
+**Deployment automation observation:** the Cloudflare GitHub bot reported a successful `duoshield-storage` deployment to its `production` target for PR-branch commit `2c9e1dd` at 2026-11-05 05:05 UTC ([PR deployment comment](https://github.com/kumarclaude4-hash/DuoFatass/pull/218#issuecomment-6650146270)). This PR diff contains no `worker/` source files, so no Worker source was changed here. The deployment notification nevertheless indicates that a production deployment event was associated with this branch commit. **Operator action:** verify the Cloudflare Workers Builds branch/production environment mapping and restrict production deployment to protected `main`/release refs before sign-off. This pass did not access Cloudflare deployment logs or alter the integration.
+
 ## Remaining work with code or test components
 
 | Finding / area | Remaining engineering work | Why it is not closed here |
