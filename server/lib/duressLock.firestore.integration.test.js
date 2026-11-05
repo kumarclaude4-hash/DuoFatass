@@ -129,6 +129,19 @@ if (!emulatorHost) {
     const invalidReplay = await consume(dbA, unlockedNonce);
     assert.deepEqual(invalidReplay, { status: 403, message: "Invalid or already-consumed nonce" });
 
+    // A malformed stored uid is treated as corrupt server state, deleted,
+    // and never allowed to construct a Firestore document reference.
+    const malformedUidNonce = makeNonce();
+    await dbA.collection(nonceCollection).doc(malformedUidNonce).set({
+      uid: { not: "a string" },
+      expiresAt: Timestamp.fromMillis(now + 60 * 60 * 1000),
+    });
+    assert.deepEqual(
+      await consume(dbA, malformedUidNonce),
+      { status: 401, message: "Nonce expired or malformed" }
+    );
+    assert.equal((await dbA.collection(nonceCollection).doc(malformedUidNonce).get()).exists, false);
+
     // Unknown/garbled credentials also fail permanently rather than becoming a
     // successful WorkManager result.
     assert.deepEqual(
