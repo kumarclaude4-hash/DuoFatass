@@ -208,6 +208,24 @@ public final class PendingLockStore {
         }
     }
 
+    /** Clears the pending intent only when it still belongs to the completed account. */
+    public static boolean clearLockIntentIfSubjectMatches(Context ctx, String uid) {
+        if (ctx == null || uid == null || uid.isEmpty()) return false;
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!uid.equals(prefs.getString(KEY_SUBJECT, null))) return false;
+                return prefs.edit()
+                        .remove(KEY_SUBJECT)
+                        .remove(KEY_INTENT_TOKEN)
+                        .remove(KEY_INTENT_TS)
+                        .commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
+    }
+
     /**
      * Destroys the intent. Call this <strong>only</strong> once the server has
      * confirmed the lock with a 200/204 response. An invalid, expired, or unknown
