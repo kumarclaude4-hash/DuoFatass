@@ -869,8 +869,8 @@ public class DuressManager {
                 // and immediately drain it. Never retarget another account's intent.
                 if (PendingLockStore.replaceIntentTokenIfSubjectMatches(appCtx, user.getUid(), nonce)) {
                     android.util.Log.i("DuressManager",
-                            "Refreshed credential for pending lock intent; retrying server lock.");
-                    drainPendingLockIntent(appCtx);
+                            "Refreshed credential for pending lock intent; scheduling bounded retry.");
+                    AccountLockWorker.enqueue(appCtx, nonce);
                 }
             } catch (Exception e) {
                 android.util.Log.w("DuressManager",
@@ -926,6 +926,7 @@ public class DuressManager {
             int code = postDuressLock(token);
             if (code == 200 || code == 204) {
                 PendingLockStore.clearLockIntent(appCtx);
+                PendingLockStore.clearWarmToken(appCtx);
                 android.util.Log.i("DuressManager", "Drained pending lock intent — confirmed.");
             } else if (code >= 400 && code < 500 && code != 408 && code != 425 && code != 429) {
                 // A consumed nonce returns 200 as an idempotent acknowledgement of the
@@ -933,6 +934,7 @@ public class DuressManager {
                 // Any permanent 4xx therefore means the lock was NOT confirmed.
                 // Keep the intent: maintainLockCredential() can replace this stale
                 // nonce after the same account next has a valid foreground session.
+                PendingLockStore.clearWarmToken(appCtx);
                 android.util.Log.e("DuressManager",
                         "Pending lock intent rejected (HTTP " + code
                                 + ") — account lock NOT confirmed; intent retained.");
