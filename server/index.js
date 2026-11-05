@@ -691,22 +691,26 @@ const ADMIN_SESSION_ABSOLUTE_TTL_MS = 8 * 60 * 60 * 1000; // 8h
 // operator is thrown back to the login gate ("Your session expired") every
 // time Render redeploys, spins the free instance back up, or routes the next
 // request to a second instance — the reported "logs in for half a second, then
-// exits" bug. ADMIN_SESSION_SECRET pins it explicitly; by default it is
-// DERIVED from ADMIN_TOKEN, which is both stable across restarts and, as a
-// deliberate side effect, invalidates every existing session when the admin
-// token is rotated. The HKDF `info` label keeps this key distinct from the
-// token itself, so the cookie can never be reversed into the credential.
-// (No ADMIN_TOKEN → the panel already refuses every request, so a random
-// throwaway key is fine.)
+// exits" bug. ADMIN_SESSION_SECRET optionally supplies independent key material,
+// but the final HKDF key is ALSO salted with ADMIN_TOKEN. Therefore rotating
+// ADMIN_TOKEN invalidates all existing signed cookies even when an explicit
+// ADMIN_SESSION_SECRET is configured. The explicit value must be 32+ bytes
+// and should be generated with `openssl rand -hex 32`. The HKDF `info` label
+// separates this key from the token itself.
+// (No ADMIN_TOKEN → the panel refuses every request, so a throwaway key is fine.)
 const ADMIN_SESSION_SECRET = (() => {
   const explicit = String(process.env.ADMIN_SESSION_SECRET || "").trim();
-  if (explicit) return Buffer.from(explicit, "utf8");
-  if (ADMIN_TOKEN) {
-    return Buffer.from(
-      crypto.hkdfSync("sha256", Buffer.from(ADMIN_TOKEN, "utf8"), Buffer.alloc(0), "duoshield-admin-session-v1", 32)
-    );
+  if (explicit && Buffer.byteLength(explicit, "utf8") < 32) {
+    throw new Error("ADMIN_SESSION_SECRET must be at least 32 bytes");
   }
-  return crypto.randomBytes(32);
+  if (!ADMIN_TOKEN) return crypto.randomBytes(32);
+  const keyMaterial = explicit
+    ? Buffer.from(explicit, "utf8")
+    : Buffer.from(ADMIN_TOKEN, "utf8");
+  const tokenSalt = crypto.createHash("sha256").update(ADMIN_TOKEN, "utf8").digest();
+  return Buffer.from(
+    crypto.hkdfSync("sha256", keyMaterial, tokenSalt, "duoshield-admin-session-v2", 32)
+  );
 })();
 // S07-H2 (c) / S07-H3: neither the IP nor the User-Agent is part of the
 // validation reject path any more. A phone switching WiFi to LTE, CGNAT
