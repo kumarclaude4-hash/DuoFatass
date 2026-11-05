@@ -1113,7 +1113,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
         LinkPreviewFetcher.fetch(url, preview -> {
             // Verify this view holder still belongs to the same message
             if (!msg.getId().equals(h.linkPreviewCard.getTag())) return;
-            if (preview == null) return;
+            if (preview == null || !preview.isDisplayable()) return;
 
             h.linkPreviewCard.setVisibility(View.VISIBLE);
 
