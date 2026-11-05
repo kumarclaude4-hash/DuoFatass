@@ -19,6 +19,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SERVER_SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+const INVITE_STORE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteStore.js"), "utf8");
 
 // ── S05-L1 ─────────────────────────────────────────────────────────────────
 // /admin/api/account/lookup used to be the one uid-taking admin route that
@@ -128,19 +129,21 @@ test("S05-L3: setBaselineSecurityHeaders sets Cache-Control: no-store and Vary: 
 // approve/unfreeze used to get()-then-write() outside any transaction, and
 // GET /admin/api/locked + GET /admin/api/duress/enrolled had no limit().
 
-test("S05-L4: invite revoke wraps its read-check-write in db.runTransaction", () => {
+test("S05-L4: invite revoke handler delegates to transactional store implementation", () => {
   const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"');
   assert.ok(routeStart > 0, "POST /admin/api/invites/revoke route not found");
   const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "GET" && req.url === "/admin/api/locked"', routeStart);
   assert.ok(nextRouteStart > routeStart, "could not bound the invite revoke handler");
   const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
+  assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite revoke must authenticate before reading its body");
+  assert.ok(handler.includes("inviteStore.revoke("), "handler must delegate state transition to inviteStore");
   assert.ok(
-    /db\.runTransaction\(async \(tx\) => \{/.test(handler),
-    "invite revoke must wrap its read-check-write in db.runTransaction"
+    /firestore\.runTransaction\(async \(tx\) => \{/.test(INVITE_STORE_SOURCE),
+    "invite store must wrap its read-check-write in a Firestore transaction"
   );
-  assert.ok(/tx\.get\(ref\)/.test(handler), "invite revoke transaction must read using tx.get()");
-  assert.ok(/tx\.update\(ref/.test(handler), "invite revoke transaction must write using tx.update()");
-  assert.ok(/current !== "active"/.test(handler), "only active invites may be revoked");
+  assert.ok(/tx\.get\(ref\)/.test(INVITE_STORE_SOURCE), "invite transaction must read using tx.get()");
+  assert.ok(/tx\.update\(ref/.test(INVITE_STORE_SOURCE), "invite transaction must write using tx.update()");
+  assert.ok(/current !== "active"/.test(INVITE_STORE_SOURCE), "only active invites may be revoked");
 });
 
 test("S05-L4: locked/unfreeze wraps its read-check-write in db.runTransaction and re-checks locked===true", () => {
