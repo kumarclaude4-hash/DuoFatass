@@ -7,6 +7,7 @@ on:
       - 'firestore.rules'
       - 'firestore-tests/**'
       - 'server/lib/adminSessionStore*'
+      - 'server/lib/inviteStore*'
       - 'server/package.json'
       - 'server/package-lock.json'
       - '.github/workflows/firestore-rules-test.yml'
@@ -63,8 +64,8 @@ jobs:
 
       # Suites A + B validate client security rules. The server integration
       # suite in the same emulator process exercises real Admin SDK transactions
-      # across independent admin-session store instances; mocks alone cannot
-      # prove the cross-instance generation/revocation contract.
+      # across independent admin-session and invite-store instances; mocks alone
+      # cannot prove the cross-instance transaction/revocation/one-time-use contract.
       - name: Start Firestore emulator and run rules + server integration tests
         working-directory: firestore-tests
         env:
