@@ -121,3 +121,17 @@ The original report above was written before PR #222 merged. The following evide
 The Vercel quota errors reported on PR #222 were transient pre-merge notifications; the merged main commit subsequently reported a successful Vercel deployment.
 
 **Still not production sign-off:** production Firestore deployment, service-account/environment validation, credential rotation, full HTTP invite-route acceptance, staging tests, physical-device QA, signed/minified release acceptance and branch-protection verification remain separate gates. The 13 green checks on PR #223 are evidence for the tested code paths only.
+
+
+---
+
+## S06-L4 duress-lock reliability implementation — 2026-11-05
+
+PR #225 adds a code-level closeout for the previously partial S06-L4 finding:
+- Android treats only 200/204 as proof of a remote lock; permanent rejection is a real WorkManager failure and retains the durable intent.
+- Retry attempts are bounded to seven within the one-hour nonce lifetime.
+- Server nonce consumption, account lock and idempotency marker are transactionally coupled. Lost-response retries acknowledge the original commit without re-locking after an administrator unfreezes the account.
+- Consumed receipts are retained during outstanding-nonce pruning until TTL, and the client drains a pending nonce before requesting a replacement.
+- Same-UID refresh and compare-and-clear guards prevent cross-account retargeting and late workers deleting newer recovery state.
+
+The new Firestore emulator/JVM/wiring regression suites and GitHub Actions results are the merge gates for this PR. **Remaining after code merge:** staging the lost-response/admin-unfreeze race, physical-device testing of wipe/reboot/sign-in/recovery, and production Firestore TTL/service-account/rules verification. A device that never regains connectivity and never authenticates again cannot be remotely locked; the local durable intent stays explicit and no success is fabricated.
