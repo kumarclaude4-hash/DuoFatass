@@ -519,6 +519,7 @@ public class DuressManager {
             android.util.Log.w("DuressManager", "Duress teardown already in progress; ignoring duplicate trigger.");
             return;
         }
+        try {
         // Capture the UID before anything below signs out or wipes prefs — both would
         // erase the one piece of information the delayed FCM de-registration job needs.
         FirebaseUser userBeforeWipe = FirebaseAuth.getInstance().getCurrentUser();
@@ -739,6 +740,10 @@ public class DuressManager {
         } catch (RuntimeException startError) {
             DURESS_TRIGGER_IN_PROGRESS.set(false);
             throw startError;
+        }
+        } catch (RuntimeException setupError) {
+            DURESS_TRIGGER_IN_PROGRESS.set(false);
+            throw setupError;
         }
     }
 
