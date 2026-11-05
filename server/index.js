@@ -1553,7 +1553,8 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
           <select class="action" id="inviteStatus"><option value="all">All statuses</option><option value="active">Active</option><option value="used">Used</option><option value="expired">Expired</option><option value="revoked">Revoked</option></select>
           <button class="action" type="button" id="inviteApplyBtn">Apply</button>
         </div>
-        <div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Status</th><th>Fingerprint</th><th>Created</th><th>Expires</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="invitesBody"></tbody></table></div>
+        <div class="section-help" id="invitesMeta" aria-live="polite"></div>
+        <div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Status</th><th>Fingerprint</th><th>Created</th><th>Expires</th><th>Used by</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="invitesBody"></tbody></table></div>
         <div class="loading" id="invitesLoading">Loading…</div>
         <div class="empty" id="invitesEmpty" hidden>No invitations match these filters.</div>
         <div class="pager"><button class="action" type="button" id="invitesPrevBtn" disabled>Previous</button><button class="action" type="button" id="invitesNextBtn" disabled>Next</button></div>
@@ -1801,6 +1802,8 @@ async function loadInvites(reset) {
     document.getElementById("invitesPrevBtn").disabled = inviteCursorHistory.length === 0;
     document.getElementById("invitesNextBtn").disabled = !inviteNextCursor;
     setCount("active", data.counts.active);
+    const meta = document.getElementById("invitesMeta");
+    meta.textContent = "Total issued: " + data.totalCount + ". The list and status counts cover the newest " + Math.min(data.totalCount, 1000) + " records.";
     const body = document.getElementById("invitesBody");
     body.innerHTML = "";
     setEmpty("invites", !data.items.length);
@@ -1825,6 +1828,10 @@ async function loadInvites(reset) {
         td.textContent = value ? new Date(value).toLocaleString() : "—";
         tr.appendChild(td);
       }
+      const usedByTd = document.createElement("td");
+      usedByTd.className = "mono";
+      usedByTd.textContent = item.usedByUserId || "—";
+      tr.appendChild(usedByTd);
       const actionTd = document.createElement("td");
       if (item.status === "active") {
         const revokeBtn = document.createElement("button");
@@ -1836,7 +1843,9 @@ async function loadInvites(reset) {
       tr.appendChild(actionTd);
       body.appendChild(tr);
     }
-    if (data.capped) toast("Showing the newest 1,000 invites. Archive older records to restore complete counts.");
+    if (data.capped) {
+      toast("Showing the newest 1,000 of " + data.totalCount + " invites; older records are excluded from status counts.");
+    }
   } catch (e) {
     if (e.message !== "unauthorized") toast("Failed to load invites: " + e.message);
   } finally {
@@ -4496,7 +4505,11 @@ const server = http.createServer((req, res) => {
 
         // Bounded scan with deterministic in-memory ordering avoids requiring a
         // fragile matrix of Firestore composite indexes for derived expiry + search.
-        const snap = await db.collection("invites").limit(1000).get();
+        const [snap, totalSnapshot] = await Promise.all([
+          db.collection("invites").orderBy("createdAt", "desc").limit(1000).get(),
+          db.collection("invites").count().get(),
+        ]);
+        const totalCount = Number(totalSnapshot.data().count) || 0;
         const now = Date.now();
         let records = snap.docs.map((d) => {
           const data = d.data();
@@ -4534,7 +4547,8 @@ const server = http.createServer((req, res) => {
           items: page.map(({ createdAtMs, ...item }) => item),
           nextCursor,
           counts,
-          capped: snap.size === 1000,
+          totalCount,
+          capped: totalCount > snap.size,
         }));
       } catch (e) {
         if (e instanceof TypeError) {
