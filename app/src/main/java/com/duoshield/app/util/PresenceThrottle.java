@@ -50,7 +50,7 @@ public class PresenceThrottle {
             .set(data, SetOptions.merge())
             .addOnFailureListener(e ->
                 android.util.Log.w("PresenceThrottle",
-                    "Failed to write typing state: " + e.getMessage()));
+                    "Failed to write typing state (" + e.getClass().getSimpleName() + ")"));
     }
 
     public void clear() {
