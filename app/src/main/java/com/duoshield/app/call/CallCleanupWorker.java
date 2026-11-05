@@ -102,7 +102,8 @@ public class CallCleanupWorker extends Worker {
             Log.d(TAG, "Call cleanup complete — deleted " + deleted + " stale docs");
             return Result.success();
         } catch (Exception e) {
-            Log.w(TAG, "Call cleanup failed — will retry next cycle: " + e.getMessage());
+            Log.w(TAG, "Call cleanup failed — will retry next cycle ("
+                    + e.getClass().getSimpleName() + ")");
             return Result.retry();
         }
     }
