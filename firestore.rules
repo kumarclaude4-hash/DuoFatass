@@ -681,6 +681,15 @@ service cloud.firestore {
     // account unfreeze, and — S05-I2, previously omitted here — duress
     // enrollment/revocation). Written exclusively by the push server's Admin
     // SDK — no client should ever read, write, or enumerate these entries.
+    // Admin session records and the fleet-wide revocation generation are
+    // server-only. The Firebase Admin SDK bypasses these client rules.
+    match /adminSessions/{sessionId} {
+      allow read, write: if false;
+    }
+    match /adminSessionControl/{controlId} {
+      allow read, write: if false;
+    }
+
     match /adminAuditLog/{entry} {
       allow read, write: if false;
     }
