@@ -110,14 +110,14 @@ public class AccountLockWorker extends Worker {
     public Result doWork() {
         String nonce = getInputData().getString(DATA_NONCE);
         if (nonce == null || nonce.isEmpty()) {
-            Log.w(TAG, "Missing input data — dropping job.");
-            return Result.success();
+            Log.e(TAG, "Missing nonce — account lock NOT confirmed; durable lock intent retained.");
+            return Result.failure();
         }
 
         String serverUrl = BuildConfig.PUSH_SERVER_URL;
         if (serverUrl == null || serverUrl.isEmpty()) {
-            Log.w(TAG, "PUSH_SERVER_URL not configured — dropping lock job.");
-            return Result.success();
+            Log.e(TAG, "PUSH_SERVER_URL not configured — account lock NOT confirmed; durable lock intent retained.");
+            return Result.failure();
         }
 
         try {
@@ -140,34 +140,21 @@ public class AccountLockWorker extends Worker {
                 try (OutputStream os = conn.getOutputStream()) { os.write(bodyBytes); }
 
                 int code = conn.getResponseCode();
-                if (code == 200 || code == 204) {
+                AccountLockHttpPolicy.Disposition disposition =
+                        AccountLockHttpPolicy.classify(code);
+                if (disposition == AccountLockHttpPolicy.Disposition.LOCK_CONFIRMED) {
                     Log.d(TAG, "Account lock confirmed by push server.");
-                    // S06-H3: this worker can complete independently of
-                    // DuressManager.drainPendingLockIntent() (e.g. it was already
-                    // in flight when the app relaunched and drained). Clear the
-                    // durable intent here too so the two paths cannot both believe
-                    // they still owe a retry.
+                    // Clear the durable intent only after a confirmed 200/204.
                     PendingLockStore.clearLockIntent(getApplicationContext());
                     return Result.success();
                 }
-                if (code == 400 || code == 403) {
-                    // Invalid / already-consumed nonce — retrying cannot recover this.
-                    // Already-consumed means the lock already landed via another path,
-                    // so it is safe (and correct) to drop the durable intent here too.
-                    Log.w(TAG, "Push server rejected nonce (HTTP " + code + ") — dropping job.");
-                    PendingLockStore.clearLockIntent(getApplicationContext());
-                    return Result.success();
-                }
-                if (code == 401) {
-                    // Nonce expired — the 24-hour window has elapsed without network.
-                    // No path to obtain a fresh credential exists post-wipe; drop the job.
-                    // The synchronous lock write (step 1a in DuressManager) was already
-                    // attempted; if that also failed the account was offline for >24 h.
-                    // Deliberately NOT clearing the durable intent here: hasLockIntent()
-                    // continues to report "believed unlocked" so this failure surfaces
-                    // (S06-L4) instead of the app quietly deciding it doesn't matter.
-                    Log.w(TAG, "Lock nonce expired (HTTP 401) — no retry path available post-wipe; dropping.");
-                    return Result.success();
+                if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE) {
+                    // Invalid/malformed/expired/unknown nonces cannot recover by
+                    // retrying this exact request. Do NOT clear the durable intent:
+                    // app startup can obtain a fresh nonce and drain it later.
+                    Log.e(TAG, "Push server rejected lock request (HTTP " + code
+                            + ") — account lock NOT confirmed; durable intent retained.");
+                    return Result.failure();
                 }
                 return retryOrGiveUp("Push server returned HTTP " + code);
             } finally {
