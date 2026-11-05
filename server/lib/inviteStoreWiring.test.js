@@ -63,8 +63,8 @@ test("create and revoke routes authenticate before body parsing and delegate to 
 
 test("modern invite redemption and preflight call the same transactional store", () => {
   const mint = section(
-    'requestPath === "/mintToken"',
-    'requestPath === "/mintChallenge"'
+    'if (req.method === "POST" && req.url === "/mintToken")',
+    '// ── POST /invite/validate'
   );
   assert.ok(mint.includes("inviteStore.redeemInTransaction(tx, userId, normalizedInvite, req)"));
   assert.equal(mint.includes('.where("tokenHash"'), false,
