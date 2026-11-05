@@ -29,14 +29,16 @@ if (!emulatorHost) {
     const suffix = crypto.randomBytes(8).toString("hex");
     const sessionsCollection = "it_admin_sessions_" + suffix;
     const controlCollection = "it_admin_session_control_" + suffix;
-    const app = initializeApp({ projectId }, "admin-session-it-" + suffix);
-    const db = getFirestore(app);
+    const appA = initializeApp({ projectId }, "admin-session-it-a-" + suffix);
+    const appB = initializeApp({ projectId }, "admin-session-it-b-" + suffix);
+    const dbA = getFirestore(appA);
+    const dbB = getFirestore(appB);
     const secret = crypto.randomBytes(32);
     const clock = { now: Date.now() };
     let nextId = 0;
 
-    const makeStore = () => createAdminSessionStore({
-      firestore: db,
+    const makeStore = (firestore) => createAdminSessionStore({
+      firestore,
       secret,
       now: () => clock.now,
       randomId: () => (++nextId).toString(16).padStart(64, "0"),
@@ -46,20 +48,20 @@ if (!emulatorHost) {
       controlCollection,
     });
 
-    const instanceA = makeStore();
-    const instanceB = makeStore();
+    const instanceA = makeStore(dbA);
+    const instanceB = makeStore(dbB);
 
-    const cleanupCollection = async (name) => {
-      const snapshot = await db.collection(name).get();
+    const cleanupCollection = async (firestore, name) => {
+      const snapshot = await firestore.collection(name).get();
       await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
     };
 
     t.after(async () => {
       try {
-        await cleanupCollection(sessionsCollection);
-        await cleanupCollection(controlCollection);
+        await cleanupCollection(dbA, sessionsCollection);
+        await cleanupCollection(dbA, controlCollection);
       } finally {
-        await deleteApp(app);
+        await Promise.all([deleteApp(appA), deleteApp(appB)]);
       }
     });
 
@@ -77,7 +79,7 @@ if (!emulatorHost) {
     const parsed = instanceA.parseToken(cookie);
     const recordId = instanceA.sessionDocumentId(parsed.sid);
     assert.notEqual(recordId, parsed.sid);
-    const recordSnapshot = await db.collection(sessionsCollection).doc(recordId).get();
+    const recordSnapshot = await dbA.collection(sessionsCollection).doc(recordId).get();
     assert.equal(recordSnapshot.exists, true);
     const serializedRecord = JSON.stringify(recordSnapshot.data());
     assert.equal(serializedRecord.includes(cookie), false);
@@ -98,7 +100,7 @@ if (!emulatorHost) {
       instanceB.create(),
       instanceA.create(),
     ]);
-    const beforeBulkRevoke = await db.collection(controlCollection).doc("global").get();
+    const beforeBulkRevoke = await dbA.collection(controlCollection).doc("global").get();
     const oldGeneration = beforeBulkRevoke.data().generation;
 
     const generations = await Promise.all([
