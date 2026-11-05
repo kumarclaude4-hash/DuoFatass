@@ -29,18 +29,20 @@ if (!emulatorHost) {
     const suffix = crypto.randomBytes(8).toString("hex");
     const invitesCollection = "it_invites_" + suffix;
     const auditCollection = "it_invite_audit_" + suffix;
-    const app = initializeApp({ projectId }, "invite-it-" + suffix);
-    const db = getFirestore(app);
+    const appA = initializeApp({ projectId }, "invite-it-a-" + suffix);
+    const appB = initializeApp({ projectId }, "invite-it-b-" + suffix);
+    const dbA = getFirestore(appA);
+    const dbB = getFirestore(appB);
     const clock = { now: Date.now() };
     const requestContext = { requestId: "invite-integration-test" };
 
-    const cleanupCollection = async (name) => {
-      const snapshot = await db.collection(name).get();
+    const cleanupCollection = async (firestore, name) => {
+      const snapshot = await firestore.collection(name).get();
       await Promise.all(snapshot.docs.map((doc) => doc.ref.delete()));
     };
 
-    const makeStore = () => createInviteStore({
-      firestore: db,
+    const makeStore = (firestore) => createInviteStore({
+      firestore,
       FieldValue,
       Timestamp,
       now: () => clock.now,
@@ -57,10 +59,10 @@ if (!emulatorHost) {
       },
     });
 
-    const storeA = makeStore();
-    const storeB = makeStore();
+    const storeA = makeStore(dbA);
+    const storeB = makeStore(dbB);
     const auditFailureStore = createInviteStore({
-      firestore: db,
+      firestore: dbA,
       FieldValue,
       Timestamp,
       now: () => clock.now,
@@ -78,17 +80,17 @@ if (!emulatorHost) {
 
     t.after(async () => {
       try {
-        await cleanupCollection(invitesCollection);
-        await cleanupCollection(auditCollection);
+        await cleanupCollection(dbA, invitesCollection);
+        await cleanupCollection(dbA, auditCollection);
       } finally {
-        await deleteApp(app);
+        await Promise.all([deleteApp(appA), deleteApp(appB)]);
       }
     });
 
     // Audit staging is part of the transaction contract. A failure must
     // abort invite creation/revocation/redemption instead of committing an
     // unaudited state transition.
-    const countBeforeFailedCreate = (await db.collection(invitesCollection).count().get()).data().count;
+    const countBeforeFailedCreate = (await dbA.collection(invitesCollection).count().get()).data().count;
     await assert.rejects(
       () => auditFailureStore.create({
         label: "Must roll back",
@@ -97,7 +99,7 @@ if (!emulatorHost) {
       /simulated audit staging failure/
     );
     assert.equal(
-      (await db.collection(invitesCollection).count().get()).data().count,
+      (await dbA.collection(invitesCollection).count().get()).data().count,
       countBeforeFailedCreate,
       "failed audit staging must roll back the invite document"
     );
@@ -109,7 +111,7 @@ if (!emulatorHost) {
     assert.match(created.token, /^dsi_[0-9a-f]{64}$/);
     assert.equal(await storeA.isActive(created.token), true);
 
-    const storedSnapshot = await db.collection(invitesCollection)
+    const storedSnapshot = await dbB.collection(invitesCollection)
       .where("tokenHash", "==", invite.hashInviteToken(created.token))
       .limit(1).get();
     assert.equal(storedSnapshot.size, 1);
@@ -123,8 +125,8 @@ if (!emulatorHost) {
     // once. Firestore must serialize the transaction so exactly one account
     // wins; the loser sees the now-used invite on transaction retry.
     const redemption = await Promise.allSettled([
-      db.runTransaction((tx) => storeA.redeemInTransaction(tx, "seed-derived-user-a", created.token, requestContext)),
-      db.runTransaction((tx) => storeB.redeemInTransaction(tx, "seed-derived-user-b", created.token, requestContext)),
+      dbA.runTransaction((tx) => storeA.redeemInTransaction(tx, "seed-derived-user-a", created.token, requestContext)),
+      dbB.runTransaction((tx) => storeB.redeemInTransaction(tx, "seed-derived-user-b", created.token, requestContext)),
     ]);
     const winners = redemption.filter((item) => item.status === "fulfilled");
     const losers = redemption.filter((item) => item.status === "rejected");
@@ -133,11 +135,11 @@ if (!emulatorHost) {
     assert.equal(losers[0].reason.code, "INVITE_INVALID");
     assert.equal(await storeA.isActive(created.token), false);
 
-    const consumed = await db.collection(invitesCollection).doc(created.id).get();
+    const consumed = await dbB.collection(invitesCollection).doc(created.id).get();
     assert.equal(consumed.data().status, "used");
     assert.ok(["seed-derived-user-a", "seed-derived-user-b"].includes(consumed.data().usedByUserId));
 
-    const usedAudit = await db.collection(auditCollection).where("action", "==", "invite_redeemed").get();
+    const usedAudit = await dbB.collection(auditCollection).where("action", "==", "invite_redeemed").get();
     assert.equal(usedAudit.size, 1, "the successful redemption and its audit row commit together");
     const auditPayload = JSON.stringify(usedAudit.docs[0].data());
     assert.equal(auditPayload.includes("seed-derived-user-a"), false);
@@ -147,7 +149,7 @@ if (!emulatorHost) {
     // An audit failure during redemption must abort token consumption.
     const rollbackRedemption = await create("Redemption audit rollback");
     await assert.rejects(
-      () => db.runTransaction((tx) =>
+      () => dbA.runTransaction((tx) =>
         auditFailureStore.redeemInTransaction(tx, "seed-derived-user-rollback", rollbackRedemption.token, requestContext)
       ),
       /simulated audit staging failure/
@@ -160,7 +162,7 @@ if (!emulatorHost) {
       () => db.runTransaction((tx) => storeB.redeemInTransaction(tx, "seed-derived-user-c", created.token, requestContext)),
       (error) => error && error.code === "INVITE_INVALID"
     );
-    assert.equal((await db.collection(auditCollection).where("action", "==", "invite_redeemed").get()).size, 1);
+    assert.equal((await dbB.collection(auditCollection).where("action", "==", "invite_redeemed").get()).size, 1);
 
     // Exercise bounded pagination and stable cursor continuation. Equal
     // millisecond timestamps are intentional; the opaque doc id is the
@@ -198,7 +200,7 @@ if (!emulatorHost) {
       status: "conflict",
       current: "revoked",
     });
-    assert.equal((await db.collection(auditCollection).where("action", "==", "invite_revoked").get()).size, 1);
+    assert.equal((await dbB.collection(auditCollection).where("action", "==", "invite_revoked").get()).size, 1);
 
     const missing = await storeA.revoke("missing_invite_123", "not found", requestContext);
     assert.deepEqual(missing, { status: "missing" });
@@ -214,7 +216,7 @@ if (!emulatorHost) {
       status: "conflict",
       current: "expired",
     });
-    assert.equal((await db.collection(invitesCollection).doc(expiring.id).get()).exists, true,
+    assert.equal((await dbB.collection(invitesCollection).doc(expiring.id).get()).exists, true,
       "expiry must not depend on physical TTL cleanup");
   });
 }
