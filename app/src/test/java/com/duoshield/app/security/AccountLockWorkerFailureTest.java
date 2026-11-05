@@ -80,18 +80,30 @@ public class AccountLockWorkerFailureTest {
         String manager = readProjectFile(
                 "app/src/main/java/com/duoshield/app/security/DuressManager.java");
         assertTrue(manager.contains("LOCK_NONCE_REFRESH_INTERVAL_MS = 30L * 60 * 1000"));
+        assertTrue(manager.contains("LOCK_CREDENTIAL_REFRESH_IN_FLIGHT.compareAndSet(false, true)"));
+        assertTrue(manager.contains("DURESS_TRIGGER_IN_PROGRESS.compareAndSet(false, true)"));
+        assertTrue(manager.contains("synchronized (LOCK_NONCE_ISSUE_MUTEX)"));
         assertTrue(manager.contains("PendingLockStore.replaceIntentTokenIfSubjectMatches"));
         assertTrue(manager.contains("AccountLockWorker.enqueue(appCtx, nonce)"));
         assertTrue(manager.contains("PendingLockStore.clearLockIntentIfSubjectMatches(appCtx, uidBeforeWipe)"));
 
+        String maintenance = section(manager,
+                "public static void maintainLockCredential(Context context)",
+                "public enum LockIntentDrainResult");
+        assertTrue(maintenance.contains("drainPendingLockIntentWithResult(appCtx)"));
+        assertTrue(maintenance.contains("prior == LockIntentDrainResult.TRANSIENT_FAILURE"));
+        assertTrue(maintenance.contains("preserving its nonce"));
+        assertTrue(maintenance.indexOf("drainPendingLockIntentWithResult(appCtx)")
+                < maintenance.indexOf("requestLockNonce(idToken)"));
+
         String drain = section(manager,
-                "public static boolean drainPendingLockIntent(Context context)",
+                "private static LockIntentDrainResult drainPendingLockIntentWithResult(Context context)",
                 "private static int postDuressLock");
         assertTrue(drain.contains("PendingLockStore.clearLockIntentIfTokenMatches(appCtx, token)"));
         assertTrue(drain.contains("PendingLockStore.clearWarmTokenIfMatches(appCtx, token)"));
         String rejected = section(drain,
-                "else if (code >= 400 && code < 500",
-                "else {");
+                "if (code >= 400 && code < 500",
+                "return LockIntentDrainResult.PERMANENT_FAILURE;");
         assertFalse("a permanent 4xx must not erase an unconfirmed lock intent",
                 rejected.contains("PendingLockStore.clearLockIntent"));
         assertTrue(rejected.contains("account lock NOT confirmed"));
