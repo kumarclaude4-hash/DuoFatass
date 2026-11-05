@@ -137,7 +137,15 @@ public class AccountLockWorkerBoundedRetryTest {
         // 400/403 (bad/consumed nonce) and 401 (expired nonce) are permanent
         // failures — retrying cannot recover them, so they must short-circuit to a
         // terminal Result rather than spending attempts in the bounded retry path.
-        assertTrue(src.contains("code == 400 || code == 403"));
-        assertTrue(src.contains("code == 401"));
+        String policyPath = "src/main/java/com/duoshield/app/security/AccountLockHttpPolicy.java";
+        File policyFile = locate(
+                policyPath,
+                "app/" + policyPath);
+        String policy = new String(
+                Files.readAllBytes(policyFile.toPath()), StandardCharsets.UTF_8);
+        assertTrue(policy.contains("statusCode == 200 || statusCode == 204"));
+        assertTrue(policy.contains("statusCode != 408 && statusCode != 425 && statusCode != 429"));
+        assertTrue(policy.contains("Disposition.PERMANENT_FAILURE"));
+        assertTrue(policy.contains("Disposition.RETRYABLE_FAILURE"));
     }
 }
