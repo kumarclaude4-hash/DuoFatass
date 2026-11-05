@@ -4042,7 +4042,7 @@ const server = http.createServer((req, res) => {
 
   // ── /requestLockNonce ──────────────────────────────────────────────────────
   //
-  // Issues a single-use, uid-bound, 24-hour nonce for AccountLockWorker to
+  // Issues a single-use, uid-bound, one-hour nonce for AccountLockWorker to
   // consume later via /duress-lock. Called by DuressManager on the background
   // thread before sign-out — while the Firebase session is still live — so
   // the nonce is obtained with a proper per-user verifiable credential (ID
