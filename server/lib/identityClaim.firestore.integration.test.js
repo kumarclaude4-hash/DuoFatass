@@ -89,6 +89,8 @@ if (!emulatorHost) {
       FieldValue,
       inviteStore,
       legacyWaitlistCollection: collections.waitlist,
+      identityCollection: collections.identities,
+      accountLockCollection: collections.locks,
       userId: "",
       incomingHash: "",
       inviteToken: "",
