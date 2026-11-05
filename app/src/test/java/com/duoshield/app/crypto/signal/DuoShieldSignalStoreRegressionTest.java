@@ -121,6 +121,44 @@ public class DuoShieldSignalStoreRegressionTest {
     }
 
     @Test
+    public void fingerprintPointerMustMatchBackingIdentityBytes() {
+        SignalProtocolAddress address = address("mismatched-pointer-peer");
+        String fingerprint = "ffffffffffffffffffffffffffffffff"
+                + "ffffffffffffffffffffffffffffffff";
+        byte[] serializedIdentity = new byte[] {
+                0x05, 0x11, 0x23, 0x37, 0x42, 0x55, 0x68, 0x7a
+        };
+        String encoded = Base64.encodeToString(serializedIdentity, Base64.NO_WRAP);
+        prefs.edit()
+                .putString(POINTER_PREFIX + address.toString(), fingerprint)
+                .putString(TRUST_BY_FP_PREFIX + fingerprint, encoded)
+                .commit();
+
+        assertThrows(
+                "a pointer may not bind an unrelated serialized identity to a trusted fingerprint",
+                DuoShieldSignalStore.TrustRecordCorruptionException.class,
+                () -> store.readTrustRecord(address));
+    }
+
+    @Test
+    public void danglingPointerCannotAdoptDifferentLegacyIdentity() throws Exception {
+        SignalProtocolAddress address = address("conflicting-legacy-peer");
+        String fingerprint = "ffffffffffffffffffffffffffffffff"
+                + "ffffffffffffffffffffffffffffffff";
+        byte[] legacyIdentity = new byte[] {0x05, 0x22, 0x33, 0x44, 0x55};
+        String legacyB64 = Base64.encodeToString(legacyIdentity, Base64.NO_WRAP);
+        prefs.edit()
+                .putString(POINTER_PREFIX + address.toString(), fingerprint)
+                .putString(LEGACY_PREFIX + address.toString(), legacyB64)
+                .commit();
+
+        assertThrows(
+                "a stale pointer must not be silently replaced by a different legacy identity",
+                DuoShieldSignalStore.TrustRecordCorruptionException.class,
+                () -> store.readTrustRecord(address));
+    }
+
+    @Test
     public void malformedLegacyBase64FailsClosed() {
         SignalProtocolAddress address = address("malformed-legacy-peer");
         prefs.edit()
