@@ -150,6 +150,19 @@ if (!emulatorHost) {
     );
     assert.equal((await dbA.collection(nonceCollection).doc(malformedUidNonce).get()).exists, false);
 
+    // A stored uid containing a document path separator must also be
+    // rejected before a Firestore reference can be constructed.
+    const pathUidNonce = makeNonce();
+    await dbA.collection(nonceCollection).doc(pathUidNonce).set({
+      uid: "attacker/other-account",
+      expiresAt: Timestamp.fromMillis(now + 60 * 60 * 1000),
+    });
+    assert.deepEqual(
+      await consume(dbA, pathUidNonce),
+      { status: 401, message: "Nonce expired or malformed" }
+    );
+    assert.equal((await dbA.collection(nonceCollection).doc(pathUidNonce).get()).exists, false);
+
     // Unknown/garbled credentials also fail permanently rather than becoming a
     // successful WorkManager result.
     assert.deepEqual(
