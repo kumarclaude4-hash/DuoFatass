@@ -1,9 +1,9 @@
 "use strict";
 
-// Structural guard for the HTTP-to-store wiring. The emulator integration suite
-// executes inviteStore's transaction behavior; this file ensures production
-// routes actually call that tested implementation instead of reintroducing a
-// parallel, untested Firestore implementation in index.js.
+// Structural guard for the HTTP-to-store wiring. The Firestore emulator suite
+// executes the same identity-claim transaction helper called by /mintToken;
+// these tests prevent production routes from drifting back to a parallel,
+// untested Firestore implementation or weakening the proof-of-possession gate.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -11,27 +11,29 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+const CLAIM_SOURCE = fs.readFileSync(path.join(__dirname, "identityClaim.js"), "utf8");
 
-function section(start, end) {
-  const from = SOURCE.indexOf(start);
+function section(source, start, end) {
+  const from = source.indexOf(start);
   assert.ok(from >= 0, "missing source anchor: " + start);
-  const to = SOURCE.indexOf(end, from + start.length);
+  const to = source.indexOf(end, from + start.length);
   assert.ok(to > from, "missing end anchor: " + end);
-  return SOURCE.slice(from, to);
+  return source.slice(from, to);
 }
 
 test("production creates inviteStore with required audit and pseudonymization dependencies", () => {
   assert.ok(SOURCE.includes('const { createInviteStore } = require("./lib/inviteStore");'));
-  const setup = section("const inviteStore = createInviteStore({", "// Constant-time comparison");
+  assert.ok(SOURCE.includes('const { claimIdentityInTransaction } = require("./lib/identityClaim");'));
+  const setup = section(SOURCE, "const inviteStore = createInviteStore({", "// Constant-time comparison");
   assert.ok(setup.includes("firestore: db"));
   assert.ok(setup.includes("stageAudit: auditAdminEventInTransaction"));
   assert.ok(setup.includes("tagUserId: uidTag"));
-  assert.ok(SOURCE.includes("function auditAdminEventInTransaction(tx, action, req, extra = {})"));
   assert.match(SOURCE, /function auditAdminEventInTransaction[\s\S]*?tx\.create\(ref, buildAdminAuditRecord\(action, req, extra\)\)/);
 });
 
 test("admin invite listing is authenticated and delegates filtering/pagination to inviteStore", () => {
   const route = section(
+    SOURCE,
     'if (req.method === "GET" && (req.url || "").split("?")[0] === "/admin/api/invites")',
     'if (req.method === "POST" && req.url === "/admin/api/invites/create")'
   );
@@ -45,6 +47,7 @@ test("admin invite listing is authenticated and delegates filtering/pagination t
 
 test("create and revoke routes authenticate before body parsing and delegate to the store", () => {
   const createRoute = section(
+    SOURCE,
     'if (req.method === "POST" && req.url === "/admin/api/invites/create")',
     'if (req.method === "POST" && req.url === "/admin/api/invites/revoke")'
   );
@@ -53,6 +56,7 @@ test("create and revoke routes authenticate before body parsing and delegate to 
   assert.ok(createRoute.includes('"Cache-Control": "no-store"'));
 
   const revokeRoute = section(
+    SOURCE,
     'if (req.method === "POST" && req.url === "/admin/api/invites/revoke")',
     "// ── GET /admin/api/locked"
   );
@@ -61,35 +65,52 @@ test("create and revoke routes authenticate before body parsing and delegate to 
   assert.ok(revokeRoute.includes("outcome.status === \"conflict\""));
 });
 
-test("modern invite redemption and preflight call the same transactional store", () => {
+test("mintToken preserves authentication and proof-of-possession before the identity transaction", () => {
   const mint = section(
+    SOURCE,
     'if (req.method === "POST" && req.url === "/mintToken")',
-    '// ── POST /invite/validate'
+    "// ── POST /invite/validate"
   );
-  assert.ok(mint.includes("inviteStore.redeemInTransaction(tx, userId, normalizedInvite, req)"));
+  assert.ok(mint.includes("verifyMintTokenSignature({ userId, identityPubKeyHex, nonceHex: nonce, signatureHex })"),
+    "the mandatory nonce/signature proof-of-possession must remain in front of the transaction");
+  assert.ok(mint.includes("claimIdentityInTransaction({"));
+  assert.ok(mint.includes("db.runTransaction((tx) => claimIdentityInTransaction("));
+  assert.ok(mint.includes("inviteStore,"));
+  assert.ok(mint.includes("auditAdminEventInTransaction,"));
+  assert.ok(mint.includes("tagUserId: uidTag"));
+  assert.equal(mint.includes("inviteStore.redeemInTransaction("), false,
+    "the route must not duplicate the transactional identity/invite implementation");
   assert.equal(mint.includes('.where("tokenHash"'), false,
-    "mintToken must not bypass the store's one-time-use transaction");
-  assert.ok(mint.includes('auditAdminEventInTransaction(tx, "invite_redeemed"'),
-    "legacy waitlist compatibility redemption must also audit inside the claim transaction");
+    "the route must not bypass the store's one-time-use transaction");
 
   const validate = section(
+    SOURCE,
     'req.method === "POST" && req.url === "/invite/validate"',
     'req.method === "POST" && req.url === "/migrateUid"'
   );
   assert.ok(validate.includes("inviteStore.isActive(token)"));
 });
 
+test("identity claim helper owns the lock, one-time invite, legacy and identity writes in one caller transaction", () => {
+  assert.ok(CLAIM_SOURCE.includes("await tx.get(lockRef)"));
+  assert.ok(CLAIM_SOURCE.includes("await tx.get(identityRef)"));
+  assert.ok(CLAIM_SOURCE.includes("await inviteStore.redeemInTransaction(tx, userId, normalizedInvite, requestContext)"));
+  assert.ok(CLAIM_SOURCE.includes("await tx.get(legacyRef)"));
+  assert.ok(CLAIM_SOURCE.includes('auditAdminEventInTransaction(tx, "invite_redeemed"'));
+  assert.ok(CLAIM_SOURCE.includes("tx.update(legacyRef"));
+  assert.ok(CLAIM_SOURCE.includes("tx.set(identityRef"));
+  assert.ok(CLAIM_SOURCE.includes("pure.timingSafeEqualHex(storedHash, incomingHash)"));
+});
+
 test("invite lifecycle audit writes are transaction-coupled, not fire-and-forget", () => {
   const audit = section(
+    SOURCE,
     "function auditAdminEventInTransaction(tx, action, req, extra = {})",
     "// Constant-time comparison"
   );
   assert.ok(audit.includes("tx.create("));
-  const modernRedemption = section(
-    "await inviteStore.redeemInTransaction",
-    "// First claim — atomically write the identity binding"
-  );
-  assert.ok(modernRedemption.includes("await inviteStore.redeemInTransaction"));
-  assert.equal(modernRedemption.includes('auditAdminEvent("invite_redeemed"'), false,
-    "no asynchronous post-commit audit write may substitute for transactional audit");
+  assert.ok(CLAIM_SOURCE.includes("await inviteStore.redeemInTransaction"),
+    "modern invite redemption must call the audited store inside the caller's transaction");
+  assert.ok(CLAIM_SOURCE.includes('auditAdminEventInTransaction(tx, "invite_redeemed"'),
+    "legacy waitlist redemption must also audit inside the identity transaction");
 });
