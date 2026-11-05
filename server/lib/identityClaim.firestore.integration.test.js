@@ -143,6 +143,9 @@ if (!emulatorHost) {
 
     // Existing-account restore must validate the already-bound identity and
     // must not consume a fresh invite, even when a token is supplied.
+    // Historical SHA-256 hex encodings may be uppercase. Preserve the
+    // prior case-insensitive digest comparison while still validating shape.
+    await firstIdentity.ref.update({ identityPubKeyHash: firstHash.toUpperCase() });
     const unusedInvite = await createInvite("Must remain unused");
     const existing = await claim(dbB, storeB, firstUid, firstHash, unusedInvite.token);
     assert.deepEqual(existing, { isNewAccount: false });
