@@ -1,7 +1,6 @@
 package com.duoshield.app.util;
 
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Optional;
 
 /**
