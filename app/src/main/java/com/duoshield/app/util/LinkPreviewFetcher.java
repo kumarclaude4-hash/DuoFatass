@@ -41,12 +41,14 @@ public class LinkPreviewFetcher {
         UNAVAILABLE;
 
         public static Status fromWire(String value, boolean hasMetadata) {
-            if (value == null || value.trim().isEmpty()) {
-                // Backward compatibility with servers deployed before the
-                // status field existed.
+            if (value == null) {
+                // Backward compatibility applies only when the field is absent
+                // from a pre-status server response.
                 return hasMetadata ? OK : NO_METADATA;
             }
-            switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+            String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+            if (normalized.isEmpty()) return UNAVAILABLE;
+            switch (normalized) {
                 case "ok": return OK;
                 case "no_metadata": return NO_METADATA;
                 case "unsupported_content": return UNSUPPORTED_CONTENT;
