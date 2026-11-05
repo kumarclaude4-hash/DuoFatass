@@ -77,7 +77,7 @@ if (!emulatorHost) {
     // Simulate the server committing the lock but the client losing the HTTP
     // response. A replay must confirm the same lock, never re-write lockedAt.
     const replay = await consume(dbB, nonce, now + 1000);
-    assert.deepEqual(replay, { uid, alreadyLocked: true });
+    assert.deepEqual(replay, { uid, alreadyLocked: true, lockStillActive: true });
     const afterReplay = await dbA.collection(accountLockCollection).doc(uid).get();
     assert.equal(afterReplay.data().lockedAt.toMillis(), locked.data().lockedAt.toMillis());
 
