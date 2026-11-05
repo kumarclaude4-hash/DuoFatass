@@ -49,6 +49,10 @@ public class DuressManager {
     private static final int    ITERATIONS          = 310_000;
     private static final int    KEY_LEN             = 256;
 
+    // Server-issued fallback nonces expire after one hour. Refresh with a
+    // safety margin so an ordinary foreground session does not keep a dead token.
+    private static final long LOCK_NONCE_REFRESH_INTERVAL_MS = 30L * 60 * 1000;
+
     /**
      * Neutral replacement for the old {@code duress_wipe_in_progress} flag.
      *
@@ -829,18 +833,24 @@ public class DuressManager {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) return;
         final Context appCtx = context.getApplicationContext();
-        if (PendingLockStore.getWarmTokenAgeMs(appCtx) < 12L * 60 * 60 * 1000) return;
+        if (PendingLockStore.getWarmTokenAgeMs(appCtx) < LOCK_NONCE_REFRESH_INTERVAL_MS) return;
 
         new Thread(() -> {
             try {
-                final Object   tokenSync   = new Object();
+                final Object tokenSync = new Object();
                 final String[] tokenHolder = {null};
                 user.getIdToken(false)
-                        .addOnSuccessListener(r -> {
-                            synchronized (tokenSync) { tokenHolder[0] = r.getToken() != null ? r.getToken() : ""; tokenSync.notifyAll(); }
+                        .addOnSuccessListener(result -> {
+                            synchronized (tokenSync) {
+                                tokenHolder[0] = result.getToken() != null ? result.getToken() : "";
+                                tokenSync.notifyAll();
+                            }
                         })
-                        .addOnFailureListener(e -> {
-                            synchronized (tokenSync) { tokenHolder[0] = ""; tokenSync.notifyAll(); }
+                        .addOnFailureListener(error -> {
+                            synchronized (tokenSync) {
+                                tokenHolder[0] = "";
+                                tokenSync.notifyAll();
+                            }
                         });
                 synchronized (tokenSync) {
                     if (tokenHolder[0] == null) tokenSync.wait(10_000);
@@ -849,16 +859,25 @@ public class DuressManager {
                 if (idToken.isEmpty()) return;
 
                 String nonce = requestLockNonce(idToken);
-                if (nonce != null && !nonce.isEmpty()) {
-                    PendingLockStore.putWarmToken(appCtx, nonce);
-                    android.util.Log.d("DuressManager", "Lock credential refreshed.");
+                if (nonce == null || nonce.isEmpty()) return;
+
+                PendingLockStore.putWarmToken(appCtx, nonce);
+                android.util.Log.d("DuressManager", "Lock credential refreshed.");
+
+                // If a previous offline/expired attempt left a durable intent for
+                // this same account, rotate that intent to the freshly issued nonce
+                // and immediately drain it. Never retarget another account's intent.
+                if (PendingLockStore.replaceIntentTokenIfSubjectMatches(appCtx, user.getUid(), nonce)) {
+                    android.util.Log.i("DuressManager",
+                            "Refreshed credential for pending lock intent; retrying server lock.");
+                    drainPendingLockIntent(appCtx);
                 }
             } catch (Exception e) {
-                android.util.Log.w("DuressManager", "maintainLockCredential failed (non-fatal): " + e.getMessage());
+                android.util.Log.w("DuressManager",
+                        "maintainLockCredential failed (non-fatal): " + e.getMessage());
             }
         }, "duress-credential-maintain").start();
     }
-
     /**
      * Drains a durable lock intent left by an interrupted or offline duress trigger
      * (S06-H3 / S06-M5). Call once at application startup, on a background thread,
@@ -908,12 +927,15 @@ public class DuressManager {
             if (code == 200 || code == 204) {
                 PendingLockStore.clearLockIntent(appCtx);
                 android.util.Log.i("DuressManager", "Drained pending lock intent — confirmed.");
-            } else if (code == 400 || code == 401 || code == 403) {
-                // Invalid, expired, or already-consumed nonce. If it was already
-                // consumed, the account is already locked and this is stale — either
-                // way retrying cannot help, so stop holding onto it.
-                PendingLockStore.clearLockIntent(appCtx);
-                android.util.Log.w("DuressManager", "Pending lock intent rejected (HTTP " + code + ") — dropping.");
+            } else if (code >= 400 && code < 500 && code != 408 && code != 425 && code != 429) {
+                // With idempotent nonce consumption, a successfully consumed nonce
+                // returns 200 only while the matching duress lock remains latched.
+                // Any permanent 4xx therefore means the lock was NOT confirmed.
+                // Keep the intent: maintainLockCredential() can replace this stale
+                // nonce after the same account next has a valid foreground session.
+                android.util.Log.e("DuressManager",
+                        "Pending lock intent rejected (HTTP " + code
+                                + ") — account lock NOT confirmed; intent retained.");
             } else {
                 android.util.Log.w("DuressManager", "Pending lock intent drain failed (HTTP " + code + ") — will retry.");
             }
