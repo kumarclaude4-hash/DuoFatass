@@ -2208,9 +2208,18 @@ function forceLogout(showMessage = true) {
   document.getElementById("gate").style.display = "block";
   document.getElementById("gateErr").textContent = showMessage ? "Session expired due to inactivity." : "";
   document.getElementById("tokenInput").value = "";
-  // Revoke the server-side session so the HttpOnly cookie cannot be reused
-  // until the 30-minute TTL elapses. Fire-and-forget; UI is already reset.
-  fetch("/admin/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  // Revoke the durable server-side session. Local logout is immediate, but
+  // warn when the server cannot confirm revocation: a copied cookie may remain
+  // usable until the store recovers or the session expires.
+  fetch("/admin/logout", { method: "POST", credentials: "same-origin" })
+    .then((response) => {
+      if (!response.ok) {
+        toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
+      }
+    })
+    .catch(() => {
+      toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
+    });
 }
 
 ["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach((evt) => {
