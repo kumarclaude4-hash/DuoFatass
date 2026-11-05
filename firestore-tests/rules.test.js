@@ -1768,3 +1768,36 @@ describe('/waitlist/{requestId}', () => {
     );
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN SESSION STATE (S05-M3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("S05-M3: admin session ledger collections are server-only", () => {
+  const collections = ["adminSessions", "adminSessionControl"];
+
+  test("anonymous and authenticated clients cannot read seeded session state", async () => {
+    for (const collection of collections) {
+      const docPath = collection + "/opaque-test-document";
+      await seed(docPath, { generation: 0, marker: "server-only" });
+
+      await assertFails(asAnon().doc(docPath).get());
+      await assertFails(asUser("alice").doc(docPath).get());
+    }
+  });
+
+  test("anonymous and authenticated clients cannot create, update or delete session state", async () => {
+    for (const collection of collections) {
+      const existingPath = collection + "/existing-server-document";
+      const newPath = collection + "/client-created-document";
+      await seed(existingPath, { generation: 0, marker: "server-only" });
+
+      for (const client of [asAnon(), asUser("alice")]) {
+        await assertFails(client.doc(newPath).set({ generation: 99 }));
+        await assertFails(client.doc(existingPath).update({ generation: 99 }));
+        await assertFails(client.doc(existingPath).delete());
+      }
+    }
+  });
+});
