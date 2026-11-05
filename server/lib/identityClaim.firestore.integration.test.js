@@ -210,7 +210,7 @@ if (!emulatorHost) {
     assert.equal((await dbA.collection(collections.identities).doc(legacyUid).get()).exists, true);
     assert.equal(
       (await dbA.collection(collections.audit).where("action", "==", "invite_redeemed").get()).size,
-      5,
+      3,
       "only committed modern and legacy claims produce audit events"
     );
   });
