@@ -23,6 +23,8 @@ async function claimIdentityInTransaction({
   inviteStore,
   invite = defaultInvite,
   legacyWaitlistCollection = "waitlist",
+  identityCollection = "identities",
+  accountLockCollection = "accountLock",
   userId,
   incomingHash,
   inviteToken,
@@ -54,8 +56,8 @@ async function claimIdentityInTransaction({
     throw new TypeError("claimIdentityInTransaction requires audit and UID-redaction dependencies");
   }
 
-  const lockRef = firestore.collection("accountLock").doc(userId);
-  const identityRef = firestore.collection("identities").doc(userId);
+  const lockRef = firestore.collection(accountLockCollection).doc(userId);
+  const identityRef = firestore.collection(identityCollection).doc(userId);
 
   // Read the lock and identity inside the same transaction as invite
   // consumption. A lock written concurrently causes Firestore to retry this
