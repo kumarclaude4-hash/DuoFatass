@@ -22,6 +22,7 @@ async function claimIdentityInTransaction({
   FieldValue,
   inviteStore,
   invite = defaultInvite,
+  legacyWaitlistCollection = "waitlist",
   userId,
   incomingHash,
   inviteToken,
@@ -91,7 +92,7 @@ async function claimIdentityInTransaction({
     // Narrow compatibility path for already-approved legacy waitlist IDs.
     // No endpoint creates new legacy IDs. Keep its audit event in this exact
     // transaction so the identity claim cannot commit without its audit.
-    const legacyRef = firestore.collection("waitlist").doc(normalizedInvite);
+    const legacyRef = firestore.collection(legacyWaitlistCollection).doc(normalizedInvite);
     const legacySnapshot = await tx.get(legacyRef);
     if (!legacySnapshot.exists || legacySnapshot.data().status !== "approved") {
       throw Object.assign(new Error("Valid invite required"), { status: 403 });
