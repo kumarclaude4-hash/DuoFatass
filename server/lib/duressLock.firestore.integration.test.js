@@ -5,7 +5,10 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { initializeApp, deleteApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
-const { consumeDuressLockNonceInTransaction } = require("./duressLock");
+const {
+  consumeDuressLockNonceInTransaction,
+  pruneOutstandingDuressNonces,
+} = require("./duressLock");
 
 const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
 const requireEmulator = process.env.DUOSHIELD_REQUIRE_FIRESTORE_EMULATOR === "1";
@@ -80,6 +83,33 @@ if (!emulatorHost) {
     assert.deepEqual(replay, { uid, alreadyLocked: true, lockStillActive: true });
     const afterReplay = await dbA.collection(accountLockCollection).doc(uid).get();
     assert.equal(afterReplay.data().lockedAt.toMillis(), locked.data().lockedAt.toMillis());
+
+    // Issuing a replacement credential may prune stale *unconsumed* nonces,
+    // but it must retain consumed markers until TTL so a delayed old request
+    // can still acknowledge its original commit.
+    const staleNonceA = makeNonce();
+    const staleNonceB = makeNonce();
+    await Promise.all([staleNonceA, staleNonceB].map((staleNonce) =>
+      dbA.collection(nonceCollection).doc(staleNonce).set({
+        uid,
+        expiresAt: Timestamp.fromMillis(now + 60 * 60 * 1000),
+      })
+    ));
+    const pruneResult = await pruneOutstandingDuressNonces({
+      firestore: dbA,
+      uid,
+      nonceCollection,
+      batchSize: 1,
+    });
+    assert.deepEqual(pruneResult, { deleted: 2, retainedConsumed: 1 });
+    assert.equal((await dbA.collection(nonceCollection).doc(staleNonceA).get()).exists, false);
+    assert.equal((await dbA.collection(nonceCollection).doc(staleNonceB).get()).exists, false);
+    assert.equal((await dbA.collection(nonceCollection).doc(nonce).get()).exists, true);
+    assert.deepEqual(await consume(dbB, nonce, now + 2000), {
+      uid,
+      alreadyLocked: true,
+      lockStillActive: true,
+    });
 
     // Concurrent duplicate requests converge to one first application and one
     // idempotent confirmation on independent Firestore clients.
