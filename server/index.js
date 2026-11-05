@@ -18,6 +18,7 @@ const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClie
 const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
 const { createInviteStore } = require("./lib/inviteStore");
+const { consumeDuressLockNonceInTransaction } = require("./lib/duressLock");
 const { claimIdentityInTransaction } = require("./lib/identityClaim");
 
 let serviceAccount;
@@ -4204,63 +4205,23 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Look up + consume the nonce and write the lock atomically in a single
-        // transaction. This used to be a get() followed by a separate batch()
-        // write, leaving a window where two concurrent requests carrying the
-        // same nonce could both read it as valid before either deleted it.
-        // Admin SDK bypasses Firestore rules either way.
-        let uid;
-        try {
-          uid = await db.runTransaction(async (tx) => {
-            const nonceRef  = db.collection("_duressNonces").doc(nonce);
-            const nonceSnap = await tx.get(nonceRef);
-            if (!nonceSnap.exists) {
-              // Unknown nonce: already consumed, never issued, or corrupted.
-              throw Object.assign(new Error("Invalid or already-consumed nonce"), { status: 403 });
-            }
-            const { uid: nonceUid, expiresAt } = nonceSnap.data();
-
-            // ── S06-L1: validate the expiry shape and fail CLOSED ─────────────
-            // The old check was `new Date() > new Date(expiresAt.toDate ? ...)`.
-            // Two ways that went wrong: a missing `expiresAt` threw a TypeError
-            // inside the transaction, which had no `.status` and so surfaced as a
-            // 500 — and AccountLockWorker treats 5xx as retryable, so it retried
-            // a permanently broken nonce forever. An unparseable string compared
-            // against `Invalid Date` yields `false`, so the nonce was treated as
-            // NOT expired: valid indefinitely, fail-open.
-            if (!pure.isNonceUsable(nonceUid, expiresAt, Date.now())) {
-              // Expired or malformed — delete to clean up and signal the client
-              // not to retry. Deleting on this path is also what stops a broken
-              // doc from lingering (S06-M2).
-              tx.delete(nonceRef);
-              throw Object.assign(new Error("Nonce expired"), { status: 401 });
-            }
-
-            // ── S06-L6: pin lockedAt to the first lock only ───────────────────
-            // `update` being permitted at all meant a client holding the
-            // victim's uid could re-set the doc with locked:true and a fresh
-            // lockedAt repeatedly. The latch held; the forensic value did not.
-            // The rules now forbid client writes outright, and this write only
-            // sets lockedAt when the doc does not already carry one, so the real
-            // trigger time survives a replayed lock.
-            const lockRef  = db.collection("accountLock").doc(nonceUid);
-            const lockSnap = await tx.get(lockRef);
-            const lockData = { locked: true, lockedBy: "duress" };
-            if (!lockSnap.exists || !lockSnap.data().lockedAt) {
-              lockData.lockedAt = admin.firestore.FieldValue.serverTimestamp();
-            }
-            tx.set(lockRef, lockData, { merge: true });
-            tx.delete(nonceRef); // single-use: consumed
-            return nonceUid;
-          });
-        } catch (txErr) {
-          if (txErr.status) {
-            res.writeHead(txErr.status, { "Content-Type": "text/plain" });
-            res.end(txErr.message);
-            return;
-          }
-          throw txErr; // unexpected Firestore error — fall through to outer catch
+        // Consume the nonce and set accountLock in one Firestore transaction.
+        // The helper retains a consumed marker until TTL so a duplicate request
+        // after a lost HTTP response can confirm the already-landed duress lock.
+        const lockOutcome = await db.runTransaction((tx) =>
+          consumeDuressLockNonceInTransaction({
+            tx,
+            firestore: db,
+            FieldValue: admin.firestore.FieldValue,
+            nonce,
+          })
+        );
+        if (lockOutcome.status) {
+          res.writeHead(lockOutcome.status, { "Content-Type": "text/plain" });
+          res.end(lockOutcome.message || "Unable to confirm account lock");
+          return;
         }
+        const uid = lockOutcome.uid;
 
         // ── S06-C2 part 2: kill sessions minted before the lock landed ─────────
         // Gating /mintToken is necessary but not sufficient. signInWithCustomToken
@@ -4288,7 +4249,7 @@ const server = http.createServer((req, res) => {
         // live Firestore state and is covered by the audit log. A cleartext uid
         // next to a [duress-lock] tag is a permanent plaintext record that this
         // account triggered a duress wipe.
-        console.log(`[duress-lock] accountLock written (uid=${uidTag(uid)})`);
+        console.log(`[duress-lock] accountLock confirmed (uid=${uidTag(uid)} alreadyLocked=${lockOutcome.alreadyLocked === true})`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ locked: true }));
       } catch (e) {
