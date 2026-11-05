@@ -932,21 +932,7 @@ public class DuressManager {
             }
         }, "duress-credential-maintain").start();
     }
-    /**
-     * Drains a durable lock intent left by an interrupted or offline duress trigger
-     * (S06-H3 / S06-M5). Call once at application startup, on a background thread,
-     * before any UI that would let the user believe the app is in a normal state.
-     *
-     * <p>Distinct from {@link #resumeInterruptedResetIfNeeded}: that method finishes
-     * an interrupted <em>local wipe</em>; this one finishes an interrupted or
-     * previously-impossible <em>server-side lock write</em>. Both can be pending at
-     * once (e.g. the wipe finished but the device was offline the entire time), so
-     * both must run on every launch.
-     *
-     * @return true if a pending intent was found (regardless of whether the drain
-     *         attempt against the server succeeded — a failure just means it is
-     *         still pending for the next launch or for {@link AccountLockWorker}).
-     */
+    /** Result of one attempt to drain a durable server-side account-lock intent. */
     public enum LockIntentDrainResult {
         NO_PENDING_INTENT,
         NO_CREDENTIAL,
@@ -956,8 +942,15 @@ public class DuressManager {
     }
 
     /**
-     * Compatibility wrapper for the splash startup path. A true value means an
-     * intent was present, regardless of whether the network drain confirmed it.
+     * Drains a durable lock intent left by an interrupted or offline duress trigger
+     * (S06-H3 / S06-M5). Call once at application startup, on a background thread.
+     *
+     * <p>Distinct from {@link #resumeInterruptedResetIfNeeded}: that method finishes
+     * an interrupted <em>local wipe</em>; this one finishes an interrupted or
+     * previously-impossible <em>server-side lock write</em>.
+     *
+     * @return true if an intent was present, even if the network attempt failed and
+     *         the intent remains pending for the next launch or a WorkManager retry.
      */
     public static boolean drainPendingLockIntent(Context context) {
         return drainPendingLockIntentWithResult(context)
