@@ -37,8 +37,8 @@ import java.util.concurrent.TimeUnit;
  * <ul>
  *   <li>Not a Firebase credential — cannot authenticate to Firebase Auth.</li>
  *   <li>uid-bound — cannot be used to lock any other account.</li>
- *   <li>Single-use — the server deletes it atomically with the lock write.</li>
- *   <li>24-hour expiry — generous retry window for WorkManager backoff.</li>
+ *   <li>Single-use — the server atomically marks it consumed with the lock write.</li>
+ *   <li>1-hour expiry — the bounded retry schedule stays inside this window.</li>
  * </ul>
  *
  * <h3>Clearing the flag</h3>
@@ -66,17 +66,15 @@ public class AccountLockWorker extends Worker {
 
     /**
      * S06-L4: {@code Result.retry()} on a {@link androidx.work.OneTimeWorkRequest}
-     * has no built-in attempt cap — returning it forever (e.g. the device stays
-     * offline indefinitely) would have WorkManager reschedule this job forever,
-     * silently, with no genuine-failure signal ever surfacing. 15 attempts of
-     * {@code BackoffPolicy.EXPONENTIAL} starting at 30s and capped by WorkManager's
-     * own 5-hour per-attempt ceiling accumulate to roughly 33 hours of retrying —
-     * comfortably longer than the 24-hour server-side nonce expiry documented on
-     * this class, so a merely-slow network still gets its full retry window, while
-     * a permanently unreachable server or dead network eventually terminates
-     * instead of retrying forever.
+     * has no built-in attempt cap. The server-issued nonce expires after one hour,
+     * so seven total attempts with exponential backoff starting at 30 seconds give
+     * about 31.5 minutes of retry delays (plus the initial 5–40 second jitter).
+     * This leaves time for transient recovery without scheduling retries beyond
+     * the credential's useful lifetime. When the cap is reached, WorkManager gets
+     * a genuine failure and the durable lock intent is retained for a fresh-nonce
+     * drain on the next foreground start.
      */
-    private static final int MAX_ATTEMPTS = 15;
+    private static final int MAX_ATTEMPTS = 7;
 
     public AccountLockWorker(@NonNull Context ctx, @NonNull WorkerParameters params) {
         super(ctx, params);
