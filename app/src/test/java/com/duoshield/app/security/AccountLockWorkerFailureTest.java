@@ -50,11 +50,14 @@ public class AccountLockWorkerFailureTest {
         assertTrue(permanent.contains("return Result.failure()"));
         assertFalse("a rejected nonce must not clear the pending lock intent",
                 permanent.contains("PendingLockStore.clearLockIntent"));
+        assertTrue("a rejected nonce must invalidate the cached warm credential",
+                permanent.contains("PendingLockStore.clearWarmToken"));
 
         String confirmed = section(source,
                 "if (disposition == AccountLockHttpPolicy.Disposition.LOCK_CONFIRMED)",
                 "if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE)");
         assertTrue(confirmed.contains("PendingLockStore.clearLockIntent"));
+        assertTrue(confirmed.contains("PendingLockStore.clearWarmToken"));
         assertTrue(confirmed.contains("return Result.success()"));
 
         assertTrue(source.contains("Missing nonce — account lock NOT confirmed"));
@@ -74,7 +77,7 @@ public class AccountLockWorkerFailureTest {
                 "app/src/main/java/com/duoshield/app/security/DuressManager.java");
         assertTrue(manager.contains("LOCK_NONCE_REFRESH_INTERVAL_MS = 30L * 60 * 1000"));
         assertTrue(manager.contains("PendingLockStore.replaceIntentTokenIfSubjectMatches"));
-        assertTrue(manager.contains("drainPendingLockIntent(appCtx)"));
+        assertTrue(manager.contains("AccountLockWorker.enqueue(appCtx, nonce)"));
 
         String drain = section(manager,
                 "public static boolean drainPendingLockIntent(Context context)",
@@ -86,6 +89,7 @@ public class AccountLockWorkerFailureTest {
         assertFalse("a permanent 4xx must not erase an unconfirmed lock intent",
                 rejected.contains("PendingLockStore.clearLockIntent"));
         assertTrue(rejected.contains("account lock NOT confirmed"));
+        assertTrue(rejected.contains("PendingLockStore.clearWarmToken"));
     }
 
     private static String section(String source, String start, String end) {
