@@ -6,9 +6,9 @@ const pure = require("./pure");
  * Consume a uid-bound duress-lock nonce and set the account lock atomically.
  *
  * The consumed nonce is retained until its existing expiresAt TTL so a replay
- * can be answered idempotently: if the corresponding duress lock is already
- * present, the server confirms success instead of returning an ambiguous 403.
- * Unknown or consumed-but-unlocked nonces are denied.
+ * can be answered idempotently from the transactionally written consumed marker.
+ * The current lock state is returned separately so a retry after an administrator
+ * has unfrozen the account does not re-lock it or revoke newly issued sessions.
  *
  * Expired/malformed records are deleted and the failure is returned as data
  * (not thrown inside the transaction), so Firestore commits the cleanup.
