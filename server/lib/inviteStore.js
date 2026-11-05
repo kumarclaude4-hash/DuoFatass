@@ -27,6 +27,7 @@ function createInviteStore({
   Timestamp,
   now = () => Date.now(),
   randomToken = invite.createInviteToken,
+  tagUserId,
   invitesCollection = INVITE_COLLECTION,
   auditCollection = "adminAuditLog",
   stageAudit = () => {},
@@ -41,6 +42,9 @@ function createInviteStore({
   }
   if (typeof stageAudit !== "function") {
     throw new TypeError("createInviteStore requires an audit staging function");
+  }
+  if (typeof tagUserId !== "function") {
+    throw new TypeError("createInviteStore requires a user-id pseudonymizer");
   }
 
   const collection = firestore.collection(invitesCollection);
@@ -93,7 +97,7 @@ function createInviteStore({
       usedAt: FieldValue.serverTimestamp(),
     });
     stageAudit(tx, "invite_redeemed", requestContext, {
-      userIdTag: typeof userId === "string" ? userId : "",
+      userIdTag: tagUserId(userId),
     });
     return { id: doc.id };
   }
