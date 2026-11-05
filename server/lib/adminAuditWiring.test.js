@@ -343,7 +343,7 @@ test("adminAuditLog is server-only in firestore.rules", () => {
 
 test("S05-M3: cookie authentication awaits durable validation and fails closed on Firestore errors", () => {
   const authStart = SERVER_SOURCE.indexOf("async function requireAdminAuth(req, res)");
-  const authEnd = SERVER_SOURCE.indexOf("\\n}\\n\\n// ── Global unhandled", authStart);
+  const authEnd = SERVER_SOURCE.indexOf("\n}\n\n// ── Global unhandled", authStart);
   assert.ok(authStart > 0 && authEnd > authStart, "requireAdminAuth body not found");
   const handler = SERVER_SOURCE.slice(authStart, authEnd);
   assert.ok(handler.includes("await evaluateAdminSession(req)"), "session validation must be awaited");
@@ -356,12 +356,12 @@ test("S05-M3: cookie authentication awaits durable validation and fails closed o
 });
 
 test("S05-M3: session creation and global revoke-all are asynchronous durable operations", () => {
-  assert.match(SERVER_SOURCE, /async function evaluateAdminSession\\(/);
-  assert.match(SERVER_SOURCE, /async function hasValidAdminSession\\(/);
-  assert.match(SERVER_SOURCE, /firestore:\\s*db,/);
-  assert.match(SERVER_SOURCE, /const result = await adminSessionStore\\.revokeAll\\(\\)/);
-  assert.match(SERVER_SOURCE, /sessionGeneration:\\s*result\\.generation/);
-  assert.match(SERVER_SOURCE, /ADMIN_SESSION_ABSOLUTE_TTL_MS \\/ 1000/);
+  assert.match(SERVER_SOURCE, /async function evaluateAdminSession\(/);
+  assert.match(SERVER_SOURCE, /async function hasValidAdminSession\(/);
+  assert.match(SERVER_SOURCE, /firestore:\s*db,/);
+  assert.match(SERVER_SOURCE, /const result = await adminSessionStore\.revokeAll\(\)/);
+  assert.match(SERVER_SOURCE, /sessionGeneration:\s*result\.generation/);
+  assert.match(SERVER_SOURCE, /ADMIN_SESSION_ABSOLUTE_TTL_MS \/ 1000/);
 });
 
 test("S05-M3: persistent session collections are deny-all to client SDKs", () => {
