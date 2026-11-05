@@ -4235,13 +4235,15 @@ const server = http.createServer((req, res) => {
         // Deliberately after the transaction and non-fatal: the latch is the
         // durable guarantee and must not be rolled back if revocation fails. A
         // failure here is logged loudly because it means live sessions survive.
-        try {
-          await admin.auth().revokeRefreshTokens(uid);
-        } catch (revokeErr) {
-          console.error(
-            `[duress-lock] token revocation FAILED for uid=${uidTag(uid)} — live sessions may persist:`,
-            revokeErr.message
-          );
+        if (lockOutcome.alreadyLocked !== true || lockOutcome.lockStillActive === true) {
+          try {
+            await admin.auth().revokeRefreshTokens(uid);
+          } catch (revokeErr) {
+            console.error(
+              `[duress-lock] token revocation FAILED for uid=${uidTag(uid)} — live sessions may persist:`,
+              revokeErr.message
+            );
+          }
         }
 
         // S06-M3: the uid is dropped from this message entirely. The operator's
@@ -4249,7 +4251,7 @@ const server = http.createServer((req, res) => {
         // live Firestore state and is covered by the audit log. A cleartext uid
         // next to a [duress-lock] tag is a permanent plaintext record that this
         // account triggered a duress wipe.
-        console.log(`[duress-lock] accountLock confirmed (uid=${uidTag(uid)} alreadyLocked=${lockOutcome.alreadyLocked === true})`);
+        console.log(`[duress-lock] accountLock confirmed (uid=${uidTag(uid)} alreadyLocked=${lockOutcome.alreadyLocked === true} stillActive=${lockOutcome.lockStillActive !== false})`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ locked: true }));
       } catch (e) {
