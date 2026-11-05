@@ -51,7 +51,8 @@ async function consumeDuressLockNonceInTransaction({
   // The uid is server-authenticated when the nonce is issued. A missing or
   // malformed uid therefore means the stored nonce is corrupt, not a valid
   // credential; delete it and fail permanently before constructing a doc ref.
-  if (typeof uid !== "string" || uid.length === 0) {
+  if (typeof uid !== "string" || uid.length === 0 || uid.length > 128 ||
+      uid.trim() !== uid || uid.includes("/")) {
     tx.delete(nonceRef);
     return { status: 401, message: "Nonce expired or malformed" };
   }
