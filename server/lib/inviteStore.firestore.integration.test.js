@@ -49,7 +49,7 @@ if (!emulatorHost) {
       invitesCollection,
       tagUserId: (uid) => crypto.createHash("sha256").update(uid).digest("hex").slice(0, 12),
       stageAudit(tx, action, context, extra) {
-        const auditRef = db.collection(auditCollection).doc();
+        const auditRef = dbA.collection(auditCollection).doc();
         tx.create(auditRef, {
           action,
           requestId: context && context.requestId ? context.requestId : "unknown",
@@ -159,7 +159,7 @@ if (!emulatorHost) {
 
     // Repeated use must fail without creating a second audit event.
     await assert.rejects(
-      () => db.runTransaction((tx) => storeB.redeemInTransaction(tx, "seed-derived-user-c", created.token, requestContext)),
+      () => dbB.runTransaction((tx) => storeB.redeemInTransaction(tx, "seed-derived-user-c", created.token, requestContext)),
       (error) => error && error.code === "INVITE_INVALID"
     );
     assert.equal((await dbB.collection(auditCollection).where("action", "==", "invite_redeemed").get()).size, 1);
