@@ -22,7 +22,7 @@ function section(source, start, end) {
 }
 
 test("POST /duress-lock delegates nonce and account-lock writes to the shared transaction helper", () => {
-  assert.ok(SERVER_SOURCE.includes('const { consumeDuressLockNonceInTransaction } = require("./lib/duressLock");'));
+  assert.ok(SERVER_SOURCE.includes('const { consumeDuressLockNonceInTransaction, pruneOutstandingDuressNonces } = require("./lib/duressLock");'));
   const route = section(
     SERVER_SOURCE,
     'if (req.method === "POST" && req.url === "/duress-lock")',
@@ -37,6 +37,22 @@ test("POST /duress-lock delegates nonce and account-lock writes to the shared tr
   assert.ok(route.includes('res.writeHead(200, { "Content-Type": "application/json" })'));
   assert.equal(route.includes("tx.delete(nonceRef)"), false,
     "the route must not maintain a second nonce-consumption implementation");
+});
+
+test("requestLockNonce prunes only outstanding credentials and retains consumed receipts", () => {
+  const route = section(
+    SERVER_SOURCE,
+    'if (req.method === "POST" && req.url === "/requestLockNonce")',
+    'if (req.method === "POST" && req.url === "/duress-lock")'
+  );
+  assert.ok(route.includes("await pruneOutstandingDuressNonces({ firestore: db, uid })"));
+  assert.equal(route.includes("stale.docs.forEach((d) => batch.delete(d.ref))"), false,
+    "route must not delete consumed receipts with outstanding credentials");
+
+  assert.ok(HELPER_SOURCE.includes("async function pruneOutstandingDuressNonces"));
+  assert.ok(HELPER_SOURCE.includes("!(doc.data() || {}).consumedAt"));
+  assert.ok(HELPER_SOURCE.includes("retainedConsumed: snapshot.size - outstanding.length"));
+  assert.ok(HELPER_SOURCE.includes("batchSize = 450"));
 });
 
 test("the transaction helper retains consumed nonces for idempotent confirmation until TTL", () => {
