@@ -43,9 +43,22 @@ test("the transaction helper retains consumed nonces for idempotent confirmation
   assert.ok(HELPER_SOURCE.includes("tx.update(nonceRef, { consumedAt: FieldValue.serverTimestamp() })"));
   assert.ok(HELPER_SOURCE.includes("if (nonceData.consumedAt)"));
   assert.ok(HELPER_SOURCE.includes('lockData.lockedBy === "duress"'));
-  assert.ok(HELPER_SOURCE.includes("return { uid, alreadyLocked: true }"));
+  assert.ok(HELPER_SOURCE.includes("return { uid, alreadyLocked: true, lockStillActive }"));
+  assert.ok(HELPER_SOURCE.includes("const lockStillActive = lockData.locked === true && lockData.lockedBy === \"duress\""));
   assert.ok(HELPER_SOURCE.includes("tx.delete(nonceRef)"));
   assert.ok(HELPER_SOURCE.includes('return { status: 401, message: "Nonce expired" }'));
+});
+
+test("idempotent replay skips refresh-token revocation after an admin unfreeze", () => {
+  const route = section(
+    SERVER_SOURCE,
+    'if (req.method === "POST" && req.url === "/duress-lock")',
+    "// ── GET /admin"
+  );
+  assert.ok(route.includes("lockOutcome.alreadyLocked !== true || lockOutcome.lockStillActive === true"));
+  assert.ok(route.includes("admin.auth().revokeRefreshTokens(uid)"));
+  assert.ok(route.includes("lockStillActive"));
+});
 });
 
 test("worker classifies only 200/204 as confirmed and preserves intent on permanent failure", () => {
