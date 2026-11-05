@@ -18,7 +18,7 @@ const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClie
 const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
 const { createInviteStore } = require("./lib/inviteStore");
-const { consumeDuressLockNonceInTransaction } = require("./lib/duressLock");
+const { consumeDuressLockNonceInTransaction, pruneOutstandingDuressNonces } = require("./lib/duressLock");
 const { claimIdentityInTransaction } = require("./lib/identityClaim");
 
 let serviceAccount;
@@ -4103,25 +4103,22 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // ── S06-M2: cap outstanding nonces at one per uid ─────────────────────
-        // Documents were only ever removed when /duress-lock consumed one or an
-        // already-expired one was presented. The common case is neither: the
-        // synchronous lock write usually wins the race, so the fallback nonce is
-        // never presented and the doc leaks permanently. Each leaked doc also
-        // holds {uid, expiresAt} — a durable server-side record of exactly which
-        // account triggered a duress wipe and when, which is the event the
-        // feature is designed to make undetectable.
+        // ── S06-M2: cap outstanding nonce credentials at one per uid ──────────
+        // A uid should have at most one unconsumed credential. Consumed records
+        // are different: they are short-lived idempotency receipts proving that
+        // the account-lock transaction committed, even if the HTTP response was
+        // lost. Retain those receipts until their expiresAt TTL so a later retry
+        // cannot be mistaken for a lock that never happened (and re-lock an
+        // account an operator has deliberately unfrozen).
         //
-        // A uid has no legitimate reason to hold two nonces, so drop any prior
-        // ones before issuing. Single-field `uid` is auto-indexed, so this needs
-        // no composite index. Belt and braces alongside the TTL policy on
-        // `expiresAt` declared in firestore.indexes.json.
+        // Single-field uid is auto-indexed, so this needs no composite index.
+        // The helper chunks deletes below Firestore's 500-write batch limit.
         try {
-          const stale = await db.collection("_duressNonces").where("uid", "==", uid).get();
-          if (!stale.empty) {
-            const batch = db.batch();
-            stale.docs.forEach((d) => batch.delete(d.ref));
-            await batch.commit();
+          const pruned = await pruneOutstandingDuressNonces({ firestore: db, uid });
+          if (pruned.deleted > 0 || pruned.retainedConsumed > 0) {
+            console.info(
+              `[requestLockNonce] uid=${uidTag(uid)} pruned=${pruned.deleted} retainedConsumed=${pruned.retainedConsumed}`
+            );
           }
         } catch (pruneErr) {
           // Non-fatal: failing to prune must not block the lock credential.
