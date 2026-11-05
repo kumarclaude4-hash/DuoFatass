@@ -20,15 +20,26 @@ import java.nio.file.Files;
  */
 public class ReleaseLogPrivacyTest {
 
+    private static final String QUOTE_PLUS_EXCEPTION_MESSAGE =
+            String.valueOf('"') + " + e.getMessage()";
+    private static final String QUOTE_PLUS_CONVERSATION_ID =
+            String.valueOf('"') + " + conversationId";
+    private static final String QUOTE_PLUS_B2_PATH =
+            String.valueOf('"') + " + b2Path";
+    private static final String QUOTE_PLUS_EXCEPTION_TYPE =
+            String.valueOf('"') + " + e.getClass().getSimpleName()";
+
     @Test
     public void contactLookupLogsOnlyExceptionType() throws IOException {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/contacts/ContactManager.java");
         assertTrue(source.contains("e.getClass().getSimpleName()"));
         assertFalse(source.contains(
-                "resolveIdentityWithRetry: Firestore error, retrying — \" + e.getMessage()"));
+                "resolveIdentityWithRetry: Firestore error, retrying — "
+                        + QUOTE_PLUS_EXCEPTION_MESSAGE));
         assertFalse(source.contains(
-                "fetchPartnerNameWithRetry: Firestore error — \" + e.getMessage()));
+                "fetchPartnerNameWithRetry: Firestore error — "
+                        + QUOTE_PLUS_EXCEPTION_MESSAGE));
     }
 
     @Test
@@ -36,13 +47,14 @@ public class ReleaseLogPrivacyTest {
         String presence = readProjectFile(
                 "app/src/main/java/com/duoshield/app/util/PresenceThrottle.java");
         assertFalse(presence.contains(
-                "Failed to write typing state: \" + e.getMessage()));
+                "Failed to write typing state: " + QUOTE_PLUS_EXCEPTION_MESSAGE));
         assertTrue(presence.contains("e.getClass().getSimpleName()"));
 
         String cleanup = readProjectFile(
                 "app/src/main/java/com/duoshield/app/call/CallCleanupWorker.java");
         assertFalse(cleanup.contains(
-                "Call cleanup failed — will retry next cycle: \" + e.getMessage()));
+                "Call cleanup failed — will retry next cycle: "
+                        + QUOTE_PLUS_EXCEPTION_MESSAGE));
         assertTrue(cleanup.contains("e.getClass().getSimpleName()"));
     }
 
@@ -51,16 +63,20 @@ public class ReleaseLogPrivacyTest {
         String settings = readProjectFile(
                 "app/src/main/java/com/duoshield/app/ui/SettingsActivity.java");
         assertFalse(settings.contains(
-                "propagateName non-critical: \" + e.getMessage()));
+                "propagateName non-critical: " + QUOTE_PLUS_EXCEPTION_MESSAGE));
         assertFalse(settings.contains(
-                "propagateName query failed (non-critical): \" + e.getMessage()));
+                "propagateName query failed (non-critical): "
+                        + QUOTE_PLUS_EXCEPTION_MESSAGE));
 
         String export = readProjectFile(
                 "app/src/main/java/com/duoshield/app/util/ChatExportHelper.java");
-        assertFalse(export.contains("Chat export failed for conv=\" + conversationId"));
-        assertFalse(export.contains("Failed to export media \" + b2Path));
-        assertTrue(export.contains("Chat export failed (\" + e.getClass().getSimpleName()"));
-        assertTrue(export.contains("Failed to export media (\" + e.getClass().getSimpleName()"));
+        assertFalse(export.contains(
+                "Chat export failed for conv=" + QUOTE_PLUS_CONVERSATION_ID));
+        assertFalse(export.contains("Failed to export media " + QUOTE_PLUS_B2_PATH));
+        assertTrue(export.contains(
+                "Chat export failed (" + QUOTE_PLUS_EXCEPTION_TYPE));
+        assertTrue(export.contains(
+                "Failed to export media (" + QUOTE_PLUS_EXCEPTION_TYPE));
     }
 
     private static String readProjectFile(String relativePath) throws IOException {
