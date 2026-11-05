@@ -68,7 +68,8 @@ class FakeFirestore {
         if (write.type === "update" && !exists) throw new Error("document does not exist");
         if (write.type === "delete") {
           map.delete(write.ref.id);
-        } else if (write.type === "set" && write.merge && exists) {
+        } else if ((write.type === "set" && write.merge && exists) ||
+                   (write.type === "update" && exists)) {
           map.set(write.ref.id, { ...map.get(write.ref.id), ...clone(write.data) });
         } else {
           map.set(write.ref.id, clone(write.data));
