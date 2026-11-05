@@ -663,6 +663,18 @@ describe('/groups/{groupId}/messages/{msgId}', () => {
     );
   });
 
+  test('S07-H3: a member cannot spoof another member as the group message sender', async () => {
+    await assertFails(
+      asUser('bob').doc(`groups/${GROUP_ID}/messages/msg_spoofed_sender`).set({
+        id: 'msg_spoofed_sender',
+        sender: 'alice',
+        text: 'ciphertext claiming to be from another member',
+        isEncrypted: true,
+        aadV1: true,
+      })
+    );
+  });
+
   // ── S01-M1 regression tests ────────────────────────────────────────────────
   // No cap previously existed on message document size — a member could
   // bulk-write oversized documents (cost/DoS). The membership TOCTOU itself is
