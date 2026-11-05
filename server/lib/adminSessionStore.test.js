@@ -237,7 +237,8 @@ test("authenticated refreshes preserve an active session until the absolute ceil
 
   for (let i = 0; i < 4; i++) {
     clock.advance(800);
-    assert.equal((await store.validate(cookie, CTX)).valid, true);
+    const result = await store.validate(cookie, CTX);
+    assert.equal(result.valid, true, "refresh #" + (i + 1) + " at " + clock.now + " rejected: " + JSON.stringify(result));
   }
   clock.advance(1800);
   assert.equal((await store.validate(cookie, CTX)).reason, "absolute_expired");
