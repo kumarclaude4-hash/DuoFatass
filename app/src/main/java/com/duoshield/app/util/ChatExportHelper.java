@@ -124,7 +124,7 @@ public final class ChatExportHelper {
             try {
                 doExport(appCtx, conversationId, partnerUid, includeMedia, isGroup, progress);
             } catch (Exception e) {
-                Log.e(TAG, "Chat export failed for conv=" + conversationId, e);
+                Log.e(TAG, "Chat export failed (" + e.getClass().getSimpleName() + ")");
                 progress.dismiss();
                 new Handler(Looper.getMainLooper()).post(() ->
                     Toast.makeText(appCtx, "Export failed: " + e.getMessage(), Toast.LENGTH_LONG).show());
@@ -315,7 +315,7 @@ public final class ChatExportHelper {
             }
             return true;
         } catch (Exception e) {
-            Log.w(TAG, "Failed to export media " + b2Path, e);
+            Log.w(TAG, "Failed to export media (" + e.getClass().getSimpleName() + ")");
             return false;
         }
     }

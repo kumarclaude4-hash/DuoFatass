@@ -912,14 +912,12 @@ function adminSessionCookie(sessionId, req, maxAgeSeconds) {
 
 const getCookie = pure.getCookie;
 
-// S05-M3 / S07-H2: binds the new session to this request's User-Agent, so a
-// cookie captured from another channel (shared machine, synced browser
-// profile, log leak) fails adminSessionStore's binding check when replayed by
-// a different client. The client ADDRESS is deliberately not part of the
-// binding any more (see the ADMIN_BIND_SESSION_IP note above): it changes
-// mid-session on mobile networks and produced exactly the spurious
-// "session expired" logouts this fix removes. It is still written to the
-// durable audit trail via auditAdminEvent().
+// S05-M3: capture the request User-Agent as session context, but do not enforce
+// User-Agent or IP binding. Android WebView navigation and fetch/XHR requests
+// can send different User-Agent strings, while mobile networks can re-NAT an
+// operator mid-session; enforcing either value caused legitimate 401/session
+// expiry failures. The User-Agent remains available as captured context, and
+// request metadata is recorded through the durable audit trail.
 function createAdminSession(req) {
   return adminSessionStore.create({
     userAgent: req.headers["user-agent"] || "",

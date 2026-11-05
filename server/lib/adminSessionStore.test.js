@@ -147,7 +147,7 @@ test("4. a request from a different ip tag is NOT rejected (S07-H2: IP is not in
   assert.equal(store.validate(sessionId, otherIpCtx).valid, true);
 });
 
-test("4b. (S07-H3) the DEFAULT store does NOT reject a changed User-Agent — the WebView fetch-vs-navigation bug", () => {
+test("4b. (S05-M3) the DEFAULT store does NOT reject a changed User-Agent — the WebView fetch-vs-navigation bug", () => {
   const clock = makeClock();
   const store = makeStore(clock); // bindUserAgent defaults to false
   const sessionId = store.create(CTX);

@@ -33,7 +33,7 @@
 //     signed token itself, which no refresh can push past (weakness 1);
 //   - OPTIONAL binding to the caller's User-Agent, captured at issue time and
 //     compared on every `validate()` call — opt-in via `bindUserAgent: true`
-//     and OFF by default (see the S07-H3 section below for why enforcing it
+//     and OFF by default (see the S05-M3 section below for why enforcing it
 //     broke real mobile logins). Weakness 3 — "a leaked cookie is a full
 //     admin credential from anywhere" — is therefore addressed by the
 //     cookie's own properties (HMAC-signed, HttpOnly, Secure, SameSite=Lax,
@@ -87,7 +87,7 @@
 //       address is still recorded in the durable audit trail
 //       (`auditAdminEvent`), which is where it is useful.
 //
-// ── S07-H3: UA BINDING WAS THE *LAST* HALF-SECOND-LOGOUT FOOT-GUN ─────────────
+// ── S05-M3: UA BINDING WAS THE *LAST* HALF-SECOND-LOGOUT FOOT-GUN ─────────────
 //
 // The S07-H2 note above (c) claimed the User-Agent binding was "stable across
 // a network change" and could stay mandatory. On the actual target platform it
@@ -171,7 +171,7 @@ function createAdminSessionStore({
   secret = null,
   now = () => Date.now(),
   randomId = defaultRandomId,
-  // S07-H3: whether validate() REJECTS a request whose User-Agent differs from
+  // S05-M3: whether validate() REJECTS a request whose User-Agent differs from
   // the one bound at issue time. Default OFF — see (c) in the header comment.
   // The UA is still recorded on the session and baked (as a keyed tag) into the
   // signed token regardless, so turning this on later needs no token change.

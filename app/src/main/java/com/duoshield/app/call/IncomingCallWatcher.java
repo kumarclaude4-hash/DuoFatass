@@ -9,6 +9,8 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.Query;
 
+import com.duoshield.app.util.LogRedact;
+
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -88,7 +90,9 @@ public class IncomingCallWatcher {
 
         reg = q.addSnapshotListener((snap, err) -> {
             if (err != null) {
-                Log.w(TAG, "Incoming call watch error: " + err.getMessage());
+                // The query is scoped to myUid; avoid logging Firestore error text,
+                // which may contain query/document details in release logcat.
+                Log.w(TAG, "Incoming call watch failed (" + err.getClass().getSimpleName() + ")");
                 return;
             }
             if (snap == null) return;
@@ -160,7 +164,11 @@ public class IncomingCallWatcher {
                 })
                 .addOnFailureListener(e -> {
                     // Caller doc unreadable — still ring with a generic name.
-                    Log.w(TAG, "Could not fetch caller name for " + callerId + ": " + e.getMessage());
+                    // S10-N2: callerId is a Firebase UID; Log.w survives release builds.
+                    // Log only its process-salted tag and the exception type, not the raw ID
+                    // or backend exception text (which may include document details).
+                    Log.w(TAG, "Could not fetch caller name for " + LogRedact.uid(callerId)
+                            + " (" + e.getClass().getSimpleName() + ")");
                     com.duoshield.app.notifications.NotificationHelper.createChannel(context);
                     com.duoshield.app.notifications.NotificationStyler.showIncomingCall(
                             context, "DuoShield", callId, callerId, isVideo);

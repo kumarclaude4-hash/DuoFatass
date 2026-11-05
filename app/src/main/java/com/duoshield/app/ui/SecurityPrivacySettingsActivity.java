@@ -72,9 +72,9 @@ public class SecurityPrivacySettingsActivity extends BaseActivity {
 
         // ── Restore saved state ───────────────────────────────────────────────
         // Screenshot default comes from BaseActivity.SCREENSHOTS_ALLOWED_BY_DEFAULT so the
-        // switch can never render out of step with the FLAG_SECURE state actually enforced.
-        // That constant is TEMPORARILY true for the screenshot/testing pass; revert it to
-        // false (secure by default, S08-H2) before release.
+        // switch matches the enforced window flag. The default is false: FLAG_SECURE is
+        // applied on a fresh install unless the user explicitly opts in to screenshots.
+        // The preference is an intentional user choice and is applied across activities.
         if (switchAppScreenshot != null)
             switchAppScreenshot.setChecked(prefs.getBoolean("app_screenshot_enabled",
                     com.duoshield.app.BaseActivity.SCREENSHOTS_ALLOWED_BY_DEFAULT));

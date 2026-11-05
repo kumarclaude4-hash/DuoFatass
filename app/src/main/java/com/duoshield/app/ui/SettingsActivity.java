@@ -496,11 +496,13 @@ public class SettingsActivity extends BaseActivity {
                         doc.getReference()
                            .update("partnerName_" + partnerUid, myName)
                            .addOnFailureListener(e ->
-                               android.util.Log.w("Settings", "propagateName non-critical: " + e.getMessage()));
+                               android.util.Log.w("Settings", "propagateName non-critical ("
+                                       + e.getClass().getSimpleName() + ")"));
                     }
                 })
                 .addOnFailureListener(e ->
-                        android.util.Log.w("Settings", "propagateName query failed (non-critical): " + e.getMessage()));
+                        android.util.Log.w("Settings", "propagateName query failed (non-critical, "
+                                + e.getClass().getSimpleName() + ")"));
     }
 
     private void saveNameToFirestore(String name) {
@@ -512,7 +514,8 @@ public class SettingsActivity extends BaseActivity {
                 .set(Collections.singletonMap("displayName", name),
                         com.google.firebase.firestore.SetOptions.merge())
                 .addOnFailureListener(e ->
-                        android.util.Log.w("Settings", "displayName Firestore write failed", e));
+                        android.util.Log.w("Settings", "displayName Firestore write failed ("
+                                + e.getClass().getSimpleName() + ")"));
     }
 
     // ── Profile photo upload (B2) ─────────────────────────────────────────────
