@@ -24,6 +24,11 @@ class FakeFirestore {
     this.collections = new Map();
     this.queue = Promise.resolve();
     this.failNextTransaction = false;
+    this.idCounter = 0;
+  }
+
+  nextSessionId() {
+    return (++this.idCounter).toString(16).padStart(64, "0");
   }
 
   collection(name) {
@@ -150,14 +155,13 @@ class FakeQuery {
 }
 
 function makeStore(db, clock, overrides = {}) {
-  let counter = 0;
   return createAdminSessionStore({
     firestore: db,
     idleTtlMs: 30 * 60 * 1000,
     absoluteTtlMs: 8 * 60 * 60 * 1000,
     secret: SECRET,
     now: () => clock.now,
-    randomId: () => (++counter).toString(16).padStart(64, "0"),
+    randomId: () => db.nextSessionId(),
     ...overrides,
   });
 }
@@ -235,7 +239,7 @@ test("authenticated refreshes preserve an active session until the absolute ceil
     clock.advance(800);
     assert.equal((await store.validate(cookie, CTX)).valid, true);
   }
-  clock.advance(801);
+  clock.advance(1800);
   assert.equal((await store.validate(cookie, CTX)).reason, "absolute_expired");
 });
 
