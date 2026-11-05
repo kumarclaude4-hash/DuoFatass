@@ -4051,8 +4051,9 @@ const server = http.createServer((req, res) => {
   // Storing a nonce (random 32-byte hex string) in WorkManager's input data
   // is safe: unlike a Firebase ID token, a nonce has no intrinsic auth power.
   // It is bound server-side to the uid that requested it, so it cannot be used
-  // to lock any other account. It is single-use — consumed and deleted on the
-  // first successful /duress-lock call — so a leaked nonce cannot replay.
+  // to lock any other account. It is single-use — consumed atomically with the
+  // accountLock write. The consumed marker remains only until the one-hour
+  // expiresAt TTL so a retry after a lost HTTP response can be acknowledged.
   //
   if (req.method === "POST" && req.url === "/requestLockNonce") {
     // collectBody enforces MAX_BODY_BYTES even though the body is unused here —
@@ -4207,7 +4208,8 @@ const server = http.createServer((req, res) => {
 
         // Consume the nonce and set accountLock in one Firestore transaction.
         // The helper retains a consumed marker until TTL so a duplicate request
-        // after a lost HTTP response can confirm the already-landed duress lock.
+        // after a lost HTTP response can acknowledge the original commit without
+        // re-locking an account that an operator has since unfrozen.
         const lockOutcome = await db.runTransaction((tx) =>
           consumeDuressLockNonceInTransaction({
             tx,
