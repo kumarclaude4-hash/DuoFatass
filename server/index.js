@@ -17,6 +17,7 @@ const { createAdminSessionStore } = require("./lib/adminSessionStore");
 const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClient");
 const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
+const { createInviteStore } = require("./lib/inviteStore");
 
 let serviceAccount;
 try {
@@ -847,38 +848,38 @@ async function resetAdminAuthFailures(ip) {
 // a login would become an availability problem, and a failed write is itself
 // logged. adminAuditLog is server-only (`allow read, write: if false` in
 // firestore.rules), so entries cannot be read or tampered with by any client.
+function buildAdminAuditRecord(action, req, extra = {}) {
+  const headers = req && req.headers ? req.headers : {};
+  return {
+    action,
+    // S05-M1: keep a rotating pseudonymous IP tag, never the raw address.
+    adminIp: ipTag(getClientIp(req)),
+    userAgent: String(headers["user-agent"] || "").slice(0, 200),
+    at: FieldValue.serverTimestamp(),
+    ...extra,
+  };
+}
+
 function auditAdminEvent(action, req, extra = {}) {
   db.collection("adminAuditLog")
-    .add({
-      action,
-      // S05-M1: this used to be `getClientIp(req)` — the raw IP — written to
-      // a permanent, no-TTL Firestore collection. adminAuditLog is worse than
-      // a console log in exactly the way SEC-L01 (above) was written to
-      // prevent: console output on Render rotates, this collection does not,
-      // and the record is a join (IP + timestamp + action), not an isolated
-      // value. `ipTag()` keeps the "same operator across two rows?"
-      // correlation the finding asked to preserve, while an adversary who
-      // reaches this collection (Firestore access or a legal order) no
-      // longer gets a directly-identifying, resolvable IP for free.
-      //
-      // Caveat, documented rather than hidden: LOG_PEPPER is per-process and
-      // never persisted (see its own comment above), so a server restart
-      // makes pre-restart and post-restart tags uncorrelatable — acceptable
-      // for "was this the same operator in one incident window?", not
-      // sufficient for "was this the same operator six months apart?". That
-      // tradeoff is the durable-audit vs. non-identifying tension the
-      // finding calls out explicitly; this fix takes the non-identifying
-      // side, matching its prescribed resolution.
-      adminIp: ipTag(getClientIp(req)),
-      // Retained because a rotating tag with a constant user-agent (or vice
-      // versa) is the signal that distinguishes one operator on mobile data
-      // from a distributed guessing attempt.
-      userAgent: String(req.headers["user-agent"] || "").slice(0, 200),
-      at: FieldValue.serverTimestamp(),
-      ...extra,
-    })
+    .add(buildAdminAuditRecord(action, req, extra))
     .catch((err) => console.warn(`[admin] audit write failed (${action}):`, err.message));
 }
+
+// Invite mutations use this transactional variant so the lifecycle change and
+// the forensic record either both commit or both roll back.
+function auditAdminEventInTransaction(tx, action, req, extra = {}) {
+  const ref = db.collection("adminAuditLog").doc();
+  tx.create(ref, buildAdminAuditRecord(action, req, extra));
+}
+
+const inviteStore = createInviteStore({
+  firestore: db,
+  FieldValue,
+  Timestamp: admin.firestore.Timestamp,
+  tagUserId: uidTag,
+  stageAudit: auditAdminEventInTransaction,
+});
 
 // Constant-time comparison so token-guessing can't be timed byte-by-byte.
 // Implementation lives in ./lib/pure (unit-tested there).
