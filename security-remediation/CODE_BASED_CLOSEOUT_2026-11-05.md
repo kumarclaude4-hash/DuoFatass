@@ -18,6 +18,7 @@ No screenshot behavior or preference value was changed in this branch.
 
 - `server/index.js` now accurately says that User-Agent is captured as context but IP/User-Agent binding is not enforced.
 - The admin-session User-Agent compatibility notes in `server/lib/adminSessionStore.js`, `server/lib/adminSessionStore.test.js`, and `server/lib/adminAuditWiring.test.js` now reference **S05-M3**, not **S07-H3**. S07-H3 is the separate group-message AAD finding.
+- `IncomingCallWatcher.java` no longer writes the raw `callerId` Firebase UID or UID-scoped Firestore exception text to release logcat. It logs `LogRedact.uid(callerId)` plus the exception class, and its listener error path logs only the exception class. A new plain-JVM source regression test, `IncomingCallWatcherLogRedactionTest.java`, guards this call site.
 - No authentication, cookie, expiry, revocation, or session-validation logic was changed.
 
 The non-binding behavior is intentional: mobile networks can re-NAT during a session, and Android WebView navigation and fetch/XHR requests can send different User-Agent strings. The current code retains the captured User-Agent context but does not treat it as a session factor.
@@ -35,7 +36,7 @@ The non-binding behavior is intentional: mobile networks can re-NAT during a ses
 
 ## Verification and limits
 
-This branch changes comments, tests' finding labels, the tracker and handoff documentation; it does **not** change runtime security behavior. Source claims were checked against current files on `main` before editing.
+This branch changes comments, test finding labels, tracker and handoff documentation, plus one log-output privacy behavior: `IncomingCallWatcher` now emits a redacted caller-UID tag and exception class rather than the raw UID and backend error text. It does **not** change call routing, authentication, cryptography or message/data handling. Source claims were checked against current files on `main` before editing.
 
 No local build or test suite was executed in this editing pass. The PR's CI must validate the branch. Existing evidence referenced by the tracker/report includes:
 - Firestore emulator suite: 186/186 passing (S3-15b historical run).
@@ -55,7 +56,7 @@ No production Firebase, Cloudflare, Backblaze, Render, GitHub secret or signing-
 | S08-H2 screenshot controls | Physical-device tests for fresh-install default, explicit opt-in, recording and recents behavior across supported Android versions and activity transitions. | OS/device behavior cannot be proven by source inspection alone. |
 | S08-I1 release build | Run minified `assembleRelease`/R8 and test WorkManager reflection, serialization and crypto paths under obfuscation. | Requires Android build environment and release-equivalent validation. |
 | S06-L4 WorkManager | Runtime retry/idempotency tests for lock worker success, transient failure, permanent failure and duress/offline behavior. | Requires WorkManager runtime test harness and lifecycle execution. |
-| S10-N2 logging | Complete repo-wide review of release-surviving logs for raw peer/account identifiers and add regression coverage where gaps exist. | The prior redaction pass covered named call sites, not a complete current-tree sweep. |
+| S10-N2 logging | A targeted source search found and fixed a remaining direct caller-UID log in `IncomingCallWatcher`; the new source regression test guards that call site. Finish a comprehensive scan of all release-surviving `Log.w`/`Log.e` argument expressions and add broad regression coverage. | This pass found the explicit callerId leak but did not claim an AST-complete repository-wide scan or run the Android test suite. |
 | S10-N3 media tiering | Observe migration and compensating-delete behavior against isolated deployed R2/B2 resources, including retry/cleanup. | Unit tests exist; live Worker/R2/B2 execution is still external verification. |
 
 ## Production gates that remain outside repository-only work
