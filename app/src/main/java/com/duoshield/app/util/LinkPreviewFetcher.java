@@ -30,17 +30,63 @@ public class LinkPreviewFetcher {
 
     // ── Public API types ──────────────────────────────────────────────────────
 
+    /** Stable, non-sensitive outcome returned by the server-side fetcher. */
+    public enum Status {
+        OK,
+        NO_METADATA,
+        UNSUPPORTED_CONTENT,
+        BLOCKED,
+        TIMEOUT,
+        UPSTREAM_ERROR,
+        UNAVAILABLE;
+
+        public static Status fromWire(String value, boolean hasMetadata) {
+            if (value == null || value.trim().isEmpty()) {
+                // Backward compatibility with servers deployed before the
+                // status field existed.
+                return hasMetadata ? OK : NO_METADATA;
+            }
+            switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+                case "ok": return OK;
+                case "no_metadata": return NO_METADATA;
+                case "unsupported_content": return UNSUPPORTED_CONTENT;
+                case "blocked": return BLOCKED;
+                case "timeout": return TIMEOUT;
+                case "upstream_error": return UPSTREAM_ERROR;
+                case "unavailable": return UNAVAILABLE;
+                default: return UNAVAILABLE;
+            }
+        }
+
+        /** Only safe, deterministic outcomes should render a preview card. */
+        public boolean isDisplayable() {
+            return this == OK || this == NO_METADATA || this == UNSUPPORTED_CONTENT;
+        }
+    }
+
     public static class Preview {
         public final String url;
         public final String title;
         public final String domain;
         public final String imageUrl;
+        public final Status status;
 
+        /** Legacy constructor retained for in-process callers and older tests. */
         public Preview(String url, String title, String domain, String imageUrl) {
+            this(url, title, domain, imageUrl,
+                    (title != null || imageUrl != null) ? Status.OK : Status.NO_METADATA);
+        }
+
+        public Preview(String url, String title, String domain, String imageUrl, Status status) {
             this.url      = url;
             this.title    = title;
             this.domain   = domain;
             this.imageUrl = imageUrl;
+            this.status   = status == null ? Status.UNAVAILABLE : status;
+        }
+
+        public boolean isDisplayable() {
+            return status.isDisplayable();
         }
     }
 
@@ -97,12 +143,13 @@ public class LinkPreviewFetcher {
      * contacts the target URL directly.
      */
     private static Preview fetchViaServer(String urlStr) {
+        HttpURLConnection conn = null;
         try {
             String idToken = getIdTokenSync();
             if (idToken == null) return null;
 
             URL endpoint = new URL(BuildConfig.PUSH_SERVER_URL + "/linkPreview");
-            HttpURLConnection conn = (HttpURLConnection) endpoint.openConnection();
+            conn = (HttpURLConnection) endpoint.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Authorization", "Bearer " + idToken);
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
@@ -113,29 +160,41 @@ public class LinkPreviewFetcher {
             JSONObject body = new JSONObject();
             body.put("url", urlStr);
             try (OutputStream os = conn.getOutputStream()) {
-                os.write(body.toString().getBytes("UTF-8"));
+                os.write(body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
 
             int code = conn.getResponseCode();
-            if (code != 200) return null;
+            if (code != HttpURLConnection.HTTP_OK) return null;
 
             StringBuilder sb = new StringBuilder();
             try (BufferedReader br = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+                    new InputStreamReader(conn.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = br.readLine()) != null) sb.append(line);
+                while ((line = br.readLine()) != null) {
+                    sb.append(line);
+                    // The server contract is tiny JSON. Bound client parsing too,
+                    // so an unexpected/misconfigured endpoint cannot grow memory.
+                    if (sb.length() > 64 * 1024) return null;
+                }
             }
-            conn.disconnect();
 
             JSONObject resp = new JSONObject(sb.toString());
-            return new Preview(
-                urlStr,
-                resp.has("title")    ? resp.getString("title")    : null,
-                resp.has("domain")   ? resp.getString("domain")   : null,
-                resp.has("imageUrl") ? resp.getString("imageUrl") : null
-            );
+            String title = resp.has("title") && !resp.isNull("title")
+                    ? resp.getString("title") : null;
+            String domain = resp.has("domain") && !resp.isNull("domain")
+                    ? resp.getString("domain") : null;
+            String imageUrl = resp.has("imageUrl") && !resp.isNull("imageUrl")
+                    ? resp.getString("imageUrl") : null;
+            Status status = Status.fromWire(
+                    resp.isNull("status") ? null : resp.optString("status", null),
+                    title != null || imageUrl != null);
+            return new Preview(urlStr, title, domain, imageUrl, status);
         } catch (Exception e) {
+            // Network and parse failures remain a null callback result; the
+            // stable server-side categories are represented by Preview.status.
             return null;
+        } finally {
+            if (conn != null) conn.disconnect();
         }
     }
 
