@@ -62,6 +62,32 @@ public class AccountLockWorkerFailureTest {
         assertTrue(source.contains("return Result.failure()"));
     }
 
+    @Test
+    public void stalePendingIntentIsRetainedAndCanBeRefreshedOnlyForItsOriginalUid() throws IOException {
+        String store = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/PendingLockStore.java");
+        assertTrue(store.contains("replaceIntentTokenIfSubjectMatches"));
+        assertTrue(store.contains("uid.equals(prefs.getString(KEY_SUBJECT, null))"));
+        assertTrue(store.contains("else ed.remove(KEY_INTENT_TOKEN)"));
+
+        String manager = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        assertTrue(manager.contains("LOCK_NONCE_REFRESH_INTERVAL_MS = 30L * 60 * 1000"));
+        assertTrue(manager.contains("PendingLockStore.replaceIntentTokenIfSubjectMatches"));
+        assertTrue(manager.contains("drainPendingLockIntent(appCtx)"));
+
+        String drain = section(manager,
+                "public static boolean drainPendingLockIntent(Context context)",
+                "private static int postDuressLock");
+        assertTrue(drain.contains("PendingLockStore.clearLockIntent(appCtx)"));
+        String rejected = section(drain,
+                "else if (code >= 400 && code < 500",
+                "else {");
+        assertFalse("a permanent 4xx must not erase an unconfirmed lock intent",
+                rejected.contains("PendingLockStore.clearLockIntent"));
+        assertTrue(rejected.contains("account lock NOT confirmed"));
+    }
+
     private static String section(String source, String start, String end) {
         int from = source.indexOf(start);
         if (from < 0) throw new AssertionError("Missing source section: " + start);
