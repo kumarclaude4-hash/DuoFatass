@@ -88,6 +88,7 @@ if (!emulatorHost) {
       firestore,
       FieldValue,
       inviteStore,
+      legacyWaitlistCollection: collections.waitlist,
       userId: "",
       incomingHash: "",
       inviteToken: "",
