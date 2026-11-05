@@ -45,7 +45,6 @@ if (!emulatorHost) {
       Timestamp,
       now: () => clock.now,
       invitesCollection,
-      auditCollection,
       tagUserId: (uid) => crypto.createHash("sha256").update(uid).digest("hex").slice(0, 12),
       stageAudit(tx, action, context, extra) {
         const auditRef = db.collection(auditCollection).doc();
@@ -60,6 +59,17 @@ if (!emulatorHost) {
 
     const storeA = makeStore();
     const storeB = makeStore();
+    const auditFailureStore = createInviteStore({
+      firestore: db,
+      FieldValue,
+      Timestamp,
+      now: () => clock.now,
+      invitesCollection,
+      tagUserId: (uid) => crypto.createHash("sha256").update(uid).digest("hex").slice(0, 12),
+      stageAudit() {
+        throw new Error("simulated audit staging failure");
+      },
+    });
     const create = (label) => storeA.create({
       label,
       notes: "emulator integration",
@@ -74,6 +84,23 @@ if (!emulatorHost) {
         await deleteApp(app);
       }
     });
+
+    // Audit staging is part of the transaction contract. A failure must
+    // abort invite creation/revocation/redemption instead of committing an
+    // unaudited state transition.
+    const countBeforeFailedCreate = (await db.collection(invitesCollection).count().get()).data().count;
+    await assert.rejects(
+      () => auditFailureStore.create({
+        label: "Must roll back",
+        expiresAt: new Date(clock.now + 60 * 60 * 1000).toISOString(),
+      }, requestContext),
+      /simulated audit staging failure/
+    );
+    assert.equal(
+      (await db.collection(invitesCollection).count().get()).data().count,
+      countBeforeFailedCreate,
+      "failed audit staging must roll back the invite document"
+    );
 
     // Create through the same store used by the HTTP handlers. The plaintext
     // bearer token is returned once but only its hash/fingerprint are persisted.
@@ -117,6 +144,17 @@ if (!emulatorHost) {
     assert.equal(auditPayload.includes("seed-derived-user-b"), false);
     assert.match(usedAudit.docs[0].data().userIdTag, /^[0-9a-f]{12}$/);
 
+    // An audit failure during redemption must abort token consumption.
+    const rollbackRedemption = await create("Redemption audit rollback");
+    await assert.rejects(
+      () => db.runTransaction((tx) =>
+        auditFailureStore.redeemInTransaction(tx, "seed-derived-user-rollback", rollbackRedemption.token, requestContext)
+      ),
+      /simulated audit staging failure/
+    );
+    assert.equal(await storeA.isActive(rollbackRedemption.token), true,
+      "failed redemption audit staging must leave the invite active");
+
     // Repeated use must fail without creating a second audit event.
     await assert.rejects(
       () => db.runTransaction((tx) => storeB.redeemInTransaction(tx, "seed-derived-user-c", created.token, requestContext)),
@@ -139,11 +177,21 @@ if (!emulatorHost) {
     assert.equal(secondPage.nextCursor, null);
     const pageIds = [...firstPage.items, ...secondPage.items].map((item) => item.id);
     assert.equal(new Set(pageIds).size, 11, "cursor pagination must not duplicate records");
-    assert.equal(pageIds.includes(pageInvites[0].id) || pageIds.includes(pageInvites[10].id), true);
+    assert.deepEqual(
+      new Set(pageIds),
+      new Set(pageInvites.map((item) => item.id)),
+      "cursor pagination must return every matching invite exactly once"
+    );
 
     // Revoke is a state transition with an atomic audit record. Repeating the
     // request is a conflict, not a second successful revocation.
     const toRevoke = await create("Revoke me");
+    await assert.rejects(
+      () => auditFailureStore.revoke(toRevoke.id, "must roll back", requestContext),
+      /simulated audit staging failure/
+    );
+    assert.equal(await storeB.isActive(toRevoke.token), true,
+      "failed revoke audit staging must leave the invite active");
     assert.deepEqual(await storeA.revoke(toRevoke.id, "owner requested", requestContext), { status: "revoked" });
     assert.equal(await storeB.isActive(toRevoke.token), false);
     assert.deepEqual(await storeB.revoke(toRevoke.id, "duplicate", requestContext), {
