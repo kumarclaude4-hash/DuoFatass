@@ -236,13 +236,13 @@ test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-ch
 // index.js is actually WIRED to that store correctly — same "wiring, not
 // re-testing the logic" split S05-H2 above uses.
 
-// S07-H3: this test previously required createAdminSession() to bind BOTH the
+// S05-M3: this test previously required createAdminSession() to bind BOTH the
 // pseudonymised IP tag and the User-Agent. Both of those client-context
 // bindings have since been removed as enforced controls, because on real
 // mobile clients they rejected legitimate operators rather than attackers:
 //   - IP binding (removed first): mobile networks re-NAT mid-session, so the
 //     tag changed under a session that was still perfectly valid.
-//   - UA binding (S07-H3, removed here): an Android in-app WebView sends a
+//   - UA binding (S05-M3, removed here): an Android in-app WebView sends a
 //     DIFFERENT User-Agent on `fetch()`/XHR subrequests than on the top-level
 //     navigation, so every `/admin/api/*` call after a correct login failed
 //     `ua_mismatch` → 401 → the false "Your session expired." bounce.
@@ -251,7 +251,7 @@ test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-ch
 // rotation on login. UA is still CAPTURED (cheap, useful for the audit trail
 // and for operators who opt into `bindUserAgent: true` on a fleet with stable
 // clients), it is simply not enforced by default.
-test("S07-H3: session creation captures UA context but binds neither IP nor UA by default", () => {
+test("S05-M3: session creation captures UA context but binds neither IP nor UA by default", () => {
   const fnStart = SERVER_SOURCE.indexOf("function createAdminSession(req)");
   assert.ok(fnStart > 0, "createAdminSession(req) not found — must accept the request to capture client context");
   const fnEnd = SERVER_SOURCE.indexOf("\n}", fnStart);
