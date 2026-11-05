@@ -79,6 +79,15 @@
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "//": "S05-M3: TTL is physical cleanup only. Authorization checks idleExpiresAtMs and absoluteExpiresAtMs inside each Firestore transaction; no security decision depends on when this TTL process runs.",
+      "collectionGroup": "adminSessions",
+      "fieldPath": "purgeAt",
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" }
+      ]
     }
   ]
 }
