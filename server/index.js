@@ -3933,7 +3933,18 @@ const server = http.createServer((req, res) => {
           res.writeHead(400); res.end("Invalid URL scheme"); return;
         }
         if (isBlockedPreviewHost(parsed.hostname)) {
-          res.writeHead(403); res.end("Forbidden address"); return;
+          // Stable, non-oracular result shape for the Android client. Do not
+          // echo the guard reason or DNS/private-address details.
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          res.end(JSON.stringify({
+            url: targetUrl,
+            domain: parsed.hostname.replace(/^www\./, ""),
+            status: "blocked",
+          }));
+          return;
         }
 
         try {
@@ -3955,8 +3966,17 @@ const server = http.createServer((req, res) => {
           // originally-submitted address (what the sender actually typed/
           // pasted into the chat), only `domain` — the field the UI renders
           // as the card's identity — changes.
-          const preview = { url: targetUrl, domain: pure.previewDomainFromUrl(finalUrl, parsed.hostname) };
-          if (r.ok && (r.headers.get("content-type") || "").includes("text/html")) {
+          const preview = {
+            url: targetUrl,
+            domain: pure.previewDomainFromUrl(finalUrl, parsed.hostname),
+            status: "ok",
+          };
+          const contentType = String(r.headers.get("content-type") || "").toLowerCase();
+          if (!r.ok) {
+            preview.status = "upstream_error";
+          } else if (!contentType.includes("text/html")) {
+            preview.status = "unsupported_content";
+          } else {
             // S04-H2: `await r.text()` buffered the ENTIRE body before this
             // `.slice()` could bound it, so a host that streams gigabytes (or
             // advertises a small page and then doesn't stop) exhausted the heap
@@ -3971,6 +3991,7 @@ const server = http.createServer((req, res) => {
                      || html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
             const ogI = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']{4,500})["']/i)
                      || html.match(/<meta[^>]+content=["']([^"']{4,500})["'][^>]+property=["']og:image["']/i);
+            preview.status = (!ogT && !ogI) ? "no_metadata" : "ok";
             if (ogT) {
               // Decode the most common HTML entities that appear in <title> and
               // og:title content (&amp; &lt; &gt; &quot; &#39; &#NNN; &#xHHH;).
@@ -4053,9 +4074,19 @@ const server = http.createServer((req, res) => {
             cleanupPreview();
           }
         } catch (fetchErr) {
-          console.warn("/linkPreview fetch failed:", fetchErr.message);
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ url: targetUrl, domain: parsed.hostname.replace(/^www\./, "") }));
+          // The client gets a stable retry/UI category, never the exception
+          // text (which can contain internal hostnames, DNS answers or paths).
+          const status = pure.linkPreviewFailureStatus(fetchErr);
+          console.warn("/linkPreview fetch failed:", status);
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          res.end(JSON.stringify({
+            url: targetUrl,
+            domain: parsed.hostname.replace(/^www\./, ""),
+            status,
+          }));
         }
       } catch (e) {
         console.error("/linkPreview error:", e.message);
