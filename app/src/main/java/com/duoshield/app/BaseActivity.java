@@ -185,7 +185,7 @@ public class BaseActivity extends AppCompatActivity {
             // Deliberately placed in this else-branch: reaching it means there is a
             // valid session AND the app is genuinely foregrounded and unlocked, which is
             // exactly the "ordinary online foreground operation" the method's javadoc
-            // requires. It self-throttles (no-ops if the warm nonce is under 12h old),
+            // requires. It self-throttles (no-ops if the warm nonce is under 30 minutes old),
             // no-ops when signed out or offline, and does its network I/O on its own
             // background thread, so calling it from onStart() adds no main-thread work.
             try {
