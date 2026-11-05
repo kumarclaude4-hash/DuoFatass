@@ -691,22 +691,26 @@ const ADMIN_SESSION_ABSOLUTE_TTL_MS = 8 * 60 * 60 * 1000; // 8h
 // operator is thrown back to the login gate ("Your session expired") every
 // time Render redeploys, spins the free instance back up, or routes the next
 // request to a second instance — the reported "logs in for half a second, then
-// exits" bug. ADMIN_SESSION_SECRET pins it explicitly; by default it is
-// DERIVED from ADMIN_TOKEN, which is both stable across restarts and, as a
-// deliberate side effect, invalidates every existing session when the admin
-// token is rotated. The HKDF `info` label keeps this key distinct from the
-// token itself, so the cookie can never be reversed into the credential.
-// (No ADMIN_TOKEN → the panel already refuses every request, so a random
-// throwaway key is fine.)
+// exits" bug. ADMIN_SESSION_SECRET optionally supplies independent key material,
+// but the final HKDF key is ALSO salted with ADMIN_TOKEN. Therefore rotating
+// ADMIN_TOKEN invalidates all existing signed cookies even when an explicit
+// ADMIN_SESSION_SECRET is configured. The explicit value must be 32+ bytes
+// and should be generated with `openssl rand -hex 32`. The HKDF `info` label
+// separates this key from the token itself.
+// (No ADMIN_TOKEN → the panel refuses every request, so a throwaway key is fine.)
 const ADMIN_SESSION_SECRET = (() => {
   const explicit = String(process.env.ADMIN_SESSION_SECRET || "").trim();
-  if (explicit) return Buffer.from(explicit, "utf8");
-  if (ADMIN_TOKEN) {
-    return Buffer.from(
-      crypto.hkdfSync("sha256", Buffer.from(ADMIN_TOKEN, "utf8"), Buffer.alloc(0), "duoshield-admin-session-v1", 32)
-    );
+  if (explicit && Buffer.byteLength(explicit, "utf8") < 32) {
+    throw new Error("ADMIN_SESSION_SECRET must be at least 32 bytes");
   }
-  return crypto.randomBytes(32);
+  if (!ADMIN_TOKEN) return crypto.randomBytes(32);
+  const keyMaterial = explicit
+    ? Buffer.from(explicit, "utf8")
+    : Buffer.from(ADMIN_TOKEN, "utf8");
+  const tokenSalt = crypto.createHash("sha256").update(ADMIN_TOKEN, "utf8").digest();
+  return Buffer.from(
+    crypto.hkdfSync("sha256", keyMaterial, tokenSalt, "duoshield-admin-session-v2", 32)
+  );
 })();
 // S07-H2 (c) / S07-H3: neither the IP nor the User-Agent is part of the
 // validation reject path any more. A phone switching WiFi to LTE, CGNAT
@@ -728,6 +732,7 @@ if (process.env.ADMIN_BIND_SESSION_IP || process.env.ADMIN_BIND_SESSION_UA) {
   );
 }
 const adminSessionStore = createAdminSessionStore({
+  firestore: db,
   idleTtlMs: ADMIN_SESSION_IDLE_TTL_MS,
   absoluteTtlMs: ADMIN_SESSION_ABSOLUTE_TTL_MS,
   secret: ADMIN_SESSION_SECRET,
@@ -735,7 +740,13 @@ const adminSessionStore = createAdminSessionStore({
   bindUserAgent: false,
 });
 
-setInterval(() => adminSessionStore.sweep(), 5 * 60 * 1000);
+// Firestore TTL is asynchronous cleanup only; validate() checks both expiry
+// timestamps synchronously in its transaction and never relies on this sweep.
+setInterval(() => {
+  adminSessionStore.sweep().catch((err) => {
+    console.warn("admin sessions: expired-record cleanup failed:", err.message);
+  });
+}, 5 * 60 * 1000);
 
 // S04-L3: the admin brute-force failure counter (formerly the `adminIpFails`
 // Map right here) lived only in process memory, so a Render redeploy/crash/
@@ -912,12 +923,14 @@ function adminSessionCookie(sessionId, req, maxAgeSeconds) {
 
 const getCookie = pure.getCookie;
 
-// S05-M3: capture the request User-Agent as session context, but do not enforce
-// User-Agent or IP binding. Android WebView navigation and fetch/XHR requests
-// can send different User-Agent strings, while mobile networks can re-NAT an
-// operator mid-session; enforcing either value caused legitimate 401/session
-// expiry failures. The User-Agent remains available as captured context, and
-// request metadata is recorded through the durable audit trail.
+// S05-M3 / S07-H2: binds the new session to this request's User-Agent, so a
+// cookie captured from another channel (shared machine, synced browser
+// profile, log leak) fails adminSessionStore's binding check when replayed by
+// a different client. The client ADDRESS is deliberately not part of the
+// binding any more (see the ADMIN_BIND_SESSION_IP note above): it changes
+// mid-session on mobile networks and produced exactly the spurious
+// "session expired" logouts this fix removes. It is still written to the
+// durable audit trail via auditAdminEvent().
 function createAdminSession(req) {
   return adminSessionStore.create({
     userAgent: req.headers["user-agent"] || "",
@@ -934,7 +947,7 @@ function createAdminSession(req) {
 // route can no longer extend a session's idle timeout just by being loaded
 // (S05-M3 finding #2) — every genuinely authenticated admin/api call still
 // refreshes as before, capped at the session's absolute lifetime.
-function evaluateAdminSession(req, opts = {}) {
+async function evaluateAdminSession(req, opts = {}) {
   const sessionId = getCookie(req, "duoshield_admin_session");
   if (!sessionId) return { valid: false, reason: "missing" };
   return adminSessionStore.validate(
@@ -944,8 +957,8 @@ function evaluateAdminSession(req, opts = {}) {
   );
 }
 
-function hasValidAdminSession(req, opts = {}) {
-  return evaluateAdminSession(req, opts).valid;
+async function hasValidAdminSession(req, opts = {}) {
+  return (await evaluateAdminSession(req, opts)).valid;
 }
 
 // Returns true and lets the caller proceed, or writes a 401/429/503 response
@@ -997,7 +1010,20 @@ async function requireAdminAuth(req, res) {
   const tokenValid = supplied && safeTokenEqual(supplied, ADMIN_TOKEN);
   // Only evaluate the session when no valid token was supplied — token auth
   // does not touch/refresh the session store at all.
-  const sessionCheck = tokenValid ? { valid: false, reason: "not_checked" } : evaluateAdminSession(req);
+  let sessionCheck = { valid: false, reason: "not_checked" };
+  if (!tokenValid) {
+    try {
+      sessionCheck = await evaluateAdminSession(req);
+    } catch (err) {
+      // A database failure is not an authentication failure. Do not turn it
+      // into a 401 or increment the brute-force counter; cookie auth fails
+      // closed while direct ADMIN_TOKEN auth remains available.
+      console.error("admin api: durable session verification unavailable:", err.message);
+      res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+      res.end("Admin session verification unavailable");
+      return false;
+    }
+  }
   if (!tokenValid && !sessionCheck.valid) {
     await recordAdminAuthFailure(ip);
     // Logged so an unexpected mass-401 (e.g. the in-memory session map was
@@ -2141,8 +2167,17 @@ function startInactivityWarning() {
 }
 
 async function logout() {
-  try { await fetch("/admin/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
-  forceLogout(false);
+  let response = null;
+  try {
+    response = await fetch("/admin/logout", { method: "POST", credentials: "same-origin" });
+  } catch (_) {
+    // The operator is still signed out locally, but a copied cookie may not
+    // have been revoked by the server if the request never reached it.
+  }
+  if (!response || !response.ok) {
+    toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
+  }
+  forceLogout(false, false);
 }
 
 // S05-M3: bulk-revokes every admin session (including this one) via
@@ -2156,8 +2191,8 @@ async function revokeAllSessions(btn) {
   btn.textContent = "Signing out everywhere…";
   try {
     const data = await api("/admin/api/sessions/revoke-all", { method: "POST" });
-    toast("Signed out " + data.revokedCount + " session(s).");
-    forceLogout(false);
+    toast("All admin sessions have been invalidated. Sign in again.");
+    forceLogout(false, false);
   } catch (e) {
     if (e.message !== "unauthorized") toast("Sign out everywhere failed: " + e.message);
   } finally {
@@ -2166,7 +2201,7 @@ async function revokeAllSessions(btn) {
   }
 }
 
-function forceLogout(showMessage = true) {
+function forceLogout(showMessage = true, revokeOnServer = true) {
   TOKEN = "";
   sessionActive = false;
   clearTimeout(inactivityTimer);
@@ -2182,9 +2217,20 @@ function forceLogout(showMessage = true) {
   document.getElementById("gate").style.display = "block";
   document.getElementById("gateErr").textContent = showMessage ? "Session expired due to inactivity." : "";
   document.getElementById("tokenInput").value = "";
-  // Revoke the server-side session so the HttpOnly cookie cannot be reused
-  // until the 30-minute TTL elapses. Fire-and-forget; UI is already reset.
-  fetch("/admin/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  if (revokeOnServer) {
+    // Revoke the durable server-side session. Local logout is immediate, but
+    // warn when the server cannot confirm revocation: a copied cookie may remain
+    // usable until the store recovers or the session expires.
+    fetch("/admin/logout", { method: "POST", credentials: "same-origin" })
+      .then((response) => {
+        if (!response.ok) {
+          toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
+        }
+      })
+      .catch(() => {
+        toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
+      });
+  }
 }
 
 ["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach((evt) => {
@@ -4353,10 +4399,23 @@ const server = http.createServer((req, res) => {
       // failure branch.
       const clearedSessionCookie = adminSessionCookie("", req, 0);
       const staleSessionId = getCookie(req, "duoshield_admin_session");
-      const failLogin = (errorCode) => {
+      const failLogin = async (errorCode) => {
         // Also revoke server-side so the cookie cannot be replayed by anything
         // that captured it before this failed attempt.
-        if (staleSessionId) adminSessionStore.revoke(staleSessionId);
+        if (staleSessionId) {
+          try {
+            await adminSessionStore.revoke(staleSessionId);
+          } catch (err) {
+            console.error("admin login: stale session revocation unavailable:", err.message);
+            res.writeHead(503, {
+              "Content-Type": "text/plain",
+              "Cache-Control": "no-store",
+              "Set-Cookie": clearedSessionCookie,
+            });
+            res.end("Admin session service unavailable; retry sign-in");
+            return;
+          }
+        }
         res.writeHead(303, {
           Location: `/admin?error=${errorCode}`,
           "Cache-Control": "no-store",
@@ -4370,13 +4429,13 @@ const server = http.createServer((req, res) => {
         // and until this call existed it was recorded ONLY in Render's rolling
         // console. Every branch below writes durably for the same reason.
         auditAdminEvent("admin_login_blocked_locked_out", req);
-        failLogin("locked");
+        await failLogin("locked");
         return;
       }
       if (!ADMIN_TOKEN) {
         console.error("admin login: ADMIN_TOKEN is not configured on the server");
         auditAdminEvent("admin_login_unconfigured", req);
-        failLogin("unconfigured");
+        await failLogin("unconfigured");
         return;
       }
       if (!supplied || !safeTokenEqual(supplied, ADMIN_TOKEN)) {
@@ -4390,7 +4449,7 @@ const server = http.createServer((req, res) => {
           suppliedLength: supplied.length,
           failuresInWindow: await adminLockoutStore.count(ip),
         });
-        failLogin("invalid");
+        await failLogin("invalid");
         return;
       }
       // S04-L3: clear any accumulated failures now that this IP has proven it
@@ -4401,8 +4460,32 @@ const server = http.createServer((req, res) => {
       // Session-id rotation on login: drop whatever session the browser
       // arrived with before minting the new one, so a pre-set (fixated) or
       // simply stale id is never the one that ends up authenticated.
-      if (staleSessionId) adminSessionStore.revoke(staleSessionId);
-      const sessionId = createAdminSession(req);
+      try {
+        if (staleSessionId) await adminSessionStore.revoke(staleSessionId);
+      } catch (err) {
+        console.error("admin login: stale session revocation unavailable:", err.message);
+        res.writeHead(503, {
+          "Content-Type": "text/plain",
+          "Cache-Control": "no-store",
+          "Set-Cookie": clearedSessionCookie,
+        });
+        res.end("Admin session service unavailable; retry sign-in");
+        return;
+      }
+
+      let sessionId;
+      try {
+        sessionId = await createAdminSession(req);
+      } catch (err) {
+        console.error("admin login: durable session creation unavailable:", err.message);
+        res.writeHead(503, {
+          "Content-Type": "text/plain",
+          "Cache-Control": "no-store",
+          "Set-Cookie": clearedSessionCookie,
+        });
+        res.end("Admin session service unavailable; retry sign-in");
+        return;
+      }
       console.log(`admin login: success ip=${ip}`);
       // Success is audited as deliberately as failure: "nobody failed" is not
       // the same as "nobody got in", and only this row can answer the latter.
@@ -4410,40 +4493,67 @@ const server = http.createServer((req, res) => {
       res.writeHead(303, {
         Location: "/admin",
         "Cache-Control": "no-store",
-        "Set-Cookie": adminSessionCookie(sessionId, req, Math.floor(ADMIN_SESSION_TTL_MS / 1000)),
+        // Browser expiry is a ceiling, not the idle control. Authenticated
+        // API calls refresh the server-side 30-minute idle timestamp, so the
+        // cookie must remain present through the full 8-hour absolute window.
+        "Set-Cookie": adminSessionCookie(sessionId, req, Math.floor(ADMIN_SESSION_ABSOLUTE_TTL_MS / 1000)),
       });
       res.end();
     });
     return;
   }
 
-  // Explicitly revoke the in-memory session and expire the browser cookie.
-  // Keeping this server-side means sign-out works consistently across browsers
-  // and does not rely on JavaScript being able to access the HttpOnly cookie.
+  // Revoke the durable server-side record before reporting a successful
+  // logout. The local browser cookie is cleared even when Firestore is down;
+  // the 503 makes clear that a copied cookie may not have been revoked yet.
   if (req.method === "POST" && requestPath === "/admin/logout") {
-    const sessionId = getCookie(req, "duoshield_admin_session");
-    if (sessionId) adminSessionStore.revoke(sessionId);
-    // S05-H3: closes the session's audit interval. Without a logout row, a
-    // login at 02:00 looks open-ended forever, so every later action is
-    // ambiguous as to whether that session was still the one in use.
-    auditAdminEvent("admin_logout", req, { hadSession: Boolean(sessionId) });
-    res.writeHead(303, {
-      Location: "/admin",
-      "Cache-Control": "no-store",
-      "Set-Cookie": adminSessionCookie("", req, 0),
-    });
-    res.end();
+    (async () => {
+      const sessionId = getCookie(req, "duoshield_admin_session");
+      let revokeSucceeded = !sessionId;
+      if (sessionId) {
+        try {
+          await adminSessionStore.revoke(sessionId);
+          revokeSucceeded = true;
+        } catch (err) {
+          console.error("admin logout: durable session revocation unavailable:", err.message);
+        }
+      }
+
+      auditAdminEvent("admin_logout", req, {
+        hadSession: Boolean(sessionId),
+        revokeSucceeded,
+      });
+      const headers = {
+        "Cache-Control": "no-store",
+        "Set-Cookie": adminSessionCookie("", req, 0),
+      };
+      if (!revokeSucceeded) {
+        res.writeHead(503, { ...headers, "Content-Type": "text/plain" });
+        res.end("Admin session revocation unavailable; copied sessions may still be active");
+        return;
+      }
+      res.writeHead(303, { ...headers, Location: "/admin" });
+      res.end();
+    })();
     return;
   }
 
   if (req.method === "GET" && requestPath === "/admin") {
-    // S05-M3 finding #2: this route requires no auth and previously called
-    // hasValidAdminSession(req) with its default refresh behavior purely to
-    // decide which view (gate vs. app) to render — the side effect being
-    // that ANY request carrying the cookie (a browser prefetch, a restored
-    // tab, a background reload) extended the session's idle timeout with no
-    // real operator activity. {refresh: false} makes this call read-only.
-    const authenticated = hasValidAdminSession(req, { refresh: false });
+    (async () => {
+      let authenticated;
+      try {
+        // The render-only check is deliberately read-only: a prefetch or
+        // restored tab must not extend the idle timeout.
+        authenticated = await hasValidAdminSession(req, { refresh: false });
+      } catch (err) {
+        console.error("admin page: durable session verification unavailable:", err.message);
+        res.writeHead(503, {
+          "Content-Type": "text/plain",
+          "Cache-Control": "no-store",
+        });
+        res.end("Admin session service unavailable; retry shortly");
+        return;
+      }
     // Generate a fresh 128-bit nonce for each response so the inline <script>
     // tag is the only code the browser will execute (blocks injected scripts).
     const nonce = crypto.randomBytes(16).toString("base64");
@@ -4484,6 +4594,7 @@ const server = http.createServer((req, res) => {
         .replace("__APP_STYLE__", authenticated ? "display:block" : "display:none")
         .replace("__GATE_ERROR__", gateError)
     );
+    })();
     return;
   }
 
@@ -4769,8 +4880,10 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/admin/api/sessions/revoke-all") {
     requireAdminAuthThenBody(req, res, async () => {
       try {
-        const revokedCount = adminSessionStore.revokeAll();
-        auditAdminEvent("admin_sessions_revoked_all", req, { revokedCount });
+        const result = await adminSessionStore.revokeAll();
+        auditAdminEvent("admin_sessions_revoked_all", req, {
+          sessionGeneration: result.generation,
+        });
         res.writeHead(200, {
           "Content-Type": "application/json",
           // Expire the caller's own cookie too: revokeAll() already deleted
@@ -4779,9 +4892,11 @@ const server = http.createServer((req, res) => {
           // a clean logged-out state immediately.
           "Set-Cookie": adminSessionCookie("", req, 0),
         });
-        res.end(JSON.stringify({ ok: true, revokedCount }));
+        res.end(JSON.stringify({ ok: true, sessionGeneration: result.generation }));
       } catch (e) {
-        sendServerError(res, "admin/api/sessions/revoke-all", e);
+        console.error("admin/api/sessions/revoke-all: durable revocation unavailable:", e.message);
+        res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+        res.end("Admin session revocation unavailable");
       }
     });
     return;
