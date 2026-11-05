@@ -29,6 +29,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SERVER_SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+const INVITE_STORE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteStore.js"), "utf8");
 
 // Every admin auth event that must leave a durable trace. The action strings are
 // asserted literally so a rename that breaks a forensic query fails here.
@@ -112,20 +113,20 @@ test("S05-M1: the audit sink pseudonymises the operator IP, never writes it raw"
   // console logs), so a raw IP written here is a permanent, resolvable,
   // directly-identifying record — worse than the console logging SEC-L01 was
   // written to fix, in the collection meant to be its more careful cousin.
-  const sinkStart = SERVER_SOURCE.indexOf("function auditAdminEvent");
-  assert.ok(sinkStart > 0, "could not locate auditAdminEvent()");
+  const sinkStart = SERVER_SOURCE.indexOf("function buildAdminAuditRecord");
+  assert.ok(sinkStart > 0, "could not locate buildAdminAuditRecord()");
   const sinkEnd = SERVER_SOURCE.indexOf("\n}", sinkStart);
   const sinkBody = SERVER_SOURCE.slice(sinkStart, sinkEnd);
 
   assert.ok(
     /adminIp:\s*ipTag\(getClientIp\(req\)\)/.test(sinkBody),
-    "auditAdminEvent must write ipTag(getClientIp(req)), not the raw IP, as adminIp"
+    "buildAdminAuditRecord must write ipTag(getClientIp(req)), not the raw IP, as adminIp"
   );
   // The regression this guards against: `adminIp: getClientIp(req)` with no
   // ipTag() wrapper anywhere in the sink body.
   assert.ok(
     !/adminIp:\s*getClientIp\(req\)/.test(sinkBody),
-    "auditAdminEvent must not write the raw client IP as adminIp"
+    "buildAdminAuditRecord must not write the raw client IP as adminIp"
   );
 });
 
@@ -178,17 +179,19 @@ test("S05-H2: invite listing is bounded, newest-first, paginated, and exposes re
   const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "POST" && req.url === "/admin/api/invites/create"', routeStart);
   assert.ok(routeStart > 0 && nextRouteStart > routeStart, "invite list route missing");
   const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
-  assert.ok(handler.includes('orderBy("createdAt", "desc")'), "invite scan must select the newest records first");
-  assert.ok(handler.includes(".limit(1000).get()"), "invite scan must remain bounded");
-  assert.ok(handler.includes('db.collection("invites").count().get()'), "response must include the total invite count");
-  assert.ok(handler.includes("invite.decodeCursor("), "list route must accept an opaque pagination cursor");
-  assert.ok(handler.includes("invite.encodeCursor("), "list route must return a next-page cursor");
-  assert.ok(handler.includes("usedByUserId: data.usedByUserId || null"), "list response must include the account that redeemed an invite");
-  assert.ok(handler.includes("totalCount,"), "list response must include totalCount");
-  assert.ok(handler.includes("capped: totalCount > snap.size"), "bounded result must disclose when records were excluded");
-  assert.ok(handler.includes("counts,"), "list response must include status counts for the bounded result set");
+  assert.ok(handler.includes("requireAdminAuth(req, res)"), "invite list must authenticate");
+  assert.ok(handler.includes("inviteStore.list({"), "HTTP route must call the tested invite store");
+  assert.ok(INVITE_STORE_SOURCE.includes('orderBy("createdAt", "desc")'), "invite scan must select newest records first");
+  assert.ok(INVITE_STORE_SOURCE.includes(".limit(MAX_SCAN).get()"), "invite scan must remain bounded");
+  assert.ok(INVITE_STORE_SOURCE.includes(".count().get()"), "response must include total invite count");
+  assert.ok(INVITE_STORE_SOURCE.includes("invite.decodeCursor("), "store must accept an opaque pagination cursor");
+  assert.ok(INVITE_STORE_SOURCE.includes("invite.encodeCursor("), "store must return a next-page cursor");
+  assert.ok(INVITE_STORE_SOURCE.includes("usedByUserId: data.usedByUserId || null"), "list response must include redemption linkage");
+  assert.ok(INVITE_STORE_SOURCE.includes("totalCount,"), "list response must include totalCount");
+  assert.ok(INVITE_STORE_SOURCE.includes("capped: totalCount > snapshot.size"), "bounded result must disclose excluded records");
+  assert.ok(INVITE_STORE_SOURCE.includes("counts,"), "list response must include bounded status counts");
   assert.ok(SERVER_SOURCE.includes('usedByTd.textContent = item.usedByUserId || "—"'),
-    "admin UI must safely render the redeemed account linkage with textContent");
+    "admin UI must safely render redeemed account linkage with textContent");
 });
 
 // ── S05-H2 / invite-management wiring tests ──────────────────────────────────
@@ -201,16 +204,13 @@ test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
   assert.ok(routeStart > 0 && nextRouteStart > routeStart, "current invite create route missing");
   const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
   assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite create must authenticate before reading its body");
-  assert.ok(handler.includes("invite.hashInviteToken(rawToken)"), "only a token hash may be persisted");
-  assert.ok(handler.includes('status: "active"'), "new invites must start active");
-  assert.ok(handler.includes('auditAdminEvent("invite_created"'), "invite creation must be audited");
-  const createWriteStart = handler.indexOf("await ref.create({");
-  const createWriteEnd = handler.indexOf("});", createWriteStart);
-  assert.ok(createWriteStart >= 0 && createWriteEnd > createWriteStart, "invite write payload missing");
-  const storedRecord = handler.slice(createWriteStart, createWriteEnd);
-  assert.match(storedRecord, /tokenHash:\s*invite\.hashInviteToken\(rawToken\)/);
-  assert.match(storedRecord, /tokenFingerprint:\s*invite\.tokenFingerprint\(rawToken\)/);
-  assert.doesNotMatch(storedRecord, /(?:^|\\n)\\s*token\\s*:/m,
+  assert.ok(handler.includes("inviteStore.create(parsed, req)"), "HTTP handler must delegate to inviteStore");
+  assert.ok(INVITE_STORE_SOURCE.includes("invite.hashInviteToken(rawToken)"), "only a token hash may be persisted");
+  assert.ok(INVITE_STORE_SOURCE.includes("invite.tokenFingerprint(rawToken)"), "store must persist only the display fingerprint");
+  assert.ok(INVITE_STORE_SOURCE.includes('status: "active"'), "new invites must start active");
+  assert.ok(INVITE_STORE_SOURCE.includes('stageAudit(tx, "invite_created"'), "invite creation must stage audit in the transaction");
+  assert.ok(INVITE_STORE_SOURCE.includes("tx.create(ref"), "invite creation must be transactional");
+  assert.doesNotMatch(INVITE_STORE_SOURCE, /(?:^|\n)\s*token\s*:/m,
     "Firestore may store only tokenHash/tokenFingerprint, never the one-time raw token");
 });
 
@@ -220,10 +220,12 @@ test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-ch
   assert.ok(routeStart > 0, "current invite revoke route missing");
   const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart > routeStart ? nextRouteStart : routeStart + 5000);
   assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite revoke must authenticate before reading its body");
-  assert.ok(handler.includes("db.runTransaction(async (tx) =>"), "invite revoke must be transactional");
-  assert.ok(handler.includes('current !== "active"'), "used/expired/revoked invites must not be re-revoked");
-  assert.ok(handler.includes('status: "revoked"'), "revocation must persist its state");
-  assert.ok(handler.includes('auditAdminEvent("invite_revoked"'), "invite revocation must be audited");
+  assert.ok(handler.includes("inviteStore.revoke("), "HTTP handler must delegate to inviteStore");
+  assert.ok(INVITE_STORE_SOURCE.includes("firestore.runTransaction(async (tx) =>"), "invite revoke must be transactional");
+  assert.ok(INVITE_STORE_SOURCE.includes("tx.get(ref)"), "invite revoke transaction must read through tx.get");
+  assert.ok(INVITE_STORE_SOURCE.includes("current !== \"active\""), "used/expired/revoked invites must not be re-revoked");
+  assert.ok(INVITE_STORE_SOURCE.includes('status: "revoked"'), "revocation must persist its state");
+  assert.ok(INVITE_STORE_SOURCE.includes('stageAudit(tx, "invite_revoked"'), "revocation audit must be in the transaction");
   assert.doesNotMatch(SERVER_SOURCE, /req\.url === "\/admin\/api\/waitlist\/(?:approve|deny)"/,
     "retired waitlist write routes must not silently reappear");
 });
