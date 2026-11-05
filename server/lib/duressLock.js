@@ -20,6 +20,8 @@ async function consumeDuressLockNonceInTransaction({
   firestore,
   FieldValue,
   nonce,
+  nonceCollection = "_duressNonces",
+  accountLockCollection = "accountLock",
   now = Date.now(),
 } = {}) {
   if (!tx || typeof tx.get !== "function" ||
@@ -37,7 +39,7 @@ async function consumeDuressLockNonceInTransaction({
     return { status: 400, message: "Missing or invalid nonce" };
   }
 
-  const nonceRef = firestore.collection("_duressNonces").doc(nonce);
+  const nonceRef = firestore.collection(nonceCollection).doc(nonce);
   const nonceSnapshot = await tx.get(nonceRef);
   if (!nonceSnapshot.exists) {
     return { status: 403, message: "Invalid or already-consumed nonce" };
@@ -46,7 +48,7 @@ async function consumeDuressLockNonceInTransaction({
   const nonceData = nonceSnapshot.data() || {};
   const uid = nonceData.uid;
   const lockRef = typeof uid === "string" && uid.length > 0
-      ? firestore.collection("accountLock").doc(uid)
+      ? firestore.collection(accountLockCollection).doc(uid)
       : null;
 
   // A consumed nonce is kept until expiresAt TTL specifically to make a lost
