@@ -896,6 +896,18 @@ public class DuressManager {
                     // synchronous account locking run. Do not prune its credential
                     // with a background refresh that started on an earlier lifecycle.
                     if (DURESS_TRIGGER_IN_PROGRESS.get()) return;
+                    if (PendingLockStore.hasLockIntent(appCtx)) {
+                        LockIntentDrainResult prior =
+                                drainPendingLockIntentWithResult(appCtx);
+                        if (prior == LockIntentDrainResult.TRANSIENT_FAILURE) {
+                            // Do not rotate/prune a nonce whose request may already
+                            // have committed while its HTTP response was lost.
+                            android.util.Log.w("DuressManager",
+                                    "Pending lock retry was transient; preserving its nonce for the next drain.");
+                            return;
+                        }
+                    }
+                    if (DURESS_TRIGGER_IN_PROGRESS.get()) return;
                     String nonce = requestLockNonce(idToken);
                     if (nonce == null || nonce.isEmpty()) return;
 
@@ -935,25 +947,41 @@ public class DuressManager {
      *         attempt against the server succeeded — a failure just means it is
      *         still pending for the next launch or for {@link AccountLockWorker}).
      */
+    public enum LockIntentDrainResult {
+        NO_PENDING_INTENT,
+        NO_CREDENTIAL,
+        CONFIRMED,
+        PERMANENT_FAILURE,
+        TRANSIENT_FAILURE
+    }
+
+    /**
+     * Compatibility wrapper for the splash startup path. A true value means an
+     * intent was present, regardless of whether the network drain confirmed it.
+     */
     public static boolean drainPendingLockIntent(Context context) {
+        return drainPendingLockIntentWithResult(context)
+                != LockIntentDrainResult.NO_PENDING_INTENT;
+    }
+
+    /**
+     * Attempts the durable nonce before any replacement nonce is requested.
+     * Foreground credential maintenance uses the detailed result to avoid pruning
+     * a nonce whose prior lock transaction may have committed while its response
+     * was lost. Only a permanent rejection permits rotating to a fresh nonce;
+     * transient outcomes preserve the old nonce for another idempotent attempt.
+     */
+    private static LockIntentDrainResult drainPendingLockIntentWithResult(Context context) {
         final Context appCtx = context.getApplicationContext();
-        if (!PendingLockStore.hasLockIntent(appCtx)) return false;
+        if (!PendingLockStore.hasLockIntent(appCtx)) {
+            return LockIntentDrainResult.NO_PENDING_INTENT;
+        }
 
         String token = PendingLockStore.getIntentToken(appCtx);
         if (token == null || token.isEmpty()) {
-            // No usable nonce is currently stored, so this method cannot drain the
-            // intent while signed out: /duress-lock authenticates with the nonce itself
-            // and /requestLockNonce requires a live Firebase session.
-            //
-            // Do not clear the intent or report success. If this same account later
-            // establishes a valid foreground session, maintainLockCredential() can
-            // obtain a fresh UID-bound nonce, rotate this intent and enqueue a bounded
-            // retry. If that never happens (or connectivity never returns), a remote
-            // lock cannot be guaranteed; hasLockIntent() remains the honest indication
-            // that the account may still be unlocked.
             android.util.Log.w("DuressManager",
                     "Pending lock intent has no usable credential — account believed UNLOCKED.");
-            return true;
+            return LockIntentDrainResult.NO_CREDENTIAL;
         }
 
         try {
@@ -962,23 +990,26 @@ public class DuressManager {
                 PendingLockStore.clearLockIntentIfTokenMatches(appCtx, token);
                 PendingLockStore.clearWarmTokenIfMatches(appCtx, token);
                 android.util.Log.i("DuressManager", "Drained pending lock intent — confirmed.");
-            } else if (code >= 400 && code < 500 && code != 408 && code != 425 && code != 429) {
-                // A consumed nonce returns 200 as an idempotent acknowledgement of the
-                // original atomic lock commit (even if an admin has since unfrozen it).
-                // Any permanent 4xx therefore means the lock was NOT confirmed.
-                // Keep the intent: maintainLockCredential() can replace this stale
-                // nonce after the same account next has a valid foreground session.
+                return LockIntentDrainResult.CONFIRMED;
+            }
+            if (code >= 400 && code < 500 && code != 408 && code != 425 && code != 429) {
+                // A consumed nonce returns 200 as an idempotent acknowledgement of
+                // the original atomic lock commit, even if an administrator has
+                // since unfrozen the account. A permanent 4xx means no commit exists.
                 PendingLockStore.clearWarmTokenIfMatches(appCtx, token);
                 android.util.Log.e("DuressManager",
                         "Pending lock intent rejected (HTTP " + code
                                 + ") — account lock NOT confirmed; intent retained.");
-            } else {
-                android.util.Log.w("DuressManager", "Pending lock intent drain failed (HTTP " + code + ") — will retry.");
+                return LockIntentDrainResult.PERMANENT_FAILURE;
             }
+            android.util.Log.w("DuressManager",
+                    "Pending lock intent drain failed (HTTP " + code + ") — preserving nonce.");
+            return LockIntentDrainResult.TRANSIENT_FAILURE;
         } catch (Exception e) {
-            android.util.Log.w("DuressManager", "Pending lock intent drain failed (offline?) — will retry: " + e.getMessage());
+            android.util.Log.w("DuressManager",
+                    "Pending lock intent drain failed (offline?) — preserving nonce: " + e.getMessage());
+            return LockIntentDrainResult.TRANSIENT_FAILURE;
         }
-        return true;
     }
 
     /** Shared HTTP POST to {@code /duress-lock}. Returns the HTTP status code. */
