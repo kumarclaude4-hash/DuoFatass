@@ -70,6 +70,10 @@ public class AccountLockWorkerFailureTest {
         String store = readProjectFile(
                 "app/src/main/java/com/duoshield/app/security/PendingLockStore.java");
         assertTrue(store.contains("replaceIntentTokenIfSubjectMatches"));
+        assertTrue(store.contains("clearLockIntentIfTokenMatches"));
+        assertTrue(store.contains("clearLockIntentIfSubjectMatches"));
+        assertTrue(store.contains("clearWarmTokenIfMatches"));
+        assertTrue(store.contains("synchronized (LOCK_STATE_MUTEX)"));
         assertTrue(store.contains("uid.equals(prefs.getString(KEY_SUBJECT, null))"));
         assertTrue(store.contains("else ed.remove(KEY_INTENT_TOKEN)"));
 
@@ -82,14 +86,14 @@ public class AccountLockWorkerFailureTest {
         String drain = section(manager,
                 "public static boolean drainPendingLockIntent(Context context)",
                 "private static int postDuressLock");
-        assertTrue(drain.contains("PendingLockStore.clearLockIntent(appCtx)"));
+        assertTrue(drain.contains("PendingLockStore.clearLockIntentIfTokenMatches(appCtx, token)"));
         String rejected = section(drain,
                 "else if (code >= 400 && code < 500",
                 "else {");
         assertFalse("a permanent 4xx must not erase an unconfirmed lock intent",
                 rejected.contains("PendingLockStore.clearLockIntent"));
         assertTrue(rejected.contains("account lock NOT confirmed"));
-        assertTrue(rejected.contains("PendingLockStore.clearWarmToken"));
+        assertTrue(rejected.contains("PendingLockStore.clearWarmTokenIfMatches(appCtx, token)"));
     }
 
     private static String section(String source, String start, String end) {
