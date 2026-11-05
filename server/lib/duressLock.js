@@ -47,16 +47,21 @@ async function consumeDuressLockNonceInTransaction({
 
   const nonceData = nonceSnapshot.data() || {};
   const uid = nonceData.uid;
-  const lockRef = typeof uid === "string" && uid.length > 0
-      ? firestore.collection(accountLockCollection).doc(uid)
-      : null;
+
+  // The uid is server-authenticated when the nonce is issued. A missing or
+  // malformed uid therefore means the stored nonce is corrupt, not a valid
+  // credential; delete it and fail permanently before constructing a doc ref.
+  if (typeof uid !== "string" || uid.length === 0) {
+    tx.delete(nonceRef);
+    return { status: 401, message: "Nonce expired or malformed" };
+  }
+  const lockRef = firestore.collection(accountLockCollection).doc(uid);
 
   // A consumed nonce is kept until expiresAt TTL specifically to make a lost
   // HTTP response/retry idempotent. Confirm only when the matching account is
   // still latched by this duress flow; never turn a consumed nonce into a
   // general success oracle for another kind of account lock.
   if (nonceData.consumedAt) {
-    if (!lockRef) return { status: 403, message: "Invalid or already-consumed nonce" };
     const lockSnapshot = await tx.get(lockRef);
     const lockData = lockSnapshot.exists ? (lockSnapshot.data() || {}) : {};
     if (lockData.locked === true && lockData.lockedBy === "duress") {
