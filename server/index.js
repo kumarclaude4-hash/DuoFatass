@@ -1803,7 +1803,7 @@ async function loadInvites(reset) {
     document.getElementById("invitesNextBtn").disabled = !inviteNextCursor;
     setCount("active", data.counts.active);
     const meta = document.getElementById("invitesMeta");
-    meta.textContent = `Total issued: ${data.totalCount}. The list and status counts cover the newest ${Math.min(data.totalCount, 1000)} records.`;
+    meta.textContent = "Total issued: " + data.totalCount + ". The list and status counts cover the newest " + Math.min(data.totalCount, 1000) + " records.";
     const body = document.getElementById("invitesBody");
     body.innerHTML = "";
     setEmpty("invites", !data.items.length);
@@ -1844,7 +1844,7 @@ async function loadInvites(reset) {
       body.appendChild(tr);
     }
     if (data.capped) {
-      toast(`Showing the newest 1,000 of ${data.totalCount} invites; older records are excluded from status counts.`);
+      toast("Showing the newest 1,000 of " + data.totalCount + " invites; older records are excluded from status counts.");
     }
   } catch (e) {
     if (e.message !== "unauthorized") toast("Failed to load invites: " + e.message);
