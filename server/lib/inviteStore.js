@@ -29,8 +29,7 @@ function createInviteStore({
   randomToken = invite.createInviteToken,
   tagUserId,
   invitesCollection = INVITE_COLLECTION,
-  auditCollection = "adminAuditLog",
-  stageAudit = () => {},
+  stageAudit,
 } = {}) {
   if (!firestore || typeof firestore.collection !== "function" ||
       typeof firestore.runTransaction !== "function") {
