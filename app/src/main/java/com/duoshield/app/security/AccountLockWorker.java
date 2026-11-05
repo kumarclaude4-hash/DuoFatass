@@ -143,8 +143,8 @@ public class AccountLockWorker extends Worker {
                 if (disposition == AccountLockHttpPolicy.Disposition.LOCK_CONFIRMED) {
                     Log.d(TAG, "Account lock confirmed by push server.");
                     // Clear the durable intent only after a confirmed 200/204.
-                    PendingLockStore.clearLockIntent(getApplicationContext());
-                    PendingLockStore.clearWarmToken(getApplicationContext());
+                    PendingLockStore.clearLockIntentIfTokenMatches(getApplicationContext(), nonce);
+                    PendingLockStore.clearWarmTokenIfMatches(getApplicationContext(), nonce);
                     return Result.success();
                 }
                 if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE) {
@@ -154,7 +154,7 @@ public class AccountLockWorker extends Worker {
                     // The credential is permanently rejected. Preserve the
                     // lock intent, but invalidate this warm copy so the next
                     // authenticated foreground session requests a fresh nonce.
-                    PendingLockStore.clearWarmToken(getApplicationContext());
+                    PendingLockStore.clearWarmTokenIfMatches(getApplicationContext(), nonce);
                     Log.e(TAG, "Push server rejected lock request (HTTP " + code
                             + ") — account lock NOT confirmed; durable intent retained.");
                     return Result.failure();
