@@ -56,8 +56,8 @@ public class AccountLockWorkerFailureTest {
         String confirmed = section(source,
                 "if (disposition == AccountLockHttpPolicy.Disposition.LOCK_CONFIRMED)",
                 "if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE)");
-        assertTrue(confirmed.contains("PendingLockStore.clearLockIntent"));
-        assertTrue(confirmed.contains("PendingLockStore.clearWarmToken"));
+        assertTrue(confirmed.contains("PendingLockStore.clearLockIntentIfTokenMatches(getApplicationContext(), nonce)"));
+        assertTrue(confirmed.contains("PendingLockStore.clearWarmTokenIfMatches(getApplicationContext(), nonce)"));
         assertTrue(confirmed.contains("return Result.success()"));
 
         assertTrue(source.contains("Missing nonce — account lock NOT confirmed"));
@@ -82,11 +82,13 @@ public class AccountLockWorkerFailureTest {
         assertTrue(manager.contains("LOCK_NONCE_REFRESH_INTERVAL_MS = 30L * 60 * 1000"));
         assertTrue(manager.contains("PendingLockStore.replaceIntentTokenIfSubjectMatches"));
         assertTrue(manager.contains("AccountLockWorker.enqueue(appCtx, nonce)"));
+        assertTrue(manager.contains("PendingLockStore.clearLockIntentIfSubjectMatches(appCtx, uidBeforeWipe)"));
 
         String drain = section(manager,
                 "public static boolean drainPendingLockIntent(Context context)",
                 "private static int postDuressLock");
         assertTrue(drain.contains("PendingLockStore.clearLockIntentIfTokenMatches(appCtx, token)"));
+        assertTrue(drain.contains("PendingLockStore.clearWarmTokenIfMatches(appCtx, token)"));
         String rejected = section(drain,
                 "else if (code >= 400 && code < 500",
                 "else {");
