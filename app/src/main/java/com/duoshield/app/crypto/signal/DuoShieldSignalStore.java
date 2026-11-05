@@ -215,7 +215,13 @@ public final class DuoShieldSignalStore
         if (fp != null) {
             String b64 = prefs.getString(KEY_TRUST_BY_FP_PREFIX + fp, null);
             if (b64 != null) {
-                decodeStoredIdentityBase64(b64, "Fingerprint-keyed identity trust record");
+                byte[] serialized = decodeStoredIdentityBase64(
+                        b64, "Fingerprint-keyed identity trust record");
+                String actualFingerprint = fingerprintOf(serialized);
+                if (!actualFingerprint.equals(fp)) {
+                    throw new TrustRecordCorruptionException(
+                            "Fingerprint pointer does not match its backing identity record");
+                }
                 return new String[]{fp, b64};
             }
             // A dangling pointer is not a first-contact state. Try the legacy
@@ -237,6 +243,10 @@ public final class DuoShieldSignalStore
         final byte[] legacyBytes = decodeStoredIdentityBase64(
                 legacyB64, "Legacy identity trust record");
         String legacyFp = fingerprintOf(legacyBytes);
+        if (fp != null && !fp.equals(legacyFp)) {
+            throw new TrustRecordCorruptionException(
+                    "Dangling fingerprint pointer conflicts with the legacy identity record");
+        }
         prefs.edit()
             .putString(KEY_TRUST_BY_FP_PREFIX + legacyFp, legacyB64)
             .putString(pointerKey, legacyFp)
