@@ -35,6 +35,7 @@ either widens the blast radius of both.
 | Variable | Purpose | Missing | Weak |
 |---|---|---|---|
 | `ADMIN_TOKEN` | Bearer token for the `/admin` panel and `/admin/api/*` | Panel returns `503`; server still runs and pushes notifications | **Server refuses to boot** (`process.exit(1)`) |
+| `ADMIN_SESSION_SECRET` | Optional independent key material for signed admin-session cookies; final key is also bound to `ADMIN_TOKEN` | Derived from `ADMIN_TOKEN` | Explicit value shorter than 32 UTF-8 bytes refuses startup; generate with `openssl rand -hex 32` |
 | `MEDIA_TOKEN_SECRET` | Signs B2 media capability tokens. Must match the Worker's copy | `/mediaToken` refuses to mint; media upload/download fails | **Not validated** — see below |
 | `LINK_PREVIEW_PROXY_SECRET` | Signs `/linkPreviewImage` proxy URLs | Previews render **without images** — deliberately, so a recipient's IP is never leaked to the linked host (S04-H3) | Treated as unset, with an error logged |
 
@@ -59,6 +60,45 @@ Note the deliberate asymmetry between `ADMIN_TOKEN` (weak ⇒ refuse to boot) an
 must never be deployed; link previews are cosmetic, and killing the whole
 messaging server over one would trade a small exposure for a total outage.
 
+### Durable admin sessions (S05-M3)
+
+Admin cookie sessions are backed by Firestore, not a process-local cache.
+Each random 256-bit session identifier is HMAC-derived into a Firestore
+document ID; the raw identifier and cookie are never stored. The session
+record enforces a 30-minute sliding idle expiry and an 8-hour absolute expiry.
+Every cookie-authenticated admin request validates the record and the
+fleet-wide generation in a Firestore transaction, then refreshes the idle
+expiry. A Firestore outage therefore returns **503** for cookie authentication
+rather than accepting a signature alone or counting the outage as a bad
+password. Direct `x-admin-token` authentication remains independent of the
+session ledger.
+
+`POST /admin/logout` deletes one durable session record. “Sign out everywhere”
+atomically increments `adminSessionControl/global.generation`; sessions issued
+under an earlier generation are rejected by every Render instance without a
+collection scan. Session records live in `adminSessions`; both
+`adminSessions` and `adminSessionControl` are denied to client SDKs by
+`firestore.rules`. The `adminSessions.purgeAt` Firestore TTL policy only
+removes expired records physically — authorization always checks the exact
+idle and absolute timestamps in the request transaction and never relies on
+TTL deletion timing.
+
+Deploy the matching rules and TTL configuration with:
+
+```sh
+firebase deploy --only firestore:rules,firestore:indexes
+```
+
+The release invalidates pre-migration process-local admin cookies; the operator
+must sign in again after rollout. Keep `ADMIN_SESSION_SECRET` identical across
+all server instances. It is optional; if set, use at least 32 random bytes.
+The final signing key also depends on `ADMIN_TOKEN`, so rotating the admin
+token invalidates old signed cookies even when this variable is set. Keep IP
+and User-Agent binding disabled by default: mobile network changes and Android
+WebView request-header differences caused false session rejection. A stolen
+live cookie remains a bearer credential; revoke it with “Sign out everywhere”
+and consider a separate WebAuthn/step-up-authentication design for destructive
+admin actions.
 ### Feature-scoped (absence disables one feature only)
 
 | Variable | Purpose | Missing |
