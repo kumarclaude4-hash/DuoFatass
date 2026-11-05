@@ -645,7 +645,7 @@ public class DuressManager {
                 // Confirmed by the live session — the durable intent recorded above
                 // has already done its job; drop it so a stale record does not sit
                 // around and does not get redundantly retried by the drain path.
-                PendingLockStore.clearLockIntent(appCtx);
+                PendingLockStore.clearLockIntentIfSubjectMatches(appCtx, uidBeforeWipe);
             } else if (uidBeforeWipe != null && userBeforeWipe != null) {
                 // 3b. Request a server-issued one-time nonce for AccountLockWorker to
                 //     use as a retry fallback. Done here — before sign-out — so the
@@ -925,8 +925,8 @@ public class DuressManager {
         try {
             int code = postDuressLock(token);
             if (code == 200 || code == 204) {
-                PendingLockStore.clearLockIntent(appCtx);
-                PendingLockStore.clearWarmToken(appCtx);
+                PendingLockStore.clearLockIntentIfTokenMatches(appCtx, token);
+                PendingLockStore.clearWarmTokenIfMatches(appCtx, token);
                 android.util.Log.i("DuressManager", "Drained pending lock intent — confirmed.");
             } else if (code >= 400 && code < 500 && code != 408 && code != 425 && code != 429) {
                 // A consumed nonce returns 200 as an idempotent acknowledgement of the
@@ -934,7 +934,7 @@ public class DuressManager {
                 // Any permanent 4xx therefore means the lock was NOT confirmed.
                 // Keep the intent: maintainLockCredential() can replace this stale
                 // nonce after the same account next has a valid foreground session.
-                PendingLockStore.clearWarmToken(appCtx);
+                PendingLockStore.clearWarmTokenIfMatches(appCtx, token);
                 android.util.Log.e("DuressManager",
                         "Pending lock intent rejected (HTTP " + code
                                 + ") — account lock NOT confirmed; intent retained.");
