@@ -183,13 +183,41 @@ public final class DuoShieldSignalStore
      * @return {@code null} if no trust record exists yet for this address (first
      *         contact); otherwise {fingerprintHex, base64(serializedKey)}.
      */
+    /**
+     * Decode a persisted identity-key encoding strictly. Android's Base64
+     * decoder is intentionally lenient and may ignore non-alphabet characters;
+     * accepting that behavior for a trust record can turn corrupted bytes into
+     * a different key. Every value written by this class uses NO_WRAP, so the
+     * canonical re-encoding must match the stored value byte-for-byte.
+     */
+    private static byte[] decodeStoredIdentityBase64(String encoded, String description) {
+        if (encoded == null || encoded.isEmpty()) {
+            throw new TrustRecordCorruptionException(description + " is empty");
+        }
+        final byte[] decoded;
+        try {
+            decoded = Base64.decode(encoded, Base64.NO_WRAP);
+        } catch (IllegalArgumentException e) {
+            throw new TrustRecordCorruptionException(description + " is not valid Base64", e);
+        }
+        if (decoded.length == 0
+                || !Base64.encodeToString(decoded, Base64.NO_WRAP).equals(encoded)) {
+            throw new TrustRecordCorruptionException(
+                    description + " is not canonical Base64");
+        }
+        return decoded;
+    }
+
     String[] readTrustRecord(SignalProtocolAddress address) {
         SharedPreferences prefs = securePrefs();
         String pointerKey = KEY_FP_POINTER_PREFIX + address.toString();
         String fp = prefs.getString(pointerKey, null);
         if (fp != null) {
             String b64 = prefs.getString(KEY_TRUST_BY_FP_PREFIX + fp, null);
-            if (b64 != null) return new String[]{fp, b64};
+            if (b64 != null) {
+                decodeStoredIdentityBase64(b64, "Fingerprint-keyed identity trust record");
+                return new String[]{fp, b64};
+            }
             // A dangling pointer is not a first-contact state. Try the legacy
             // record as a recoverable migration source, but never silently return
             // null when both representations are absent: callers interpret null
@@ -206,16 +234,8 @@ public final class DuoShieldSignalStore
             }
             return null; // genuinely first contact: neither pointer nor legacy record exists
         }
-        final byte[] legacyBytes;
-        try {
-            legacyBytes = Base64.decode(legacyB64, Base64.NO_WRAP);
-        } catch (IllegalArgumentException e) {
-            throw new TrustRecordCorruptionException(
-                    "Legacy identity trust record is not valid Base64", e);
-        }
-        if (legacyBytes.length == 0) {
-            throw new TrustRecordCorruptionException("Legacy identity trust record is empty");
-        }
+        final byte[] legacyBytes = decodeStoredIdentityBase64(
+                legacyB64, "Legacy identity trust record");
         String legacyFp = fingerprintOf(legacyBytes);
         prefs.edit()
             .putString(KEY_TRUST_BY_FP_PREFIX + legacyFp, legacyB64)
@@ -341,7 +361,10 @@ public final class DuoShieldSignalStore
         if (record == null) return null;
         String b64 = record[1];
         try {
-            return new IdentityKey(Base64.decode(b64, Base64.NO_WRAP), 0);
+            return new IdentityKey(
+                    decodeStoredIdentityBase64(b64, "Stored identity trust record"), 0);
+        } catch (TrustRecordCorruptionException e) {
+            throw e;
         } catch (Exception e) {
             // A corrupt stored trust record must not be reported as "no prior
             // identity": isTrustedIdentity treats null as first contact (TOFU).
