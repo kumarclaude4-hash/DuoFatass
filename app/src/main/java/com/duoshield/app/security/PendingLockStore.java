@@ -70,6 +70,10 @@ public final class PendingLockStore {
 
     private PendingLockStore() {}
 
+    // Protect compare-and-clear transitions from late WorkManager responses racing
+    // with a foreground refresh that has already installed a newer nonce.
+    private static final Object LOCK_STATE_MUTEX = new Object();
+
     /** Teardown is in flight or was interrupted; drives the resume path (S06-M5). */
     private static final String KEY_RESET_PENDING = "session_migration_pending";
 
@@ -156,14 +160,16 @@ public final class PendingLockStore {
      */
     public static void recordLockIntent(Context ctx, String uid, String nonce) {
         if (uid == null || uid.isEmpty()) return;
-        try {
-            SharedPreferences.Editor ed = sp(ctx).edit()
-                    .putString(KEY_SUBJECT, uid)
-                    .putLong(KEY_INTENT_TS, System.currentTimeMillis());
-            if (nonce != null && !nonce.isEmpty()) ed.putString(KEY_INTENT_TOKEN, nonce);
-            else ed.remove(KEY_INTENT_TOKEN); // never inherit a previous account's credential
-            ed.commit();
-        } catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences.Editor ed = sp(ctx).edit()
+                        .putString(KEY_SUBJECT, uid)
+                        .putLong(KEY_INTENT_TS, System.currentTimeMillis());
+                if (nonce != null && !nonce.isEmpty()) ed.putString(KEY_INTENT_TOKEN, nonce);
+                else ed.remove(KEY_INTENT_TOKEN); // never inherit a previous account's credential
+                ed.commit();
+            } catch (Exception ignored) {}
+        }
     }
 
     public static boolean hasLockIntent(Context ctx) {
@@ -191,12 +197,14 @@ public final class PendingLockStore {
         if (ctx == null || uid == null || uid.isEmpty() || nonce == null || nonce.isEmpty()) {
             return false;
         }
-        try {
-            SharedPreferences prefs = sp(ctx);
-            if (!uid.equals(prefs.getString(KEY_SUBJECT, null))) return false;
-            return prefs.edit().putString(KEY_INTENT_TOKEN, nonce).commit();
-        } catch (Exception e) {
-            return false;
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!uid.equals(prefs.getString(KEY_SUBJECT, null))) return false;
+                return prefs.edit().putString(KEY_INTENT_TOKEN, nonce).commit();
+            } catch (Exception e) {
+                return false;
+            }
         }
     }
 
@@ -206,13 +214,37 @@ public final class PendingLockStore {
      * nonce is not evidence that a lock landed; those paths must retain the intent.
      */
     public static void clearLockIntent(Context ctx) {
-        try {
-            sp(ctx).edit()
-                   .remove(KEY_SUBJECT)
-                   .remove(KEY_INTENT_TOKEN)
-                   .remove(KEY_INTENT_TS)
-                   .commit();
-        } catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                sp(ctx).edit()
+                       .remove(KEY_SUBJECT)
+                       .remove(KEY_INTENT_TOKEN)
+                       .remove(KEY_INTENT_TS)
+                       .commit();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Clears a completed request only if the intent still carries that request's
+     * nonce. A delayed response from an older WorkManager task must not erase a
+     * newer same-account intent that has already been rotated to a fresh nonce.
+     */
+    public static boolean clearLockIntentIfTokenMatches(Context ctx, String nonce) {
+        if (ctx == null || nonce == null || nonce.isEmpty()) return false;
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!nonce.equals(prefs.getString(KEY_INTENT_TOKEN, null))) return false;
+                return prefs.edit()
+                        .remove(KEY_SUBJECT)
+                        .remove(KEY_INTENT_TOKEN)
+                        .remove(KEY_INTENT_TS)
+                        .commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
     }
 
     // ── Warm lock credential (S06-H3 secondary) ───────────────────────────────
@@ -223,12 +255,14 @@ public final class PendingLockStore {
      */
     public static void putWarmToken(Context ctx, String nonce) {
         if (nonce == null || nonce.isEmpty()) return;
-        try {
-            sp(ctx).edit()
-                   .putString(KEY_WARM_TOKEN, nonce)
-                   .putLong(KEY_WARM_TS, System.currentTimeMillis())
-                   .commit();
-        } catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                sp(ctx).edit()
+                       .putString(KEY_WARM_TOKEN, nonce)
+                       .putLong(KEY_WARM_TS, System.currentTimeMillis())
+                       .commit();
+            } catch (Exception ignored) {}
+        }
     }
 
     public static String getWarmToken(Context ctx) {
@@ -247,8 +281,24 @@ public final class PendingLockStore {
     }
 
     public static void clearWarmToken(Context ctx) {
-        try { sp(ctx).edit().remove(KEY_WARM_TOKEN).remove(KEY_WARM_TS).commit(); }
-        catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try { sp(ctx).edit().remove(KEY_WARM_TOKEN).remove(KEY_WARM_TS).commit(); }
+            catch (Exception ignored) {}
+        }
+    }
+
+    /** Clears the cached nonce only when it is still the one that failed or completed. */
+    public static boolean clearWarmTokenIfMatches(Context ctx, String nonce) {
+        if (ctx == null || nonce == null || nonce.isEmpty()) return false;
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!nonce.equals(prefs.getString(KEY_WARM_TOKEN, null))) return false;
+                return prefs.edit().remove(KEY_WARM_TOKEN).remove(KEY_WARM_TS).commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
     }
 
     // ── Forced rotation after unfreeze (S06-M6) ───────────────────────────────
