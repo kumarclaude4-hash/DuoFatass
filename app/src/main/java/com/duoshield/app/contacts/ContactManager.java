@@ -165,7 +165,8 @@ public class ContactManager {
             .addOnFailureListener(e -> {
                 String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
                 if (retriesLeft > 0 && !msg.contains("permission") && !msg.contains("offline")) {
-                    Log.w(TAG, "resolveIdentityWithRetry: Firestore error, retrying — " + e.getMessage());
+                    Log.w(TAG, "resolveIdentityWithRetry: Firestore error, retrying ("
+                            + e.getClass().getSimpleName() + ")");
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
                             () -> resolveIdentityWithRetry(myUid, userId, callback, retriesLeft - 1),
                             IDENTITY_DELAY_MS);
@@ -211,7 +212,8 @@ public class ContactManager {
                 }
             })
             .addOnFailureListener(e -> {
-                Log.w(TAG, "fetchPartnerNameWithRetry: Firestore error — " + e.getMessage());
+                Log.w(TAG, "fetchPartnerNameWithRetry: Firestore error ("
+                        + e.getClass().getSimpleName() + ")");
                 if (retriesLeft > 0) {
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
                             () -> fetchPartnerNameWithRetry(myUid, partnerUid, callback, retriesLeft - 1),
@@ -251,7 +253,8 @@ public class ContactManager {
                         new Handler(Looper.getMainLooper()).post(() ->
                                 callback.onAdded(finalChatId, partnerUid, partnerName));
                     } catch (Exception e) {
-                        Log.e(TAG, "createChat server call failed", e);
+                        Log.e(TAG, "createChat server call failed ("
+                                + e.getClass().getSimpleName() + ")");
                         new Handler(Looper.getMainLooper()).post(() ->
                                 callback.onError("Could not create conversation. " + e.getMessage()));
                     }
