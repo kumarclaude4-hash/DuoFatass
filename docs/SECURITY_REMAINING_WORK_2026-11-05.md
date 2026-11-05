@@ -105,3 +105,19 @@ The passing emulator workflow supports merging the code change subject to the re
 - [ ] Vercel deployment retried after quota reset (if preview deployment is required)
 - [ ] Main branch protection/rulesets configured and required checks enforced
 - [ ] Security owner signs off on production rollout
+
+
+---
+
+## Post-merge and Signal-storage closeout update — 2026-11-05
+
+The original report above was written before PR #222 merged. The following evidence supersedes its pre-merge status snapshot:
+
+- PR #222 is merged to `main` as `c2bb2b7d0c6788f7e776e333331d044ae9788569`.
+- Post-merge CI for that commit passed Android unit tests, Espresso instrumentation, lint, debug APK build, server/Worker tests, Firestore rules/session integration tests, CodeQL, Gitleaks, SBOM generation, the storage Worker build and the Vercel deployment.
+- PR #223 adds fail-closed Signal identity-trust recovery, strict canonical stored-key decoding, fingerprint-pointer integrity checks, corrupt-ratchet regression tests and a release-log privacy regression. On code head `bbc3797d1acaea37e86e45871b0d20557bfb9e95`, all 13 reported PR checks passed, including unit tests, lint, Espresso and debug APK build.
+- The canonical tracker has been reconciled for S04-I3, S05-H2, S05-M3, S07-M2, S07-L4 and S10-N2. S05-H2 and S05-M3 remain partial because route/staging/production acceptance is still open; S10-N2 remains partial because the wider logging review is source-based rather than a complete AST-level audit.
+
+The Vercel quota errors reported on PR #222 were transient pre-merge notifications; the merged main commit subsequently reported a successful Vercel deployment.
+
+**Still not production sign-off:** production Firestore deployment, service-account/environment validation, credential rotation, full HTTP invite-route acceptance, staging tests, physical-device QA, signed/minified release acceptance and branch-protection verification remain separate gates. The 13 green checks on PR #223 are evidence for the tested code paths only.
