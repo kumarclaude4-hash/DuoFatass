@@ -49,7 +49,7 @@ if (!emulatorHost) {
       invitesCollection,
       tagUserId: (uid) => crypto.createHash("sha256").update(uid).digest("hex").slice(0, 12),
       stageAudit(tx, action, context, extra) {
-        const auditRef = dbA.collection(auditCollection).doc();
+        const auditRef = firestore.collection(auditCollection).doc();
         tx.create(auditRef, {
           action,
           requestId: context && context.requestId ? context.requestId : "unknown",
