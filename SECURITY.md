@@ -52,5 +52,5 @@ If the issue is confirmed, a patch will be released as soon as possible. Credit 
 
 ### Known limitations / deferred hardening
 
-- `FLAG_SECURE` (prevents screenshots/screen recording) is intentionally omitted during development; it must be added before any public release.
+- Android activities apply `FLAG_SECURE` by default to block screenshots, screen recording, and recents thumbnails. The Security & Privacy setting is an explicit opt-in that persists the user's choice; a fresh install defaults to protection. Verify behavior on supported devices before release.
 - Cloud Functions are not used for key operations; all sensitive logic is on-device.
