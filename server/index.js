@@ -2192,7 +2192,7 @@ async function revokeAllSessions(btn) {
   try {
     const data = await api("/admin/api/sessions/revoke-all", { method: "POST" });
     toast("All admin sessions have been invalidated. Sign in again.");
-    forceLogout(false);
+    forceLogout(false, false);
   } catch (e) {
     if (e.message !== "unauthorized") toast("Sign out everywhere failed: " + e.message);
   } finally {
