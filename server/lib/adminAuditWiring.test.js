@@ -173,6 +173,24 @@ test("S05-M1: waitlist requestId is never logged to stdout in the clear", () => 
   );
 });
 
+test("S05-H2: invite listing is bounded, newest-first, paginated, and exposes redemption linkage", () => {
+  const routeStart = SERVER_SOURCE.indexOf('req.method === "GET" && (req.url || "").split("?")[0] === "/admin/api/invites"');
+  const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "POST" && req.url === "/admin/api/invites/create"', routeStart);
+  assert.ok(routeStart > 0 && nextRouteStart > routeStart, "invite list route missing");
+  const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
+  assert.ok(handler.includes('orderBy("createdAt", "desc")'), "invite scan must select the newest records first");
+  assert.ok(handler.includes(".limit(1000).get()"), "invite scan must remain bounded");
+  assert.ok(handler.includes('db.collection("invites").count().get()'), "response must include the total invite count");
+  assert.ok(handler.includes("invite.decodeCursor("), "list route must accept an opaque pagination cursor");
+  assert.ok(handler.includes("invite.encodeCursor("), "list route must return a next-page cursor");
+  assert.ok(handler.includes("usedByUserId: data.usedByUserId || null"), "list response must include the account that redeemed an invite");
+  assert.ok(handler.includes("totalCount,"), "list response must include totalCount");
+  assert.ok(handler.includes("capped: totalCount > snap.size"), "bounded result must disclose when records were excluded");
+  assert.ok(handler.includes("counts,"), "list response must include status counts for the bounded result set");
+  assert.ok(SERVER_SOURCE.includes('usedByTd.textContent = item.usedByUserId || "—"'),
+    "admin UI must safely render the redeemed account linkage with textContent");
+});
+
 // ── S05-H2 / invite-management wiring tests ──────────────────────────────────
 // The legacy waitlist approve/deny API has been replaced by operator-issued
 // hashed invites. Guard the current create/revoke paths, not deleted routes.
