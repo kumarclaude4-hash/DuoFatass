@@ -144,12 +144,17 @@ public class AccountLockWorker extends Worker {
                     Log.d(TAG, "Account lock confirmed by push server.");
                     // Clear the durable intent only after a confirmed 200/204.
                     PendingLockStore.clearLockIntent(getApplicationContext());
+                    PendingLockStore.clearWarmToken(getApplicationContext());
                     return Result.success();
                 }
                 if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE) {
                     // Invalid/malformed/expired/unknown nonces cannot recover by
                     // retrying this exact request. Do NOT clear the durable intent:
                     // app startup can obtain a fresh nonce and drain it later.
+                    // The credential is permanently rejected. Preserve the
+                    // lock intent, but invalidate this warm copy so the next
+                    // authenticated foreground session requests a fresh nonce.
+                    PendingLockStore.clearWarmToken(getApplicationContext());
                     Log.e(TAG, "Push server rejected lock request (HTTP " + code
                             + ") — account lock NOT confirmed; durable intent retained.");
                     return Result.failure();
