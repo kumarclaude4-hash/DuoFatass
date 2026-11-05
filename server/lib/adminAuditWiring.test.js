@@ -370,7 +370,9 @@ test("S05-M3: persistent session collections are deny-all to client SDKs", () =>
     const marker = "match /" + collection + "/{";
     const start = rules.indexOf(marker);
     assert.ok(start >= 0, "missing client-deny rule for " + collection);
-    const body = rules.slice(start, rules.indexOf("}", start + marker.length) + 1);
+    const blockEnd = rules.indexOf("\n    }", start + marker.length);
+    assert.ok(blockEnd > start, "could not bound rules block for " + collection);
+    const body = rules.slice(start, blockEnd);
     assert.ok(body.includes("allow read, write: if false"), collection + " must deny all client access");
   }
 });
