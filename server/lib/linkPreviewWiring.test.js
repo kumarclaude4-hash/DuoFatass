@@ -30,8 +30,9 @@ test("link-preview endpoint verifies a live Firebase token and applies endpoint 
 test("blocked original and redirect targets produce only the stable blocked status", () => {
   assert.ok(ROUTE.includes("isBlockedPreviewHost(parsed.hostname)"));
   assert.ok(ROUTE.includes('status: "blocked"'));
-  assert.ok(ROUTE.includes("Blocked redirect target"),
-    "redirect target validation must remain explicit before each hop");
+  assert.ok(ROUTE.includes("fetchFollowingSafeRedirects("),
+    "redirect validation must run for every hop before fetch");
+  assert.match(SERVER, /throw new Error\(`Blocked redirect target/);
   assert.ok(ROUTE.includes("pure.linkPreviewFailureStatus(fetchErr)"));
   assert.ok(ROUTE.includes("status,"));
   assert.equal(ROUTE.includes("fetchErr.message"), false,
