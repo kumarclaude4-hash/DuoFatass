@@ -836,23 +836,26 @@ public class DuressManager {
     // ── Lock-credential maintenance (S06-H3) ──────────────────────────────────
 
     /**
-     * Pre-fetches and rotates a lock nonce during ordinary, online, foreground
-     * operation, and parks it in {@link PendingLockStore} as the "warm" credential.
+     * Pre-fetches a short-lived lock nonce during ordinary online foreground use
+     * and stores it as a warm fallback in {@link PendingLockStore}.
      *
-     * <h3>Why this exists</h3>
-     * Both ways {@code performLogout} can obtain a nonce — the synchronous fetch and
-     * the retry-worker fetch — need network <em>at trigger time</em>. A device in
-     * airplane mode at the moment the duress PIN is entered gets neither, and the
-     * account is never locked (S06-H3). Calling this opportunistically while the app
-     * is being used normally means a usable nonce is already sitting in the
-     * wipe-surviving store before duress is ever triggered, so the offline case is
-     * covered without needing network at the worst possible moment.
+     * <p>The nonce is valid for one hour and is refreshed after 30 minutes. It can
+     * help a duress trigger complete when connectivity is briefly unavailable, but
+     * it is not a durable credential and cannot guarantee a remote lock if the
+     * device has been offline long enough for the nonce to expire.
      *
-     * <p>No-ops silently offline, when signed out, or when the existing warm token is
-     * still fresh (age &lt; 30 minutes — nonces expire after one hour server-side, so this keeps
-     * a wide safety margin without hammering {@code /requestLockNonce} every launch).
-     * Safe to call from the main thread; the network call itself runs on a background
-     * thread.
+     * <p>If a durable lock intent remains after a failed or expired nonce, a later
+     * valid foreground session for the <em>same UID</em> obtains a fresh nonce,
+     * rotates only that intent's token and enqueues a bounded WorkManager attempt.
+     * If the account never authenticates again or connectivity never returns, the
+     * server-side lock cannot be guaranteed; the local intent remains as an honest
+     * indication that the account may still be unlocked.
+     *
+     * <p>Nonce issuance is serialized against the duress trigger because the server
+     * retires older outstanding nonces for a UID. This prevents an ordinary
+     * background refresh from invalidating the trigger's nonce or overwriting its
+     * pending intent. This method is called from the valid, foreground session path
+     * in {@code BaseActivity.onStart()} and performs network I/O on a background thread.
      */
     public static void maintainLockCredential(Context context) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
@@ -938,24 +941,16 @@ public class DuressManager {
 
         String token = PendingLockStore.getIntentToken(appCtx);
         if (token == null || token.isEmpty()) {
-            // No credential recorded (the trigger happened fully offline AND no warm
-            // token had been parked by maintainLockCredential). Nothing can be drained:
-            // /duress-lock authenticates with the nonce itself, and /requestLockNonce
-            // needs the Firebase session that the wipe already destroyed, so this
-            // process can never obtain a credential for this uid again.
+            // No usable nonce is currently stored, so this method cannot drain the
+            // intent while signed out: /duress-lock authenticates with the nonce itself
+            // and /requestLockNonce requires a live Firebase session.
             //
-            // No AccountLockWorker retry is enqueued here, deliberately —
-            // AccountLockWorker.enqueue() requires a nonce and returns immediately
-            // without one, so a call would be pure noise. (An earlier version of this
-            // comment claimed a "best-effort worker retry" was enqueued here; no such
-            // call ever existed. Corrected 2026-08-10.)
-            //
-            // The intent is intentionally NOT cleared: hasLockIntent() staying true is
-            // the honest record that this account is *believed unlocked* (S06-L4/S06-I2)
-            // and is what a recovery/support flow can surface, rather than silently
-            // pretending the lock succeeded. Keeping maintainLockCredential() alive on
-            // the foreground path (BaseActivity.onStart) is what prevents reaching this
-            // branch in the first place.
+            // Do not clear the intent or report success. If this same account later
+            // establishes a valid foreground session, maintainLockCredential() can
+            // obtain a fresh UID-bound nonce, rotate this intent and enqueue a bounded
+            // retry. If that never happens (or connectivity never returns), a remote
+            // lock cannot be guaranteed; hasLockIntent() remains the honest indication
+            // that the account may still be unlocked.
             android.util.Log.w("DuressManager",
                     "Pending lock intent has no usable credential — account believed UNLOCKED.");
             return true;
