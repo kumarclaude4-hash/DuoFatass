@@ -140,7 +140,9 @@ test("S05-M1: no admin action writes adminAuditLog directly, bypassing the pseud
   // evidence that every write site goes through it.
   // Strip comments before checking the executable sink; comments that quote
   // the old vulnerable pattern must not be mistaken for live write call sites.
-  const executableSource = SERVER_SOURCE.replace(/^[ \\t]*\\/\\/.*$/gm, "");
+  const executableSource = SERVER_SOURCE.split("\n")
+    .filter((line) => !line.trimStart().startsWith("//"))
+    .join("\n");
   const allWrites = executableSource.match(/db\.collection\("adminAuditLog"\)\s*\.add\s*\(/g) || [];
   // Exactly one is legitimate: the sink's own definition. Any more means some
   // call site is writing directly instead of going through auditAdminEvent().
