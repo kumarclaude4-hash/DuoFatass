@@ -2167,8 +2167,17 @@ function startInactivityWarning() {
 }
 
 async function logout() {
-  try { await fetch("/admin/logout", { method: "POST", credentials: "same-origin" }); } catch (_) {}
-  forceLogout(false);
+  let response = null;
+  try {
+    response = await fetch("/admin/logout", { method: "POST", credentials: "same-origin" });
+  } catch (_) {
+    // The operator is still signed out locally, but a copied cookie may not
+    // have been revoked by the server if the request never reached it.
+  }
+  if (!response || !response.ok) {
+    toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
+  }
+  forceLogout(false, false);
 }
 
 // S05-M3: bulk-revokes every admin session (including this one) via
@@ -2192,7 +2201,7 @@ async function revokeAllSessions(btn) {
   }
 }
 
-function forceLogout(showMessage = true) {
+function forceLogout(showMessage = true, revokeOnServer = true) {
   TOKEN = "";
   sessionActive = false;
   clearTimeout(inactivityTimer);
@@ -2208,18 +2217,20 @@ function forceLogout(showMessage = true) {
   document.getElementById("gate").style.display = "block";
   document.getElementById("gateErr").textContent = showMessage ? "Session expired due to inactivity." : "";
   document.getElementById("tokenInput").value = "";
-  // Revoke the durable server-side session. Local logout is immediate, but
-  // warn when the server cannot confirm revocation: a copied cookie may remain
-  // usable until the store recovers or the session expires.
-  fetch("/admin/logout", { method: "POST", credentials: "same-origin" })
-    .then((response) => {
-      if (!response.ok) {
+  if (revokeOnServer) {
+    // Revoke the durable server-side session. Local logout is immediate, but
+    // warn when the server cannot confirm revocation: a copied cookie may remain
+    // usable until the store recovers or the session expires.
+    fetch("/admin/logout", { method: "POST", credentials: "same-origin" })
+      .then((response) => {
+        if (!response.ok) {
+          toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
+        }
+      })
+      .catch(() => {
         toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
-      }
-    })
-    .catch(() => {
-      toast("Signed out locally, but server revocation could not be confirmed. Retry Sign out everywhere when the service recovers.");
-    });
+      });
+  }
 }
 
 ["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach((evt) => {
