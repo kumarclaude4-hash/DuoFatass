@@ -85,7 +85,9 @@
       "collectionGroup": "adminSessions",
       "fieldPath": "purgeAt",
       "ttl": true,
-      "indexes": []
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" }
+      ]
     }
   ]
 }
