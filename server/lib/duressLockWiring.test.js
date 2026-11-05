@@ -59,7 +59,6 @@ test("idempotent replay skips refresh-token revocation after an admin unfreeze",
   assert.ok(route.includes("admin.auth().revokeRefreshTokens(uid)"));
   assert.ok(route.includes("lockStillActive"));
 });
-});
 
 test("worker classifies only 200/204 as confirmed and preserves intent on permanent failure", () => {
   assert.ok(WORKER_SOURCE.includes("AccountLockHttpPolicy.classify(code)"));
