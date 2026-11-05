@@ -236,13 +236,13 @@ test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-ch
 // index.js is actually WIRED to that store correctly — same "wiring, not
 // re-testing the logic" split S05-H2 above uses.
 
-// S05-M3: this test previously required createAdminSession() to bind BOTH the
+// S07-H3: this test previously required createAdminSession() to bind BOTH the
 // pseudonymised IP tag and the User-Agent. Both of those client-context
 // bindings have since been removed as enforced controls, because on real
 // mobile clients they rejected legitimate operators rather than attackers:
 //   - IP binding (removed first): mobile networks re-NAT mid-session, so the
 //     tag changed under a session that was still perfectly valid.
-//   - UA binding (S05-M3, removed here): an Android in-app WebView sends a
+//   - UA binding (S07-H3, removed here): an Android in-app WebView sends a
 //     DIFFERENT User-Agent on `fetch()`/XHR subrequests than on the top-level
 //     navigation, so every `/admin/api/*` call after a correct login failed
 //     `ua_mismatch` → 401 → the false "Your session expired." bounce.
@@ -251,7 +251,7 @@ test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-ch
 // rotation on login. UA is still CAPTURED (cheap, useful for the audit trail
 // and for operators who opt into `bindUserAgent: true` on a fleet with stable
 // clients), it is simply not enforced by default.
-test("S05-M3: session creation captures UA context but binds neither IP nor UA by default", () => {
+test("S07-H3: session creation captures UA context but binds neither IP nor UA by default", () => {
   const fnStart = SERVER_SOURCE.indexOf("function createAdminSession(req)");
   assert.ok(fnStart > 0, "createAdminSession(req) not found — must accept the request to capture client context");
   const fnEnd = SERVER_SOURCE.indexOf("\n}", fnStart);
@@ -273,6 +273,10 @@ test("S05-M3: session creation captures UA context but binds neither IP nor UA b
   assert.ok(storeStart > 0, "createAdminSessionStore({...}) construction not found in index.js");
   const storeEnd = SERVER_SOURCE.indexOf("});", storeStart);
   const storeOpts = SERVER_SOURCE.slice(storeStart, storeEnd);
+  assert.ok(
+    /firestore:\s*db/.test(storeOpts),
+    "admin session store must use the shared Firestore database, not a process-local Map"
+  );
   assert.ok(
     /bindUserAgent:\s*false/.test(storeOpts),
     "index.js must construct the store with `bindUserAgent: false` — UA binding is opt-in, " +
@@ -306,7 +310,7 @@ test("S05-M3: POST /admin/api/sessions/revoke-all exists, is admin-gated, calls 
     "(via requireAdminAuthThenBody), same as every other /admin/api POST route"
   );
   assert.ok(
-    handler.includes("adminSessionStore.revokeAll()"),
+    handler.includes("await adminSessionStore.revokeAll()"),
     "revoke-all must actually call the store's bulk-revoke, not just return ok"
   );
   assert.ok(
@@ -320,7 +324,7 @@ test("S05-M3: logout revokes the session in the durable store, not just deletes 
   assert.ok(routeStart > 0, "POST /admin/logout route not found");
   const slice = SERVER_SOURCE.slice(routeStart, routeStart + 400);
   assert.ok(
-    slice.includes("adminSessionStore.revoke(sessionId)"),
+    slice.includes("await adminSessionStore.revoke(sessionId)"),
     "logout must call adminSessionStore.revoke(sessionId) so the session cannot be replayed after logout"
   );
 });
@@ -335,4 +339,40 @@ test("adminAuditLog is server-only in firestore.rules", () => {
     /allow\s+read,\s*write:\s*if\s+false/,
     "adminAuditLog must deny all client reads and writes"
   );
+});
+
+test("S05-M3: cookie authentication awaits durable validation and fails closed on Firestore errors", () => {
+  const authStart = SERVER_SOURCE.indexOf("async function requireAdminAuth(req, res)");
+  const authEnd = SERVER_SOURCE.indexOf("\n}\n\n// ── Global unhandled", authStart);
+  assert.ok(authStart > 0 && authEnd > authStart, "requireAdminAuth body not found");
+  const handler = SERVER_SOURCE.slice(authStart, authEnd);
+  assert.ok(handler.includes("await evaluateAdminSession(req)"), "session validation must be awaited");
+  assert.ok(handler.includes("durable session verification unavailable"), "Firestore outage path must be explicit");
+  assert.ok(handler.includes("res.writeHead(503"), "Firestore outage must fail closed with 503");
+  assert.ok(
+    handler.indexOf("durable session verification unavailable") < handler.indexOf("await recordAdminAuthFailure(ip)"),
+    "session-store infrastructure errors must not be counted as bad credentials"
+  );
+});
+
+test("S05-M3: session creation and global revoke-all are asynchronous durable operations", () => {
+  assert.match(SERVER_SOURCE, /async function evaluateAdminSession\(/);
+  assert.match(SERVER_SOURCE, /async function hasValidAdminSession\(/);
+  assert.match(SERVER_SOURCE, /firestore:\s*db,/);
+  assert.match(SERVER_SOURCE, /const result = await adminSessionStore\.revokeAll\(\)/);
+  assert.match(SERVER_SOURCE, /sessionGeneration:\s*result\.generation/);
+  assert.match(SERVER_SOURCE, /ADMIN_SESSION_ABSOLUTE_TTL_MS \/ 1000/);
+});
+
+test("S05-M3: persistent session collections are deny-all to client SDKs", () => {
+  const rules = fs.readFileSync(path.join(__dirname, "..", "..", "firestore.rules"), "utf8");
+  for (const collection of ["adminSessions", "adminSessionControl"]) {
+    const marker = "match /" + collection + "/{";
+    const start = rules.indexOf(marker);
+    assert.ok(start >= 0, "missing client-deny rule for " + collection);
+    const blockEnd = rules.indexOf("\n    }", start + marker.length);
+    assert.ok(blockEnd > start, "could not bound rules block for " + collection);
+    const body = rules.slice(start, blockEnd);
+    assert.ok(body.includes("allow read, write: if false"), collection + " must deny all client access");
+  }
 });
