@@ -578,7 +578,7 @@ public class SettingsActivity extends BaseActivity {
                     if (tvProfileDisplayName != null) tvProfileDisplayName.setText(remoteName);
                 })
                 .addOnFailureListener(e ->
-                        android.util.Log.w(TAG, "Could not reconcile display name", e));
+                        android.util.Log.w(TAG, "Could not reconcile display name (" + com.duoshield.app.util.LogRedact.error(e) + ")"));
     }
 
     private void loadProfilePhoto() {
@@ -608,7 +608,7 @@ public class SettingsActivity extends BaseActivity {
                     restoreAvatarFromB2(remotePath, user.getUid(), generation);
                 })
                 .addOnFailureListener(e ->
-                        android.util.Log.w(TAG, "Could not reconcile profile photo", e));
+                        android.util.Log.w(TAG, "Could not reconcile profile photo (" + com.duoshield.app.util.LogRedact.error(e) + ")"));
     }
 
     private void restoreAvatarFromB2(String b2Path, String uid, int generation) {
