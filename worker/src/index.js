@@ -1233,7 +1233,7 @@ export default {
             const uploader = current.customMetadata?.uploader;
             if (uploader) ctx.waitUntil(adjustUserBytes(env, uploader, -(current.size ?? 0)));
           } else if (current) {
-            console.warn(`Skipped R2 delete for ${obj.key} — object changed during migration`);
+            console.warn('Skipped R2 delete because the object changed during migration');
             r2TotalBytes += current.size ?? 0;
           } else {
             // S10-N3: deleted concurrently — and this is the one interleaving
@@ -1260,7 +1260,7 @@ export default {
             // R2 HEAD miss on an object that is actually still present), no
             // data is lost: R2 still holds the object, GET serves it from the
             // hot tier, and tomorrow's run re-migrates it.
-            console.warn(`S10-N3: undoing orphaned B2 copy of ${obj.key} — R2 was deleted during migration`);
+            console.warn('S10-N3: undoing orphaned B2 copy because R2 was deleted during migration');
             ctx.waitUntil(
               b2.fetch(b2Url(env, obj.key), { method: 'DELETE' })
                 .then((deleteResponse) => {
