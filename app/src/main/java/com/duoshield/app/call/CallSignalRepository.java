@@ -60,7 +60,7 @@ public class CallSignalRepository {
         callRef(callId).set(data)
                 .addOnSuccessListener(v -> { if (cb != null) cb.onSuccess(); })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "createCallDoc failed", e);
+                    Log.e(TAG, "createCallDoc failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     if (cb != null) cb.onFailure(e);
                 });
     }
@@ -76,7 +76,7 @@ public class CallSignalRepository {
         callRef(callId).update(update)
                 .addOnSuccessListener(v -> { if (cb != null) cb.onSuccess(); })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "writeAnswer failed", e);
+                    Log.e(TAG, "writeAnswer failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     if (cb != null) cb.onFailure(e);
                 });
     }
@@ -89,7 +89,7 @@ public class CallSignalRepository {
             update.put("endedAt", FieldValue.serverTimestamp());
         }
         callRef(callId).update(update)
-                .addOnFailureListener(e -> Log.w(TAG, "writeStatus failed (non-fatal): " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "writeStatus failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     public void addCallerCandidate(String callId, String candidateJson,
@@ -99,7 +99,7 @@ public class CallSignalRepository {
         data.put("sdpMid", sdpMid);
         data.put("sdpMLineIndex", sdpMLineIndex);
         callerCandidatesRef(callId).set(data)
-                .addOnFailureListener(e -> Log.w(TAG, "addCallerCandidate failed: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "addCallerCandidate failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     public void addCalleeCandidate(String callId, String candidateJson,
@@ -109,7 +109,7 @@ public class CallSignalRepository {
         data.put("sdpMid", sdpMid);
         data.put("sdpMLineIndex", sdpMLineIndex);
         calleeCandidatesRef(callId).set(data)
-                .addOnFailureListener(e -> Log.w(TAG, "addCalleeCandidate failed: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "addCalleeCandidate failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     public ListenerRegistration listenToCall(String callId, EventListener<com.google.firebase.firestore.DocumentSnapshot> listener) {
@@ -147,7 +147,7 @@ public class CallSignalRepository {
             if (!snap.exists() || snap.get("connectedAt") != null) return null;  // already anchored
             tx.update(ref, "connectedAt", FieldValue.serverTimestamp());
             return null;
-        }).addOnFailureListener(e -> Log.w(TAG, "markConnected failed (non-fatal): " + e.getMessage()));
+        }).addOnFailureListener(e -> Log.w(TAG, "markConnected failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /**
@@ -163,7 +163,7 @@ public class CallSignalRepository {
         callRef(callId).update("clock." + uid, FieldValue.serverTimestamp())
                 .addOnSuccessListener(v -> { if (cb != null) cb.onSuccess(); })
                 .addOnFailureListener(e -> {
-                    Log.w(TAG, "writeClockProbe failed (non-fatal): " + e.getMessage());
+                    Log.w(TAG, "writeClockProbe failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
                     if (cb != null) cb.onFailure(e);
                 });
     }
@@ -186,7 +186,7 @@ public class CallSignalRepository {
         update.put("iceRestartRequested", false);
 
         callRef(callId).update(update)
-                .addOnFailureListener(e -> Log.w(TAG, "writeRestartOffer failed: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "writeRestartOffer failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /**
@@ -195,13 +195,13 @@ public class CallSignalRepository {
      */
     public void requestIceRestart(String callId) {
         callRef(callId).update("iceRestartRequested", true)
-                .addOnFailureListener(e -> Log.w(TAG, "requestIceRestart failed: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "requestIceRestart failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /** Clears the ICE restart flag after the callee has acted on it. */
     public void clearIceRestartFlag(String callId) {
         callRef(callId).update("iceRestartRequested", false)
-                .addOnFailureListener(e -> Log.w(TAG, "clearIceRestartFlag failed: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "clearIceRestartFlag failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /**
@@ -219,7 +219,7 @@ public class CallSignalRepository {
                     });
         }
         callRef(callId).delete()
-                .addOnFailureListener(e -> Log.w(TAG, "deleteCallDoc failed (non-fatal): " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "deleteCallDoc failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     public interface OnCompleteCallback {
