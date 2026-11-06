@@ -55,7 +55,7 @@ public final class SearchHelper {
                         ? searchFilterOnly(appContext, conversationId, safeFilter, myUid)
                         : searchFts(appContext, conversationId, normalized, safeFilter, myUid);
             } catch (RuntimeException e) {
-                Log.w(TAG, "FTS search unavailable; using bounded local fallback", e);
+                Log.w(TAG, "FTS search unavailable; using bounded local fallback (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 results = boundedFallback(appContext, conversationId, normalized, safeFilter, myUid);
             }
             if (!Thread.currentThread().isInterrupted()) cb.onResults(results);
