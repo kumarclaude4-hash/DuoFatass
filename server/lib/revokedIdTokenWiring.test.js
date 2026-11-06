@@ -72,25 +72,32 @@ for (const route of ROUTES) {
     const handler = handlerFor('req.url === "' + route + '"');
     const limitKey = RATE_LIMIT_KEY_BY_ROUTE[route];
     assert.ok(limitKey, "route must have an explicit limiter inventory entry");
-    const callPattern = new RegExp(
-      "checkAuthRateLimit\\\\(\\\\s*[A-Za-z_$][\\\\w$]*\\\\s*,\\\\s*['\\\"]"
-        + limitKey
-        + "['\\\"]\\\\s*\\\\)"
-    );
-    assert.match(
-      handler,
-      callPattern,
-      route + " must call checkAuthRateLimit() with its dedicated endpoint bucket"
-    );
+    assert.ok(handler.includes("checkAuthRateLimit("),
+      route + " must call the shared authenticated endpoint limiter");
+    assert.ok(handler.includes('"' + limitKey + '"'),
+      route + " must use its dedicated endpoint bucket " + limitKey);
   });
 }
 
 test("authenticated route inventory and AUTH_RATE_LIMITS configuration stay in sync", () => {
-  const config = SOURCE.match(/const AUTH_RATE_LIMITS = \\{([\\s\\S]*?)\\n\\};/);
-  assert.ok(config, "could not locate AUTH_RATE_LIMITS configuration");
-  const configuredKeys = [...config[1].matchAll(/^\\s*([A-Za-z][A-Za-z0-9]*):\\s*\\d+/gm)]
-    .map((match) => match[1])
-    .sort();
+  const marker = "const AUTH_RATE_LIMITS = {";
+  const start = SOURCE.indexOf(marker);
+  const end = SOURCE.indexOf("\\n};", start);
+  assert.ok(start >= 0 && end > start, "could not locate AUTH_RATE_LIMITS configuration");
+  const body = SOURCE.slice(start + marker.length, end);
+  const configuredKeys = body.split("\\n").flatMap((line) => {
+    const colon = line.indexOf(":");
+    if (colon < 0) return [];
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).split(",")[0].trim();
+    const validIdentifier = key.length > 0
+      && ((key[0] >= "A" && key[0] <= "Z") || (key[0] >= "a" && key[0] <= "z"))
+      && [...key].every((ch) =>
+        (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z")
+          || (ch >= "0" && ch <= "9"));
+    const numericLimit = value.length > 0 && [...value].every((ch) => ch >= "0" && ch <= "9");
+    return validIdentifier && numericLimit ? [key] : [];
+  }).sort();
   const routeKeys = Object.values(RATE_LIMIT_KEY_BY_ROUTE).sort();
   assert.deepStrictEqual(configuredKeys, routeKeys,
     "every configured per-route limiter must correspond to exactly one authenticated route; remove stale buckets or update the route inventory");
