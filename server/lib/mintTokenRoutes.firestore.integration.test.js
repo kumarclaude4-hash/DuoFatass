@@ -14,7 +14,7 @@ const { initializeApp, deleteApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { createChallengeStore } = require("./challengeStore");
 const { verifyMintTokenSignature, buildMintTokenChallenge } = require("./identityVerify");
-const { createMintTokenRouteHandler } = require("./mintTokenRoutes");
+const { createMintTokenRouteHandler } = require("./mintTokenRoute");
 const { claimIdentityInTransaction } = require("./identityClaim");
 const { createInviteStore } = require("./inviteStore");
 const invite = require("./invite");
@@ -70,15 +70,13 @@ if (!emulatorHost) {
     const collections = {
       invites: "it_mint_http_invites_" + suffix,
       audit: "it_mint_http_audit_" + suffix,
-      identities: "it_mint_http_identities_" + suffix,
-      locks: "it_mint_http_locks_" + suffix,
-      waitlist: "it_mint_http_waitlist_" + suffix,
     };
     const app = initializeApp({ projectId }, "mint-http-it-" + suffix);
     const db = getFirestore(app);
     const challengeStore = createChallengeStore();
     const mintCooldown = new Map();
     const mintedUsers = [];
+    const identityUids = [];
     const tagUserId = (uid) => crypto.createHash("sha256")
       .update(uid, "utf8").digest("hex").slice(0, 12);
     const inviteStore = createInviteStore({
@@ -102,6 +100,7 @@ if (!emulatorHost) {
       getClientIp: () => "127.0.0.1",
       checkIpRateLimit: () => true,
       ipTag: () => "127.0.0.1-tag",
+      uidTag: tagUserId,
       mintCooldown,
       mintCooldownMs: 60_000,
       mintChallengeStore: challengeStore,
@@ -109,36 +108,24 @@ if (!emulatorHost) {
       sha256hex(hex) {
         return crypto.createHash("sha256").update(Buffer.from(hex, "hex")).digest("hex");
       },
-      claimIdentity: ({ userId, incomingHash, inviteToken, requestContext }) =>
-        db.runTransaction((tx) => claimIdentityInTransaction({
-          tx,
-          firestore: db,
-          FieldValue,
-          inviteStore,
-          invite,
-          legacyWaitlistCollection: collections.waitlist,
-          identityCollection: collections.identities,
-          accountLockCollection: collections.locks,
-          userId,
-          incomingHash,
-          inviteToken,
-          requestContext,
-          auditAdminEventInTransaction(auditTx, action, request, extra) {
-            const ref = db.collection(collections.audit).doc();
-            auditTx.create(ref, {
-              action,
-              requestId: request && request.headers && request.headers["x-request-id"] || "missing",
-              at: FieldValue.serverTimestamp(),
-              ...extra,
-            });
-          },
-          tagUserId,
-        })),
+      db,
+      FieldValue,
+      inviteStore,
+      invite,
+      claimIdentityInTransaction,
+      auditAdminEventInTransaction(tx, action, request, extra) {
+        const ref = db.collection(collections.audit).doc();
+        tx.create(ref, {
+          action,
+          requestId: request && request.headers && request.headers["x-request-id"] || "missing",
+          at: FieldValue.serverTimestamp(),
+          ...extra,
+        });
+      },
       async createCustomToken(userId) {
         mintedUsers.push(userId);
         return "emulated-custom-token-" + userId;
       },
-      uidTag: tagUserId,
       now: Date.now,
       logger: { warn() {}, log() {}, error() {} },
     });
@@ -161,6 +148,7 @@ if (!emulatorHost) {
       });
       try {
         for (const name of Object.values(collections)) await cleanupCollection(name);
+        await Promise.all(identityUids.map((uid) => db.collection("identities").doc(uid).delete()));
       } finally {
         await deleteApp(app);
       }
@@ -194,6 +182,7 @@ if (!emulatorHost) {
     const victim = makeIdentity();
     const attacker = makeIdentity();
     const victimUid = "mint-victim-" + suffix;
+    identityUids.push(victimUid);
     const victimNonce = challengeStore.issue(victimUid);
     const forged = await post({
       userId: victimUid,
@@ -204,7 +193,7 @@ if (!emulatorHost) {
     });
     assert.equal(forged.status, 403);
     assert.equal(forged.text, "Key mismatch");
-    assert.equal((await db.collection(collections.identities).doc(victimUid).get()).exists, false);
+    assert.equal((await db.collection("identities").doc(victimUid).get()).exists, false);
     assert.equal(mintedUsers.length, 0);
     assert.equal(challengeStore.consume(victimUid, victimNonce), false,
       "invalid signature attempt must consume its single-use nonce");
@@ -224,6 +213,7 @@ if (!emulatorHost) {
     // 2. A valid signature without an invite cannot create an identity or
     // mint a Firebase credential. The Firestore transaction remains atomic.
     const noInviteUid = "mint-no-invite-" + suffix;
+    identityUids.push(noInviteUid);
     const noInviteIdentity = makeIdentity();
     const noInviteNonce = challengeStore.issue(noInviteUid);
     const noInvite = await post({
@@ -240,6 +230,7 @@ if (!emulatorHost) {
     // 3. Valid signature + valid invite: HTTP 200 is returned only after the
     // same Firestore transaction consumes the invite and creates the binding.
     const validUid = "mint-valid-" + suffix;
+    identityUids.push(validUid);
     const validIdentity = makeIdentity();
     const issuedInvite = await createInvite("Mint HTTP valid claim");
     const validNonce = challengeStore.issue(validUid);
