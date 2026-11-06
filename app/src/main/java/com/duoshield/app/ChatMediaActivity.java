@@ -4002,7 +4002,7 @@ public class ChatMediaActivity extends BaseActivity {
 
             @Override
             public void onError(String reason) {
-                Log.w(TAG, "ensureSignalSession: " + reason);
+                Log.w(TAG, "ensureSignalSession failed (reason withheld)");
                 keyPending = false;
                 listenForMessages(); // start listener even without a fresh session
                 retryPendingDecryption();
