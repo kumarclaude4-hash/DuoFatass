@@ -56,7 +56,9 @@ public final class DeviceSecurityGate {
          * Every Keystore tier failed; the store is in-memory only. Any account
          * created now would be lost at process death.
          */
-        BLOCKED_NO_DURABLE_STORE;
+        BLOCKED_NO_DURABLE_STORE,
+        /** Legacy plaintext secrets remain because migration was incomplete or unverifiable. */
+        BLOCKED_LEGACY_PLAINTEXT_REMAINS;
 
         public boolean isAllowed() { return this == ALLOWED; }
     }
@@ -74,14 +76,24 @@ public final class DeviceSecurityGate {
         SecurePrefs.get(context);
 
         SecurePrefs.SecurityTier tier = SecurePrefs.getTier();
-        if (!tier.isDurable()) {
+        Decision decision = evaluateState(tier, SecurePrefs.legacyPlaintextRemains());
+        if (decision == Decision.BLOCKED_NO_DURABLE_STORE) {
             Log.e(TAG, "Blocking onboarding/restore: no durable secure store"
                     + " (tier=" + tier + ", device=" + android.os.Build.MANUFACTURER
                     + " " + android.os.Build.MODEL
                     + " API=" + android.os.Build.VERSION.SDK_INT + ").");
-            return Decision.BLOCKED_NO_DURABLE_STORE;
+        } else if (decision == Decision.BLOCKED_LEGACY_PLAINTEXT_REMAINS) {
+            Log.e(TAG, "Blocking onboarding/restore: legacy plaintext migration is incomplete.");
+        } else {
+            Log.i(TAG, "Onboarding/restore permitted (tier=" + tier + ").");
         }
-        Log.i(TAG, "Onboarding/restore permitted (tier=" + tier + ").");
+        return decision;
+    }
+
+    /** Pure policy function so migration and storage-tier decisions are independently testable. */
+    static Decision evaluateState(SecurePrefs.SecurityTier tier, boolean legacyPlaintextRemains) {
+        if (tier == null || !tier.isDurable()) return Decision.BLOCKED_NO_DURABLE_STORE;
+        if (legacyPlaintextRemains) return Decision.BLOCKED_LEGACY_PLAINTEXT_REMAINS;
         return Decision.ALLOWED;
     }
 
@@ -108,9 +120,14 @@ public final class DeviceSecurityGate {
             if (onBlockedDismissed != null) onBlockedDismissed.run();
         };
 
+        boolean migrationBlocked = evaluate(activity) == Decision.BLOCKED_LEGACY_PLAINTEXT_REMAINS;
         new AlertDialog.Builder(activity)
-                .setTitle(com.duoshield.app.R.string.device_unsupported_title)
-                .setMessage(com.duoshield.app.R.string.device_unsupported_message)
+                .setTitle(migrationBlocked
+                        ? com.duoshield.app.R.string.device_legacy_migration_title
+                        : com.duoshield.app.R.string.device_unsupported_title)
+                .setMessage(migrationBlocked
+                        ? com.duoshield.app.R.string.device_legacy_migration_message
+                        : com.duoshield.app.R.string.device_unsupported_message)
                 .setCancelable(false)
                 .setPositiveButton(com.duoshield.app.R.string.device_unsupported_dismiss, close)
                 .show();
