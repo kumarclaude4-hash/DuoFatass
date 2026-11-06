@@ -102,7 +102,7 @@ public class TurnCredentialCache {
         } catch (Exception e) {
             // Non-fatal: fall back to in-memory only.  The call still works;
             // it just needs to wait for the async TurnCredentialFetcher fetch.
-            Log.w(TAG, "EncryptedSharedPreferences init failed — in-memory only: " + e.getMessage());
+            Log.w(TAG, "EncryptedSharedPreferences init failed — in-memory only: " + com.duoshield.app.util.LogRedact.error(e));
         }
     }
 
