@@ -32,7 +32,7 @@ public class SecureShareHelper {
             try (FileOutputStream fos = new FileOutputStream(out)) {
                 fos.write(decryptedBytes);
             } catch (Exception e) {
-                android.util.Log.e("SecureShareHelper", "Failed to write share temp file", e);
+                android.util.Log.e("SecureShareHelper", "Failed to write share temp file (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 return;
             }
             try {
@@ -46,7 +46,7 @@ public class SecureShareHelper {
                 ctx.startActivity(Intent.createChooser(intent, "Share Image")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             } catch (Exception e) {
-                android.util.Log.e("SecureShareHelper", "Failed to launch share chooser", e);
+                android.util.Log.e("SecureShareHelper", "Failed to launch share chooser (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }).start();
     }
@@ -74,7 +74,7 @@ public class SecureShareHelper {
                 int n;
                 while ((n = in.read(buf)) != -1) fos.write(buf, 0, n);
             } catch (Exception e) {
-                android.util.Log.e("SecureShareHelper", "Failed to write share video temp file", e);
+                android.util.Log.e("SecureShareHelper", "Failed to write share video temp file (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 return;
             }
             try {
@@ -88,7 +88,7 @@ public class SecureShareHelper {
                 ctx.startActivity(Intent.createChooser(intent, "Share Video")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             } catch (Exception e) {
-                android.util.Log.e("SecureShareHelper", "Failed to launch video share chooser", e);
+                android.util.Log.e("SecureShareHelper", "Failed to launch video share chooser (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }).start();
     }
