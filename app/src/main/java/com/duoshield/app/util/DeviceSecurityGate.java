@@ -32,11 +32,10 @@ import androidx.appcompat.app.AlertDialog;
  *       created on it works correctly. Blocking it would lock out the exact
  *       budget-device population (Helio G36, Android Go) that tier 2 was added
  *       to support. It is a weaker tier, not a broken one.</li>
- *   <li><b>Existing installs.</b> Only entry points that would create <em>new</em>
- *       durable state consult this gate. An existing install that has already
- *       written its keys must keep opening — see {@link LegacyPlaintextMigrator}.
- *       Blocking sign-in on a transient Keystore failure would be a self-inflicted
- *       denial of service on a user's own message history.</li>
+ *   <li><b>Existing installs.</b> Ordinary sign-in and access to already
+ *       recoverable data do not consult this gate. New onboarding/restore is
+ *       blocked while legacy plaintext secrets remain unverified, so the app
+ *       cannot silently add new secrets on top of an incomplete migration.</li>
  * </ul>
  */
 public final class DeviceSecurityGate {
