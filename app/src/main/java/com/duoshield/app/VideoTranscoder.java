@@ -91,7 +91,7 @@ public final class VideoTranscoder {
                 }
             }
         } catch (Exception e) {
-            Log.w(TAG, "isSupported probe failed", e);
+            Log.w(TAG, "isSupported probe failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
         return false;
     }
@@ -296,9 +296,9 @@ public final class VideoTranscoder {
             return Result.ok(out);
 
         } catch (Exception e) {
-            Log.e(TAG, "transcode failed", e);
+            Log.e(TAG, "transcode failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             if (out.exists() && !out.delete()) {
-                Log.w(TAG, "could not delete partial output " + out);
+                Log.w(TAG, "could not delete partial output " + com.duoshield.app.util.LogRedact.metadata(out.getAbsolutePath()));
             }
             return Result.fail("Could not convert this video (" + e.getClass().getSimpleName() + ").");
         } finally {
@@ -346,7 +346,7 @@ public final class VideoTranscoder {
             try {
                 muxer.writeSampleData(muxAudioTrack, buf, info);
             } catch (Exception e) {
-                Log.w(TAG, "audio sample dropped", e);
+                Log.w(TAG, "audio sample dropped (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
             extractor.advance();
         }
