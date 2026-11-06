@@ -2406,7 +2406,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Invite endpoints are handled by the same injected router exercised by\n  // inviteRoutes.test.js; keep this dispatch before all later route branches.\n  if (handleInviteRoute(req, res)) return;\n\n  // ── POST /mintChallenge ─────────────────────────────────────────────────────
+  // Invite endpoints are handled by the same injected router exercised by
+  // inviteRoutes.test.js; keep this dispatch before all later route branches.
+  if (handleInviteRoute(req, res)) return;
+
+  // ── POST /mintChallenge ─────────────────────────────────────────────────────
   //
   // Body (JSON): { userId }
   //
