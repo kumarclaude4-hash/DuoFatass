@@ -1020,3 +1020,144 @@ test('S10-N3: a normal migration (no racing delete) tiers the object to B2 and d
   assert.equal(compensatingDelete, false, 'the compensating B2 delete must fire only on the concurrent-delete race, never on a healthy migration');
   assert.equal(await bucket.head(key), null, 'a healthy migration must remove the object from R2 after tiering it to B2');
 });
+
+
+test('S10-N3: a changed R2 ETag keeps the newer hot object and counts its bytes', async () => {
+  const key = `media/${CHAT_ID}/changed-etag.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const originalHead = bucket.head.bind(bucket);
+  bucket.head = async (objectKey) => {
+    const current = await originalHead(objectKey);
+    return current ? { ...current, httpEtag: '"newer-client-write"' } : null;
+  };
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const b2Calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init);
+    b2Calls.push({ method: req.method, url: req.url });
+    if (req.method === 'PUT') return new Response(null, { status: 200 });
+    if (req.method === 'DELETE') return new Response(null, { status: 204 });
+    return new Response('<ListBucketResult></ListBucketResult>', { status: 200 });
+  };
+
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  assert.ok(await originalHead(key), 'a changed object must remain in R2');
+  assert.equal(b2Calls.some((call) => call.method === 'DELETE'), false,
+    'migration must not delete an R2 object whose ETag changed after the GET');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), '100',
+    'the changed hot object must remain included in the authoritative R2 byte count');
+});
+
+test('S10-N3: a failed post-PUT R2 HEAD retains the hot source and its storage accounting', async () => {
+  const key = `media/${CHAT_ID}/head-failure.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 123, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  bucket.head = async () => { throw new Error('transient R2 lookup failure'); };
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const b2Calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init);
+    b2Calls.push({ method: req.method, url: req.url });
+    if (req.method === 'PUT') return new Response(null, { status: 200 });
+    if (req.method === 'DELETE') return new Response(null, { status: 204 });
+    return new Response('<ListBucketResult></ListBucketResult>', { status: 200 });
+  };
+
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  assert.ok(bucket.objects.has(key), 'a failed HEAD is not proof of deletion; retain the R2 object');
+  assert.equal(b2Calls.some((call) => call.method === 'DELETE'), false,
+    'an ambiguous HEAD failure must not trigger the compensating delete');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), '123',
+    'bytes must remain charged to R2 until a later run confirms migration');
+});
+
+test('S10-N3: a failed B2 PUT leaves the source in R2 and accounts it for retry', async () => {
+  const key = `media/${CHAT_ID}/put-failure.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 234, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const b2Calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init);
+    b2Calls.push({ method: req.method, url: req.url });
+    if (req.method === 'PUT') return new Response('temporary B2 failure', { status: 503 });
+    if (req.method === 'DELETE') return new Response(null, { status: 204 });
+    return new Response('<ListBucketResult></ListBucketResult>', { status: 200 });
+  };
+
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  assert.ok(bucket.objects.has(key), 'a failed B2 upload must not delete the hot source');
+  assert.equal(b2Calls.some((call) => call.method === 'DELETE'), false,
+    'a failed B2 upload must not issue a destructive delete');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), '234',
+    'the source object remains included in R2 accounting so tomorrow\'s scheduled run can retry');
+});
+
+test('S10-N3: a failed compensating B2 DELETE is observable without logging the media key', async () => {
+  const key = `media/${CHAT_ID}/compensation-failure.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  bucket.head = async () => null; // a confirmed concurrent deletion from R2
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const b2Calls = [];
+  const errorLogs = [];
+  const warnLogs = [];
+  const waitUntilTasks = [];
+  const testCtx = { waitUntil: (promise) => { waitUntilTasks.push(Promise.resolve(promise)); } };
+  const realFetch = globalThis.fetch;
+  const realError = console.error;
+  const realWarn = console.warn;
+  globalThis.fetch = async (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init);
+    b2Calls.push({ method: req.method, url: req.url });
+    if (req.method === 'PUT') return new Response(null, { status: 200 });
+    if (req.method === 'DELETE') return new Response('temporary B2 delete failure', { status: 503 });
+    return new Response('<ListBucketResult><Contents><Size>100</Size></Contents></ListBucketResult>', { status: 200 });
+  };
+  console.error = (...args) => errorLogs.push(args.join(' '));
+  console.warn = (...args) => warnLogs.push(args.join(' '));
+
+  try {
+    await worker.scheduled({}, env, testCtx);
+    await Promise.all(waitUntilTasks);
+  } finally {
+    globalThis.fetch = realFetch;
+    console.error = realError;
+    console.warn = realWarn;
+  }
+
+  assert.equal(bucket.objects.has(key), false, 'the test represents a confirmed client deletion from R2');
+  assert.equal(b2Calls.filter((call) => call.method === 'DELETE').length, 1,
+    'the migration must attempt to compensate for its own B2 write');
+  assert.ok(errorLogs.some((line) => /S10-N3: compensating B2 DELETE failed with status 503; orphan may remain/.test(line)),
+    'a failed compensation must be visible to an operator');
+  assert.equal(errorLogs.some((line) => line.includes(key)), false,
+    'the failure diagnostic must not expose the conversation/media key');
+  assert.equal(warnLogs.some((line) => line.includes(key)), false,
+    'migration warnings must not expose the conversation/media key');
+  assert.equal(env.RATE_KV.store.get('global:storage:b2'), '100',
+    'nightly B2 reconciliation must count the object that could not be compensated');
+});
