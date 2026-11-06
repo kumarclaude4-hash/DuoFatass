@@ -11,10 +11,16 @@ import static androidx.test.espresso.intent.matcher.IntentMatchers.hasComponent;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
 import android.app.Activity;
 import android.app.Instrumentation;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.view.View;
+import android.view.ViewGroup;
 import android.content.Context;
 
 import androidx.test.core.app.ActivityScenario;
@@ -25,6 +31,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import com.duoshield.app.R;
 import com.duoshield.app.SignInActivity;
 import com.duoshield.app.util.PinManager;
+import com.duoshield.app.util.LockScreenCover;
 import com.duoshield.app.util.SecurePrefs;
 
 import org.junit.After;
@@ -171,6 +178,50 @@ public class DevicePinGateInstrumentedTest {
 
         assertTrue("original device PIN must still verify after the wipe",
                 PinManager.verifyDevicePin(appContext, originalPin));
+    }
+
+    @Test
+    public void lockScreenCover_blocksUnderlyingPinSetup_andCanBeRemoved() {
+        try (ActivityScenario<DevicePinGateActivity> scenario =
+                     ActivityScenario.launch(DevicePinGateActivity.class)) {
+            onView(withId(R.id.etNewPin)).perform(replaceText("135790"), closeSoftKeyboard());
+            onView(withId(R.id.etConfirmPin)).perform(replaceText("135790"), closeSoftKeyboard());
+
+            final int[] originalChildCount = new int[1];
+            scenario.onActivity(activity -> {
+                View content = activity.findViewById(android.R.id.content);
+                assertTrue("android.R.id.content must be a ViewGroup", content instanceof ViewGroup);
+                ViewGroup root = (ViewGroup) content;
+                originalChildCount[0] = root.getChildCount();
+
+                LockScreenCover.show(activity);
+                assertEquals("cover must be added above the existing activity content",
+                        originalChildCount[0] + 1, root.getChildCount());
+                View cover = root.getChildAt(root.getChildCount() - 1);
+                assertTrue("cover must consume touch input", cover.isClickable());
+                assertTrue("cover must be focusable", cover.isFocusable());
+                assertTrue("cover must use an opaque color background",
+                        cover.getBackground() instanceof ColorDrawable);
+                assertEquals("cover must be fully opaque black",
+                        Color.BLACK, ((ColorDrawable) cover.getBackground()).getColor());
+
+                LockScreenCover.show(activity);
+                assertEquals("show() must be idempotent", originalChildCount[0] + 1,
+                        root.getChildCount());
+            });
+
+            // Espresso still targets the underlying button coordinates; the topmost
+            // clickable cover must receive the touch instead of the PIN setup screen.
+            onView(withId(R.id.btnContinue)).perform(click());
+            assertFalse("covered activity must not process PIN setup",
+                    PinManager.hasDevicePinSet(appContext));
+
+            scenario.onActivity(LockScreenCover::hide);
+            onView(withId(R.id.btnContinue)).perform(click());
+            intended(hasComponent(SignInActivity.class.getName()));
+            assertTrue("removing the cover must restore normal interaction",
+                    PinManager.hasDevicePinSet(appContext));
+        }
     }
 
     private static int keyIdForDigit(char digit) {
