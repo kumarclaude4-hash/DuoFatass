@@ -9,7 +9,7 @@ on:
       - 'server/lib/adminSessionStore*'
       - 'server/lib/inviteStore*'
       - 'server/lib/inviteRoutes*'
-      - 'server/lib/mintTokenRoutes*'
+      - 'server/lib/mintTokenRoute*'
       - 'server/lib/identityClaim*'
       - 'server/lib/identityVerify*'
       - 'server/lib/challengeStore*'
