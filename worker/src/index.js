@@ -1261,7 +1261,24 @@ export default {
             // data is lost: R2 still holds the object, GET serves it from the
             // hot tier, and tomorrow's run re-migrates it.
             console.warn(`S10-N3: undoing orphaned B2 copy of ${obj.key} — R2 was deleted during migration`);
-            ctx.waitUntil(b2.fetch(b2Url(env, obj.key), { method: 'DELETE' }).catch(() => {}));
+            ctx.waitUntil(
+              b2.fetch(b2Url(env, obj.key), { method: 'DELETE' })
+                .then((deleteResponse) => {
+                  if (!deleteResponse.ok && deleteResponse.status !== 404) {
+                    // Keep the media key out of release logs; a failed
+                    // compensation is operationally important, but the path
+                    // contains the conversation identifier.
+                    console.error(
+                      `S10-N3: compensating B2 DELETE failed with status ${deleteResponse.status}; orphan may remain`
+                    );
+                  }
+                })
+                .catch(() => {
+                  console.error(
+                    'S10-N3: compensating B2 DELETE failed due to a network error; orphan may remain'
+                  );
+                })
+            );
           }
         } else {
           // B2 PUT failed — object stays in R2. Count it and retry tomorrow.
