@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.duoshield.app.util.AppLockManager;
 import com.duoshield.app.util.PinManager;
+import com.duoshield.app.util.LockScreenCover;
 import com.duoshield.app.util.ShakeDetector;
 import com.google.firebase.auth.FirebaseAuth;
 
@@ -153,6 +154,10 @@ public class BaseActivity extends AppCompatActivity {
         // is genuinely unlocked and about to see real app content do we enforce the
         // "no offline use" wall.
         if (AppLockManager.shouldLock(this)) {
+            // S08-L4: cover the already-inflated content before the first resumed frame
+            // while LockScreenActivity is brought forward. This also protects recents
+            // snapshots when the user explicitly opted into screenshots.
+            LockScreenCover.show(this);
             if (!lockScreenActive) {
                 Log.d(TAG, getClass().getSimpleName() + ": lock timeout exceeded → LockScreenActivity");
                 lockScreenActive = true;
@@ -161,6 +166,9 @@ public class BaseActivity extends AppCompatActivity {
                 startActivity(intent);
             }
         } else {
+            // A successful unlock clears bgTs before the original activity restarts.
+            // Remove only our own opaque cover after shouldLock() confirms access.
+            LockScreenCover.hide(this);
             // Full offline lockout: an unlocked, foregrounded screen showing real app
             // content must not operate without a connection. Enforced here (not before
             // the lock check) so unlocking — including the offline duress path — is
