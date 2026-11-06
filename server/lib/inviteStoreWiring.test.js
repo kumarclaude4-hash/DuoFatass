@@ -12,6 +12,7 @@ const path = require("node:path");
 
 const SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
 const ROUTE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteRoutes.js"), "utf8");
+const MINT_ROUTE_SOURCE = fs.readFileSync(path.join(__dirname, "mintTokenRoute.js"), "utf8");
 const CLAIM_SOURCE = fs.readFileSync(path.join(__dirname, "identityClaim.js"), "utf8");
 
 function section(source, start, end) {
@@ -76,23 +77,42 @@ test("shared invite router authenticates admin routes and delegates every lifecy
     "HTTP handlers must not maintain a second invite persistence implementation");
 });
 
-test("mintToken preserves authentication and proof-of-possession before the identity transaction", () => {
-  const mint = section(
+test("production mintToken endpoint uses the tested handler and keeps proof-of-possession before claim", () => {
+  assert.ok(SOURCE.includes('const { createMintTokenRouteHandler } = require("./lib/mintTokenRoute");'));
+  const setup = section(
     SOURCE,
-    'if (req.method === "POST" && req.url === "/mintToken")',
-    "// ── POST /migrateUid"
+    "const handleMintTokenRoute = createMintTokenRouteHandler({",
+    "const server = http.createServer"
   );
-  assert.ok(mint.includes("verifyMintTokenSignature({ userId, identityPubKeyHex, nonceHex: nonce, signatureHex })"),
-    "the mandatory nonce/signature proof-of-possession must remain in front of the transaction");
-  assert.ok(mint.includes("claimIdentityInTransaction({"));
-  assert.ok(mint.includes("db.runTransaction((tx) => claimIdentityInTransaction("));
-  assert.ok(mint.includes("inviteStore,"));
-  assert.ok(mint.includes("auditAdminEventInTransaction,"));
-  assert.ok(mint.includes("tagUserId: uidTag"));
-  assert.equal(mint.includes("inviteStore.redeemInTransaction("), false,
-    "the route must not duplicate the transactional identity/invite implementation");
-  assert.equal(mint.includes('.where("tokenHash"'), false,
-    "the route must not bypass the store's one-time-use transaction");
+  for (const dependency of [
+    "collectBody", "getClientIp", "checkIpRateLimit", "mintCooldown",
+    "mintChallengeStore", "verifyMintTokenSignature", "sha256hex",
+    "db,", "FieldValue,", "inviteStore,", "invite,", "claimIdentityInTransaction,",
+    "auditAdminEventInTransaction,", "createCustomToken:"
+  ]) {
+    assert.ok(setup.includes(dependency), "production mintToken handler missing " + dependency);
+  }
+  const dispatch = section(
+    SOURCE,
+    "const server = http.createServer",
+    "// ── POST /mintChallenge"
+  );
+  assert.ok(dispatch.includes("if (handleMintTokenRoute(req, res)) return;"),
+    "production HTTP server must dispatch to the tested mintToken route");
+
+  assert.ok(MINT_ROUTE_SOURCE.includes('req.method !== "POST" || req.url !== "/mintToken"'));
+  assert.ok(MINT_ROUTE_SOURCE.includes("mintChallengeStore.consume(userId, nonce)"));
+  assert.ok(MINT_ROUTE_SOURCE.includes("verifyMintTokenSignature({ userId, identityPubKeyHex, nonceHex: nonce, signatureHex })"));
+  assert.ok(MINT_ROUTE_SOURCE.includes("db.runTransaction((tx) => claimIdentityInTransaction({"));
+  assert.ok(MINT_ROUTE_SOURCE.includes("const token = await createCustomToken(userId)"));
+  assert.ok(MINT_ROUTE_SOURCE.includes("releaseCooldown();"));
+  assert.ok(MINT_ROUTE_SOURCE.indexOf("mintChallengeStore.consume(userId, nonce)") <
+    MINT_ROUTE_SOURCE.indexOf("verifyMintTokenSignature({ userId, identityPubKeyHex, nonceHex: nonce, signatureHex })"));
+  assert.ok(MINT_ROUTE_SOURCE.indexOf("verifyMintTokenSignature({ userId, identityPubKeyHex, nonceHex: nonce, signatureHex })") <
+    MINT_ROUTE_SOURCE.indexOf("db.runTransaction((tx) => claimIdentityInTransaction({"));
+  assert.ok(MINT_ROUTE_SOURCE.indexOf("db.runTransaction((tx) => claimIdentityInTransaction({") <
+    MINT_ROUTE_SOURCE.indexOf("const token = await createCustomToken(userId)"));
+  assert.ok(MINT_ROUTE_SOURCE.includes('res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })'));
 });
 
 test("identity claim helper owns the lock, one-time invite, legacy and identity writes in one caller transaction", () => {

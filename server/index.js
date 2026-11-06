@@ -21,6 +21,7 @@ const { createInviteStore } = require("./lib/inviteStore");
 const { createInviteRouteHandler } = require("./lib/inviteRoutes");
 const { consumeDuressLockNonceInTransaction, pruneOutstandingDuressNonces } = require("./lib/duressLock");
 const { claimIdentityInTransaction } = require("./lib/identityClaim");
+const { createMintTokenRouteHandler } = require("./lib/mintTokenRoute");
 
 let serviceAccount;
 try {
@@ -2391,6 +2392,26 @@ const handleInviteRoute = createInviteRouteHandler({
   sendServerError,
 });
 
+const handleMintTokenRoute = createMintTokenRouteHandler({
+  collectBody,
+  getClientIp,
+  checkIpRateLimit,
+  ipTag,
+  uidTag,
+  mintCooldown,
+  mintCooldownMs: MINT_COOLDOWN_MS,
+  mintChallengeStore,
+  verifyMintTokenSignature,
+  sha256hex,
+  db,
+  FieldValue,
+  inviteStore,
+  invite,
+  claimIdentityInTransaction,
+  auditAdminEventInTransaction,
+  createCustomToken: (userId) => admin.auth().createCustomToken(userId),
+});
+
 const server = http.createServer((req, res) => {
 
   // Baseline security headers on every response (merged with, and overridable by,
@@ -2409,6 +2430,7 @@ const server = http.createServer((req, res) => {
   // Invite endpoints are handled by the same injected router exercised by
   // inviteRoutes.test.js; keep this dispatch before all later route branches.
   if (handleInviteRoute(req, res)) return;
+  if (handleMintTokenRoute(req, res)) return;
 
   // ── POST /mintChallenge ─────────────────────────────────────────────────────
   //
@@ -2485,172 +2507,9 @@ const server = http.createServer((req, res) => {
   //   lib/challengeStore.js (nonce) + lib/identityVerify.js (verification), both
   //   of which do exist and have passing tests you can run.
   //
-  if (req.method === "POST" && req.url === "/mintToken") {
-    collectBody(req, res, async (body) => {
-      // Declared outside the try so the catch below can also release the
-      // reserved per-userId cooldown slot (S02-M1). Assigned once the userId is
-      // known and the slot has actually been claimed; stays a no-op before that.
-      let releaseCooldown = () => {};
-      try {
-        // ── IP rate limit (checked before parsing body) ──────────────────────
-        const clientIp = getClientIp(req);
-        if (!checkIpRateLimit(clientIp)) {
-          console.warn(`mintToken: IP rate limit hit ip=${ipTag(clientIp)}`);
-          res.writeHead(429, { "Content-Type": "text/plain" });
-          res.end("Too many requests from this IP — wait 15 min and retry");
-          return;
-        }
-
-        const { userId, identityPubKeyHex, nonce, signatureHex, inviteToken } =
-          JSON.parse(body);
-        if (!userId || typeof userId !== "string" ||
-            !identityPubKeyHex || typeof identityPubKeyHex !== "string") {
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end("Missing or invalid userId / identityPubKeyHex");
-          return;
-        }
-
-        // ── S07-C1: proof-of-possession is MANDATORY ─────────────────────────
-        // Shape-checked here, before the cooldown slot below is touched, so a
-        // malformed or legacy request cannot perturb rate-limit state for the
-        // account. A client build that predates the challenge protocol lands
-        // here and gets a clear 400 rather than a silent auth bypass — that is
-        // the intended fail-closed behaviour, NOT a bug to "fix" by making
-        // these fields optional. Making them optional restores the takeover.
-        if (!nonce || typeof nonce !== "string" ||
-            !signatureHex || typeof signatureHex !== "string") {
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end("Missing or invalid nonce / signatureHex — call POST /mintChallenge first");
-          return;
-        }
-
-        // ── Per-userId cooldown (prevents rapid re-auth from same account) ───
-        //
-        // S02-M1: this is a two-phase claim, and the ordering matters in both
-        // directions.
-        //
-        // The cooldown must be *reserved* before the first `await` — a purely
-        // post-mint write left a window in which two concurrent requests for the
-        // same userId both read the old timestamp, both passed, and the 60 s
-        // limit was bypassed entirely.
-        //
-        // But an unconditional pre-auth write turned this rate limit into a
-        // denial-of-service primitive against a specific account: `userId` is
-        // derived from a seed and is not a secret, so anyone could POST that uid
-        // with garbage key material once a minute, forever. Each attempt was
-        // rejected 403 yet still stamped the cooldown, so the legitimate owner —
-        // who never authenticated successfully �� was held at 429 indefinitely.
-        //
-        // Resolution: reserve the slot now to close the race, then release it on
-        // any failure path (see the `catch` below, and the finally-style release
-        // on 403). Only a *successful* mint leaves the stamp in place, so failed
-        // guesses cost the attacker nothing they can inflict on the victim.
-        const now  = Date.now();
-        const last = mintCooldown.get(userId) || 0;
-        if (now - last < MINT_COOLDOWN_MS) {
-          res.writeHead(429, { "Content-Type": "text/plain" });
-          res.end("Too many requests — wait 60 s and retry");
-          return;
-        }
-        mintCooldown.set(userId, now);
-        // Restores the previous cooldown state when this attempt does not result
-        // in an issued token. Set back to the prior timestamp rather than
-        // deleting, so an in-flight legitimate cooldown is never cleared by a
-        // concurrent failed attempt.
-        releaseCooldown = () => {
-          if (last === 0) mintCooldown.delete(userId);
-          else            mintCooldown.set(userId, last);
-        };
-
-        // ── S07-C1 gate: consume the nonce, then verify the signature ────────
-        //
-        // Ordering rationale:
-        //   • After the cooldown check, so a 429 does not burn a nonce the
-        //     legitimate client would need for its retry.
-        //   • consume() BEFORE verify(), and unconditionally: the nonce is spent
-        //     by the attempt itself, so a captured signature cannot be replayed
-        //     and an attacker cannot grind many signature guesses against one
-        //     outstanding challenge. A legitimate client that fails here simply
-        //     fetches a fresh challenge.
-        //   • Both BEFORE the Firestore transaction, so unauthenticated callers
-        //     never reach the (billable, lock-reading) transaction at all.
-        if (!mintChallengeStore.consume(userId, nonce)) {
-          releaseCooldown();
-          console.warn(
-            `mintToken: no valid outstanding challenge for uid=${uidTag(userId)} ` +
-            `(unknown, expired, or already-used nonce) — refusing to mint (S07-C1)`
-          );
-          // Same 403 string as a key mismatch on purpose: the response must not
-          // distinguish "your nonce was stale" from "wrong key" from "locked
-          // account", or it becomes an oracle for probing account state.
-          res.writeHead(403, { "Content-Type": "text/plain" });
-          res.end("Key mismatch");
-          return;
-        }
-
-        if (!verifyMintTokenSignature({ userId, identityPubKeyHex, nonceHex: nonce, signatureHex })) {
-          releaseCooldown();
-          console.warn(
-            `mintToken: identity signature verification FAILED for uid=${uidTag(userId)} ` +
-            `— refusing to mint (S07-C1)`
-          );
-          res.writeHead(403, { "Content-Type": "text/plain" });
-          res.end("Key mismatch");
-          return;
-        }
-
-        const incomingHash = sha256hex(identityPubKeyHex);
-
-        // F2 / S05-H2: the same helper is exercised against the Firestore
-        // emulator in identityClaim.firestore.integration.test.js. Keep the
-        // HTTP route responsible for authentication and proof-of-possession;
-        // delegate only the atomic lock/invite/identity transaction.
-        const claim = await db.runTransaction((tx) => claimIdentityInTransaction({
-          tx,
-          firestore: db,
-          FieldValue,
-          inviteStore,
-          invite,
-          userId,
-          incomingHash,
-          inviteToken,
-          requestContext: req,
-          auditAdminEventInTransaction,
-          tagUserId: uidTag,
-        }));
-        const isNewAccount = claim.isNewAccount;
-
-        // Mint custom token — uid = userId (permanent, seed-derived)
-        // Token is minted only after the atomic identity-claim succeeds.
-        const token = await admin.auth().createCustomToken(userId);
-
-        console.log(`mintToken: issued token for userId=${uidTag(userId)} newAccount=${isNewAccount}`);
-
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ token }));
-      } catch (e) {
-        // S02-M1: no token was issued on any path that lands here, so the
-        // reserved cooldown slot must not be left burnt against the account. A
-        // rejected attempt — wrong key, unapproved invite, locked account, or an
-        // internal fault — must not be able to hold the legitimate owner at 429.
-        releaseCooldown();
-        if (e.status === 403) {
-          // Thrown from inside the Firestore transaction: either a key mismatch
-          // (F2 fix) or a missing/unapproved waitlist request for a new account.
-          let attemptedUid = "none";
-          try { attemptedUid = uidTag(JSON.parse(body || "{}").userId); } catch { /* unparsable body */ }
-          console.warn(`mintToken: 403 (${e.message}) for userId=${attemptedUid}`);
-          res.writeHead(403, { "Content-Type": "text/plain" });
-          res.end(e.message);
-        } else {
-          console.error("mintToken error:", e.message);
-          res.writeHead(500, { "Content-Type": "text/plain" });
-          res.end("Internal server error");
-        }
-      }
-    });
-    return;
-  }
+  // The actual /mintToken HTTP boundary is extracted and exercised by
+  // mintTokenRoutes.test.js plus mintTokenRoutes.firestore.integration.test.js.
+  if (handleMintTokenRoute(req, res)) return;
 
   // ── POST /migrateUid ──────────────────────��──────────────────────────────────
   //
