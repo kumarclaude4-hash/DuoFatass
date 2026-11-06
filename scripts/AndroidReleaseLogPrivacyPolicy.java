@@ -6,6 +6,7 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePathScanner;
@@ -297,8 +298,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     addViolation(node, "Throwable/third-argument overload is forbidden");
                 }
                 if (args.size() >= 2) {
-                    new MessageScanner(node, throwableVariables).scan(
-                            new com.sun.source.util.TreePath(getCurrentPath(), args.get(1)), null);
+                    new MessageScanner(node, throwableVariables).scan(args.get(1), null);
                 }
             }
             return super.visitMethodInvocation(node, unused);
@@ -310,13 +310,29 @@ public final class AndroidReleaseLogPrivacyPolicy {
             violations.add(unit.getSourceFile().getName() + ":" + line + ": " + reason);
         }
 
-        private final class MessageScanner extends TreePathScanner<Void, Void> {
+        private final class MessageScanner extends TreeScanner<Void, Void> {
             private final MethodInvocationTree logCall;
             private final Set<String> throwableVariables;
+            private Tree parentTree;
+            private Tree currentTree;
 
             MessageScanner(MethodInvocationTree logCall, Set<String> throwableVariables) {
                 this.logCall = logCall;
                 this.throwableVariables = throwableVariables;
+            }
+
+            @Override
+            public Void scan(Tree tree, Void unused) {
+                Tree previousParent = parentTree;
+                Tree previousCurrent = currentTree;
+                parentTree = previousCurrent;
+                currentTree = tree;
+                try {
+                    return super.scan(tree, unused);
+                } finally {
+                    parentTree = previousParent;
+                    currentTree = previousCurrent;
+                }
             }
 
             @Override
@@ -346,16 +362,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 return super.visitMethodInvocation(node, unused);
             }
 
-            private boolean isSafeThrowableClassNameUse(com.sun.source.util.TreePath identifierPath) {
-                com.sun.source.util.TreePath parent = identifierPath.getParentPath();
-                if (parent == null || !(parent.getLeaf() instanceof MemberSelectTree)) return false;
-                MemberSelectTree select = (MemberSelectTree) parent.getLeaf();
-                if (!"getClass".equals(select.getIdentifier())
-                        || !select.getExpression().toString().equals(identifierPath.getLeaf().toString())) return false;
-                // getClass().getSimpleName() yields only a class label; it does
-                // not serialize the Throwable, message, stack or cause chain.
-                return parent.getParentPath() != null
-                        && parent.getParentPath().getLeaf() instanceof MethodInvocationTree;
+            private boolean isSafeThrowableClassNameUse(IdentifierTree identifier) {
+                if (!(parentTree instanceof MemberSelectTree)) return false;
+                MemberSelectTree parent = (MemberSelectTree) parentTree;
+                // The identifier must be the receiver in exception.getClass().
+                // Only the class label is allowed; the exception itself, message,
+                // cause and stack remain forbidden.
+                return "getClass".equals(parent.getIdentifier())
+                        && parent.getExpression().toString().equals(identifier.getName().toString());
             }
 
             @Override
@@ -369,7 +383,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             @Override
             public Void visitIdentifier(IdentifierTree node, Void unused) {
                 String name = node.getName().toString();
-                if (throwableVariables.contains(name) && !isSafeThrowableClassNameUse(getCurrentPath())) {
+                if (throwableVariables.contains(name) && !isSafeThrowableClassNameUse(node)) {
                     addViolation(logCall, "Throwable variable '" + name + "' is interpolated");
                 } else if (SENSITIVE_IDENTIFIER.matcher(name).matches()
                         && !SAFE_OPERATIONAL_COUNTERS.contains(name)) {
