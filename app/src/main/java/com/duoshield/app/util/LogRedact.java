@@ -32,6 +32,38 @@ public final class LogRedact {
     private LogRedact() {}
 
     /**
+     * Pseudonymises non-user metadata such as message IDs, conversation IDs,
+     * storage paths and preference-file names before it reaches release logs.
+     * The per-process salt makes the returned tag useful only for correlation
+     * within one running process.
+     */
+    public static String metadata(String value) {
+        if (value == null || value.isEmpty()) return "m:none";
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            md.update(SALT);
+            byte[] digest = md.digest(value.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder("m:");
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format("%02x", digest[i]));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "m:err";
+        }
+    }
+
+    /**
+     * Returns only an exception type for a release-surviving diagnostic.
+     * Exception messages and stack traces can contain UIDs, URLs, storage
+     * paths, document IDs or server response bodies and must not be copied
+     * into metadata-protected logs.
+     */
+    public static String error(Throwable error) {
+        return error == null ? "unknown" : error.getClass().getSimpleName();
+    }
+
+    /**
      * Returns a short, stable, non-reversible tag for a user id.
      *
      * @return e.g. {@code "u:9f3a1c2b"}, or {@code "u:none"} when null/empty.
