@@ -2515,7 +2515,11 @@ const server = http.createServer((req, res) => {
   //   lib/challengeStore.js (nonce) + lib/identityVerify.js (verification), both
   //   of which do exist and have passing tests you can run.
   //
-  // The actual /mintToken HTTP boundary is extracted and exercised by\n  // mintTokenRoutes.test.js plus mintTokenRoutes.firestore.integration.test.js.\n  if (handleMintTokenRoute(req, res)) return;\n\n  // ── POST /migrateUid ──────────────────────��──────────────────────────────────
+  // The actual /mintToken HTTP boundary is extracted and exercised by
+  // mintTokenRoutes.test.js plus mintTokenRoutes.firestore.integration.test.js.
+  if (handleMintTokenRoute(req, res)) return;
+
+  // ── POST /migrateUid ──────────────────────��──────────────────────────────────
   //
   // Body (JSON): { userId, oldUid }
   // Auth: Firebase ID token in Authorization: Bearer <token> header.
