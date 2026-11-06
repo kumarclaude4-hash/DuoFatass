@@ -49,7 +49,7 @@ Do not mark the audit complete yet. Finish a compiler/AST-aware scan of every re
 
 ### B. S03-M3 — decide the media capability-token residual
 
-Current token format carries a random jti; DELETE replay is single-use and fail-closed. The 10-minute TTL remains, and READ/WRITE tokens remain reusable to preserve normal upload/download/retry behavior. A dated decision record is now available at `security-remediation/S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md`.
+Current token format carries a random jti; DELETE replay is single-use and fail-closed. The 10-minute TTL remains, and READ/WRITE tokens remain reusable to preserve normal upload/download/retry behavior. The analysis and owner-decision template are documented in `security-remediation/S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md`. A dated decision record is now available at `security-remediation/S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md`.
 
 The decision record compares the current residual, a versioned one-shot protocol and TTL-only shortening; it recommends retaining the current behavior until the owner either ratifies the residual or approves a protocol redesign. Do not shorten TTL or make READ/WRITE single-use without tracing Android upload, retry, range-read and re-fetch flows. The owner decision remains **PENDING**, so keep S03-M3 Partial.
 
@@ -65,7 +65,7 @@ WipeHelper now calls SeedPhraseHelper.clearDerivationCache(), and JVM tests prov
 
 ### E. S05-M3 — durable admin-session emulator coverage
 
-Firestore emulator tests already cover independent store instances, cross-instance validation, single/global revocation, concurrent global revoke and idle/absolute expiry. Review remaining test gaps around Firestore outage/fail-closed behavior, process recreation, transaction retry and cookie invalidation. Add real-store emulator tests for gaps. Do not call emulator evidence production verification; production Firestore rules/index/TTL deployment and staging acceptance remain external.
+Existing JVM/server tests cover independent store instances, cross-instance validation, single/global revocation, concurrent global revoke, idle/absolute expiry and explicit Firestore outage propagation (callers can fail closed). The Firestore emulator integration covers durable transactional behavior across independent instances. The remaining gap is staging/production acceptance with deployed rules/indexes/TTL, restart/outage behavior in the actual environment and authorized synthetic session cookies; do not use a real operator cookie. Do not call emulator evidence production verification; production Firestore rules/index/TTL deployment and staging acceptance remain external.
 
 ### F. S02-I2 — ensure every authenticated route uses the shared limiter
 
