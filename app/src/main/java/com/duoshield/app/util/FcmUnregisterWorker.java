@@ -90,7 +90,7 @@ public class FcmUnregisterWorker extends Worker {
             Log.d(TAG, "FCM token deleted for this device.");
             return Result.success();
         } catch (Exception e) {
-            Log.w(TAG, "FCM token delete failed — will retry: " + e.getMessage());
+            Log.w(TAG, "FCM token delete failed — will retry (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return Result.retry();
         }
     }
