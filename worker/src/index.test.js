@@ -1120,7 +1120,7 @@ test('S10-N3: a failed compensating B2 DELETE is observable without logging the 
   const bucket = makeMigrationBucket([
     { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
   ]);
-  bucket.head = async () => null; // a confirmed concurrent deletion from R2
+  bucket.head = async () => { await bucket.delete(key); return null; }; // simulate a confirmed client DELETE from R2
   const env = makeEnv({ HOT_BUCKET: bucket });
   const b2Calls = [];
   const errorLogs = [];
