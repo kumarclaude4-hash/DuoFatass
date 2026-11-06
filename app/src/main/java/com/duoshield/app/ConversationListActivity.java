@@ -117,8 +117,7 @@ public class ConversationListActivity extends BaseActivity {
         // Continuing with a null myUid would produce NullPointerExceptions at call sites
         // that build Firestore field paths like "partnerName_" + myUid (→ "partnerName_null").
         if (myUid == null) {
-            android.util.Log.w("ConversationListActivity",
-                    "myUid is null after recovery — redirecting to sign-in.");
+            android.util.Log.w("ConversationListActivity", "myUid is null after recovery — redirecting to sign-in.");
             startActivity(new Intent(this, SignInActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
             finish();
@@ -390,8 +389,7 @@ public class ConversationListActivity extends BaseActivity {
             .limit(MAX_LIVE_CONVERSATIONS)
             .addSnapshotListener((snapshots, e) -> {
                 if (e != null) {
-                    android.util.Log.w("ConversationListActivity",
-                            "listenForConversation: error — " + e.getMessage());
+                    android.util.Log.w("ConversationListActivity", "listenForConversation: error — " + com.duoshield.app.util.LogRedact.error(e));
                     return;
                 }
                 if (snapshots == null) return;
