@@ -101,7 +101,7 @@ public class NotificationStyler {
             int notifId = NOTIF_ID_CALL_BASE + callId.hashCode() % 1000;
             NotificationManagerCompat.from(ctx).notify(notifId, builder.build());
         } catch (Exception e) {
-            android.util.Log.w("NotificationStyler", "showIncomingCall failed: " + e.getMessage());
+            android.util.Log.w("NotificationStyler", "showIncomingCall failed: " + com.duoshield.app.util.LogRedact.error(e));
         }
     }
 
