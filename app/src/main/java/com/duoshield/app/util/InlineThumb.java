@@ -108,7 +108,7 @@ public final class InlineThumb {
             if (decoded == null) return null;
             return encodeScaled(decoded);
         } catch (Throwable t) {
-            Log.w(TAG, "fromImageBytes failed: " + t.getMessage());
+            Log.w(TAG, "fromImageBytes failed: " + com.duoshield.app.util.LogRedact.error(t));
             return null;
         }
     }
@@ -141,7 +141,7 @@ public final class InlineThumb {
             if (decoded == null) return null;
             return encodeScaled(decoded);
         } catch (Throwable t) {
-            Log.w(TAG, "fromImageUri failed: " + t.getMessage());
+            Log.w(TAG, "fromImageUri failed: " + com.duoshield.app.util.LogRedact.error(t));
             return null;
         }
     }
@@ -168,7 +168,7 @@ public final class InlineThumb {
             if (frame == null) return null;
             return encodeScaled(frame);
         } catch (Throwable t) {
-            Log.w(TAG, "fromVideoUri failed: " + t.getMessage());
+            Log.w(TAG, "fromVideoUri failed: " + com.duoshield.app.util.LogRedact.error(t));
             return null;
         } finally {
             if (frame != null) frame.recycle();
@@ -195,7 +195,7 @@ public final class InlineThumb {
             byte[] sealed = B2StorageHelper.encryptWithKey(jpeg, mediaKeyBase64);
             return Base64.encodeToString(sealed, Base64.NO_WRAP);
         } catch (Throwable t) {
-            Log.w(TAG, "seal failed: " + t.getMessage());
+            Log.w(TAG, "seal failed: " + com.duoshield.app.util.LogRedact.error(t));
             return null;
         }
     }
@@ -303,7 +303,7 @@ public final class InlineThumb {
             }
             return null;
         } catch (Throwable t) {
-            Log.w(TAG, "encodeLadder failed: " + t.getMessage());
+            Log.w(TAG, "encodeLadder failed: " + com.duoshield.app.util.LogRedact.error(t));
             return null;
         } finally {
             if (scaled != null && scaled != src && !scaled.isRecycled()) scaled.recycle();
