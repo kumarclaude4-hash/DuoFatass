@@ -176,7 +176,7 @@ function createMintTokenRouteHandler(dependencies) {
 
       const token = await createCustomToken(userId);
       logger.log("mintToken: issued token for userId=" + uidTag(userId) + " newAccount=" + isNewAccount);
-      res.writeHead(200, { "Content-Type": "application/json" });
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ token }));
     } catch (error) {
       // A failed attempt must not leave a cooldown stamp that can deny the
