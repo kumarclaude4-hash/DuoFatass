@@ -21,7 +21,7 @@ const { createInviteStore } = require("./lib/inviteStore");
 const { createInviteRouteHandler } = require("./lib/inviteRoutes");
 const { consumeDuressLockNonceInTransaction, pruneOutstandingDuressNonces } = require("./lib/duressLock");
 const { claimIdentityInTransaction } = require("./lib/identityClaim");
-const { createMintTokenRouteHandler } = require("./lib/mintTokenRoutes");
+const { createMintTokenRouteHandler } = require("./lib/mintTokenRoute");
 
 let serviceAccount;
 try {
@@ -2397,27 +2397,19 @@ const handleMintTokenRoute = createMintTokenRouteHandler({
   getClientIp,
   checkIpRateLimit,
   ipTag,
+  uidTag,
   mintCooldown,
   mintCooldownMs: MINT_COOLDOWN_MS,
   mintChallengeStore,
   verifyMintTokenSignature,
   sha256hex,
-  claimIdentity: ({ userId, incomingHash, inviteToken, requestContext }) =>
-    db.runTransaction((tx) => claimIdentityInTransaction({
-      tx,
-      firestore: db,
-      FieldValue,
-      inviteStore,
-      invite,
-      userId,
-      incomingHash,
-      inviteToken,
-      requestContext,
-      auditAdminEventInTransaction,
-      tagUserId: uidTag,
-    })),
+  db,
+  FieldValue,
+  inviteStore,
+  invite,
+  claimIdentityInTransaction,
+  auditAdminEventInTransaction,
   createCustomToken: (userId) => admin.auth().createCustomToken(userId),
-  uidTag,
 });
 
 const server = http.createServer((req, res) => {
