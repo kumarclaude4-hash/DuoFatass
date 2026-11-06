@@ -296,5 +296,7 @@
          is "my messages are gone", which is the opposite of what the block achieves. -->
     <string name="device_unsupported_title">This device cannot store keys securely</string>
     <string name="device_unsupported_message">DuoShield could not set up encrypted storage on this device. The Android keystore rejected every method we support, so your encryption keys cannot be saved in a way that survives the app fully closing.\n\nCreating or restoring an account here would appear to work, then lose access to those messages on the next cold start. We stop now instead of letting that happen.\n\nNothing has been lost. Any existing backup is untouched and can still be restored on another device. Restarting this device, or updating Android, sometimes resolves the problem.</string>
+    <string name="device_legacy_migration_title">Secure existing data before continuing</string>
+    <string name="device_legacy_migration_message">DuoShield found existing secrets in legacy plaintext storage, but could not verify that every value was safely migrated into encrypted storage. New account setup and restore are paused to protect your keys. Do not clear app data or uninstall the app; the original data has been retained for recovery. Restart the device and try again. If this message continues, contact support before changing or removing app data.</string>
     <string name="device_unsupported_dismiss">Close</string>
 </resources>
