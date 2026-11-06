@@ -16,6 +16,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
 import android.app.Activity;
+import android.view.KeyEvent;
 import android.app.Instrumentation;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -221,6 +222,30 @@ public class DevicePinGateInstrumentedTest {
             intended(hasComponent(SignInActivity.class.getName()));
             assertTrue("removing the cover must restore normal interaction",
                     PinManager.hasDevicePinSet(appContext));
+        }
+    }
+
+    @Test
+    public void devicePinGate_consumesPlatformBackDispatch() {
+        try (ActivityScenario<DevicePinGateActivity> scenario =
+                     ActivityScenario.launch(DevicePinGateActivity.class)) {
+            onView(withId(R.id.etNewPin)).check(matches(isDisplayed()));
+
+            // Send BACK through Android's input dispatcher, rather than calling
+            // Activity.onBackPressed() directly. On API 33+ with
+            // enableOnBackInvokedCallback=true this exercises the platform back
+            // dispatch path that bypassed legacy Activity overrides.
+            InstrumentationRegistry.getInstrumentation()
+                    .sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+
+            scenario.onActivity(activity -> {
+                assertFalse("security gate must not finish on platform BACK",
+                        activity.isFinishing());
+                assertTrue("security gate must remain resumed after BACK",
+                        activity.hasWindowFocus());
+            });
+            onView(withId(R.id.etNewPin)).check(matches(isDisplayed()));
         }
     }
 
