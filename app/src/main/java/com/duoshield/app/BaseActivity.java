@@ -201,7 +201,7 @@ public class BaseActivity extends AppCompatActivity {
                         .maintainLockCredential(getApplicationContext());
             } catch (Exception e) {
                 // Never let credential upkeep break navigation into a screen.
-                Log.w(TAG, "Lock credential upkeep skipped: " + e.getMessage());
+                Log.w(TAG, "Lock credential upkeep skipped: " + com.duoshield.app.util.LogRedact.error(e));
             }
         }
     }
@@ -265,7 +265,7 @@ public class BaseActivity extends AppCompatActivity {
         } catch (Exception e) {
             // Never let a prefs/keystore hiccup crash an activity resume. Failing
             // closed here only means the sensor stays off for this resume.
-            Log.w(TAG, "Shake-to-lock availability check skipped: " + e.getMessage());
+            Log.w(TAG, "Shake-to-lock availability check skipped: " + com.duoshield.app.util.LogRedact.error(e));
             return false;
         }
     }
