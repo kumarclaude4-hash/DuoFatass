@@ -468,7 +468,7 @@ public final class BackupManager {
 
             } catch (Exception e) {
                 Log.e(TAG, "syncAll: unexpected error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
-                logEvent(uid, "backup_failed", written, e.getMessage());
+                logEvent(uid, "backup_failed", written, com.duoshield.app.util.LogRedact.error(e));
             }
             final SyncResult result = new SyncResult(written, failed, total);
             if (callback != null) callback.onComplete(result);
@@ -629,7 +629,7 @@ public final class BackupManager {
 
             } catch (Exception e) {
                 Log.e(TAG, "syncIncremental: unexpected error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
-                logEvent(uid, "backup_failed", written, e.getMessage());
+                logEvent(uid, "backup_failed", written, com.duoshield.app.util.LogRedact.error(e));
             }
             final SyncResult result = new SyncResult(written, failed, total);
             if (callback != null) callback.onComplete(result);
