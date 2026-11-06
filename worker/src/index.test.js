@@ -1150,7 +1150,7 @@ test('S10-N3: a failed compensating B2 DELETE is observable without logging the 
   }
 
   assert.equal(bucket.objects.has(key), false, 'the test represents a confirmed client deletion from R2');
-  assert.equal(b2Calls.filter((call) => call.method === 'DELETE' && call.url.includes('compensation-failure.jpg')).length, 1,
+  assert.equal(b2Calls.filter((call) => call.method === 'DELETE' && call.url.includes(key)).length, 1,
     'the migration must attempt exactly one compensating delete for its own B2 write');
   assert.ok(errorLogs.some((line) => /S10-N3: compensating B2 DELETE failed with status 503; orphan may remain/.test(line)),
     'a failed compensation must be visible to an operator');
