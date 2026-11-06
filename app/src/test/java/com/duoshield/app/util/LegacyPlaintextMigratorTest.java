@@ -60,6 +60,27 @@ public class LegacyPlaintextMigratorTest {
     }
 
     @Test
+    public void existingValueWithWrongTypeDoesNotCountAsMigrated() {
+        Context context = RuntimeEnvironment.getApplication();
+        String fileName = uniqueFileName();
+        SharedPreferences raw = context.getSharedPreferences(fileName, Context.MODE_PRIVATE);
+        raw.edit().putString("database_key", "legacy-db-secret").commit();
+
+        FakeSharedPreferences encrypted = new FakeSharedPreferences();
+        encrypted.edit().putInt("database_key", 42).commit();
+
+        LegacyPlaintextMigrator.Result result =
+                LegacyPlaintextMigrator.migrate(context, fileName, encrypted, true);
+
+        assertEquals(1, result.found);
+        assertEquals(0, result.migrated);
+        assertTrue(result.plaintextRemains);
+        assertEquals("legacy-db-secret", raw.getString("database_key", null));
+        assertEquals(42, encrypted.getInt("database_key", 0));
+        raw.edit().clear().commit();
+    }
+
+    @Test
     public void migrationCopiesAndVerifiesEverySupportedPreferenceType() {
         Context context = ApplicationProvider.getApplicationContext();
         String fileName = uniqueFileName();
