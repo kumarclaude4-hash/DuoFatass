@@ -132,7 +132,7 @@ public final class SignalSessionManager {
                 Map<String, Object> bundle = SignalKeyApi.claimPreKey(recipientUid);
                 runX3DH(ctx, recipientUid, address, store, bundle, callback);
             } catch (Exception e) {
-                Log.e(TAG, "Failed to claim Signal pre-key for " + LogRedact.uid(recipientUid), e);
+                Log.e(TAG, "Failed to claim Signal pre-key for " + LogRedact.uid(recipientUid) + " (" + LogRedact.error(e) + ")");
                 deliver(callback, null, null, "Could not fetch " + recipientUid
                         + "'s public keys: " + e.getMessage());
             }
@@ -218,8 +218,7 @@ public final class SignalSessionManager {
                         kyberPreKeySig = Base64.decode(kpkSigB64, Base64.NO_WRAP);
                     }
                 } catch (Exception e) {
-                    Log.w(TAG, "Kyber pre-key parse failed for " + LogRedact.uid(recipientUid)
-                            + " — falling back to X3DH only.", e);
+                    Log.w(TAG, "Kyber pre-key parse failed for " + LogRedact.uid(recipientUid) + " — falling back to X3DH only (" + LogRedact.error(e) + ")");
                     kyberPreKeyId = -1;
                     kyberPreKey   = null;
                     kyberPreKeySig = null;
@@ -277,9 +276,7 @@ public final class SignalSessionManager {
                 new SessionBuilder(store, address).process(bundle);
             } catch (Exception pqxdhEx) {
                 if (kyberPreKey != null) {
-                    Log.w(TAG, "PQXDH SessionBuilder.process() failed for " + LogRedact.uid(recipientUid)
-                            + " — partner's Kyber key may be corrupt; retrying with classic X3DH.",
-                            pqxdhEx);
+                    Log.w(TAG, "PQXDH SessionBuilder.process() failed for " + LogRedact.uid(recipientUid) + " — retrying with classic X3DH (" + LogRedact.error(pqxdhEx) + ")");
                     // Delete any partial session state written by the failed PQXDH attempt
                     // before retrying with the X3DH bundle. libsignal does not guarantee
                     // atomic rollback when process() throws mid-write, so an explicit
@@ -287,7 +284,7 @@ public final class SignalSessionManager {
                     // blocking future decryption attempts on this address.
                     try { store.deleteSession(address); }
                     catch (Exception deleteEx) {
-                        Log.w(TAG, "Could not delete partial session before X3DH fallback", deleteEx);
+                        Log.w(TAG, "Could not delete partial session before X3DH fallback (" + LogRedact.error(deleteEx) + ")");
                     }
                     PreKeyBundle x3dhFallback = new PreKeyBundle(
                             recipientRegId,
@@ -320,10 +317,10 @@ public final class SignalSessionManager {
             deliver(callback, address, store, null);
 
         } catch (InvalidKeyException | UntrustedIdentityException e) {
-            Log.e(TAG, "X3DH failed for " + LogRedact.uid(recipientUid), e);
+            Log.e(TAG, "X3DH failed for " + LogRedact.uid(recipientUid) + " (" + LogRedact.error(e) + ")");
             deliver(callback, null, null, "Session establishment failed: " + e.getMessage());
         } catch (Exception e) {
-            Log.e(TAG, "Unexpected error during X3DH for " + LogRedact.uid(recipientUid), e);
+            Log.e(TAG, "Unexpected error during X3DH for " + LogRedact.uid(recipientUid) + " (" + LogRedact.error(e) + ")");
             deliver(callback, null, null, "Unexpected error: " + e.getMessage());
         }
     }
