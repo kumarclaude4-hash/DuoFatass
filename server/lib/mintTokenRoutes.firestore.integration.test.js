@@ -224,7 +224,7 @@ if (!emulatorHost) {
     });
     assert.equal(noInvite.status, 403);
     assert.equal(noInvite.text, "Valid invite required");
-    assert.equal((await db.collection(collections.identities).doc(noInviteUid).get()).exists, false);
+    assert.equal((await db.collection("identities").doc(noInviteUid).get()).exists, false);
     assert.equal(mintedUsers.length, 0);
 
     // 3. Valid signature + valid invite: HTTP 200 is returned only after the
@@ -243,7 +243,7 @@ if (!emulatorHost) {
     });
     assert.equal(valid.status, 200);
     assert.deepEqual(JSON.parse(valid.text), { token: "emulated-custom-token-" + validUid });
-    const binding = await db.collection(collections.identities).doc(validUid).get();
+    const binding = await db.collection("identities").doc(validUid).get();
     assert.equal(binding.exists, true);
     assert.equal(binding.data().identityPubKeyHash,
       crypto.createHash("sha256").update(Buffer.from(validIdentity.publicKeyHex, "hex")).digest("hex"));
