@@ -6,7 +6,6 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.tree.Tree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePathScanner;
@@ -313,26 +312,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final class MessageScanner extends TreeScanner<Void, Void> {
             private final MethodInvocationTree logCall;
             private final Set<String> throwableVariables;
-            private Tree parentTree;
-            private Tree currentTree;
 
             MessageScanner(MethodInvocationTree logCall, Set<String> throwableVariables) {
                 this.logCall = logCall;
                 this.throwableVariables = throwableVariables;
-            }
-
-            @Override
-            public Void scan(Tree tree, Void unused) {
-                Tree previousParent = parentTree;
-                Tree previousCurrent = currentTree;
-                parentTree = previousCurrent;
-                currentTree = tree;
-                try {
-                    return super.scan(tree, unused);
-                } finally {
-                    parentTree = previousParent;
-                    currentTree = previousCurrent;
-                }
             }
 
             @Override
@@ -343,6 +326,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     if ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")) {
                         return null; // The redactor owns and pseudonymises the entire argument subtree.
                     }
+                }
+                if ("getSimpleName".equals(name) && isSafeThrowableClassNameCall(node)) {
+                    // Exception class labels are safe diagnostics; skip only this
+                    // exact expression so its Throwable receiver is not serialized.
+                    return null;
                 }
                 if ("getMessage".equals(name) || "getLocalizedMessage".equals(name)
                         || "printStackTrace".equals(name) || "getStackTrace".equals(name)
@@ -362,14 +350,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 return super.visitMethodInvocation(node, unused);
             }
 
-            private boolean isSafeThrowableClassNameUse(IdentifierTree identifier) {
-                if (!(parentTree instanceof MemberSelectTree)) return false;
-                MemberSelectTree parent = (MemberSelectTree) parentTree;
-                // The identifier must be the receiver in exception.getClass().
-                // Only the class label is allowed; the exception itself, message,
-                // cause and stack remain forbidden.
-                return "getClass".equals(parent.getIdentifier())
-                        && parent.getExpression().toString().equals(identifier.getName().toString());
+            private boolean isSafeThrowableClassNameCall(MethodInvocationTree node) {
+                String receiver = receiverName(node);
+                String suffix = ".getClass()";
+                if (!receiver.endsWith(suffix)) return false;
+                String variable = receiver.substring(0, receiver.length() - suffix.length());
+                return variable.matches("[A-Za-z_$][A-Za-z0-9_$]*")
+                        && throwableVariables.contains(variable);
             }
 
             @Override
@@ -383,7 +370,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             @Override
             public Void visitIdentifier(IdentifierTree node, Void unused) {
                 String name = node.getName().toString();
-                if (throwableVariables.contains(name) && !isSafeThrowableClassNameUse(node)) {
+                if (throwableVariables.contains(name)) {
                     addViolation(logCall, "Throwable variable '" + name + "' is interpolated");
                 } else if (SENSITIVE_IDENTIFIER.matcher(name).matches()
                         && !SAFE_OPERATIONAL_COUNTERS.contains(name)) {
