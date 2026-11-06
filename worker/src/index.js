@@ -387,7 +387,7 @@ async function isTokenAlreadyUsed(env, jti) {
   try {
     return (await env.RATE_KV.get(`token:used:${jti}`)) !== null;
   } catch (err) {
-    console.error('Delete-token replay lookup failed:', err?.message || err);
+    console.error('Delete-token replay lookup failed:', err?.name || 'Error');
     throw new Error('Delete-token replay protection is unavailable');
   }
 }
@@ -399,7 +399,7 @@ async function markTokenUsed(env, jti, ttlSeconds) {
       expirationTtl: Math.max(60, ttlSeconds),
     });
   } catch (err) {
-    console.error('Delete-token replay write failed:', err?.message || err);
+    console.error('Delete-token replay write failed:', err?.name || 'Error');
     throw new Error('Delete-token replay protection is unavailable');
   }
 }
@@ -422,7 +422,7 @@ async function kvSet(env, key, value, opts = {}) {
   } catch (err) {
     // KV write quota exhausted (1K writes/day free tier) or transient error.
     // Safety controls degrade gracefully — log and continue rather than crashing.
-    console.error(`KV write failed for ${key}: ${err.message}`);
+    console.error(`KV write failed (${err?.name || 'Error'})`);
   }
 }
 
@@ -1101,7 +1101,7 @@ export default {
         try {
           headResp = await b2.fetch(b2Url(env, key), { method: 'HEAD' });
         } catch (err) {
-          console.error(`B2 HEAD network error for ${key}: ${err.message}`);
+          console.error(`B2 HEAD network error (${err?.name || 'Error'})`);
           return respond({ error: 'B2 delete failed (network error)', key }, 502);
         }
         if (headResp.ok) {
@@ -1117,14 +1117,14 @@ export default {
         try {
           delResp = await b2.fetch(b2Url(env, key), { method: 'DELETE' });
         } catch (err) {
-          console.error(`B2 delete network error for ${key}: ${err.message}`);
+          console.error(`B2 delete network error (${err?.name || 'Error'})`);
           // Surface the failure — returning a false 200 here would tell the
           // Android client the file is gone when it isn't, making it
           // impossible to retry and leaving orphaned cold-tier objects forever.
           return respond({ error: 'B2 delete failed (network error)', key }, 502);
         }
         if (!delResp.ok && delResp.status !== 404) {
-          console.warn(`B2 delete non-OK for ${key}: ${delResp.status}`);
+          console.warn(`B2 delete non-OK: ${delResp.status}`);
           return respond({ error: 'B2 delete failed', status: delResp.status, key }, 502);
         }
       }
@@ -1295,7 +1295,7 @@ export default {
         } else {
           // B2 PUT failed — object stays in R2. Count it and retry tomorrow.
           r2TotalBytes += obj.size ?? 0;
-          console.error(`Failed to tier ${obj.key} to B2: ${putResp.status}`);
+          console.error(`Failed to tier R2 object to B2: ${putResp.status}`);
         }
       }
 
