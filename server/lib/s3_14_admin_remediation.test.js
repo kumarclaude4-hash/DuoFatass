@@ -93,7 +93,7 @@ test("S05-L2: every admin POST route is gated via requireAdminAuthThenBody, not 
       slice = SERVER_SOURCE.slice(routeStart, routeStart + 400);
     }
     assert.ok(
-      /requireAdminAuthThenBody\\(req, res/.test(slice),
+      slice.includes("requireAdminAuthThenBody(req, res"),
       `POST ${route} must be wired through requireAdminAuthThenBody(), not a bare collectBody() ` +
       `call that runs requireAdminAuth only after the body has been read`
     );
@@ -151,11 +151,11 @@ test("S05-L4: invite revoke handler delegates to transactional store implementat
   assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite revoke must authenticate before reading its body");
   assert.ok(handler.includes("inviteStore.revoke("), "handler must delegate state transition to inviteStore");
   assert.ok(
-    /firestore\\.runTransaction\\(async \\(tx\\) => \\{/.test(INVITE_STORE_SOURCE),
+    INVITE_STORE_SOURCE.includes("firestore.runTransaction(async (tx) => {"),
     "invite store must wrap its read-check-write in a Firestore transaction"
   );
-  assert.ok(/tx\\.get\\(ref\\)/.test(INVITE_STORE_SOURCE), "invite transaction must read using tx.get()");
-  assert.ok(/tx\\.update\\(ref/.test(INVITE_STORE_SOURCE), "invite transaction must write using tx.update()");
+  assert.ok(INVITE_STORE_SOURCE.includes("tx.get(ref)"), "invite transaction must read using tx.get()");
+  assert.ok(INVITE_STORE_SOURCE.includes("tx.update(ref"), "invite transaction must write using tx.update()");
   assert.ok(/current !== "active"/.test(INVITE_STORE_SOURCE), "only active invites may be revoked");
 });
 
