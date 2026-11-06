@@ -107,3 +107,8 @@ This addendum does not change the sign-off decision. Production Firestore/App Ch
 - The next-agent execution plan is `security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md`.
 
 These results do not satisfy production sign-off. Credential rotation, live Firestore/App Check configuration, Render/Worker pairing, staging integration, governance enforcement, the full AST-aware logging audit, S03-M3 residual approval, isolated/live storage-runtime verification and later device acceptance remain. Keep this document **PENDING**.
+## Additional source work in progress — 2026-11-06
+
+A separate follow-up branch adds deterministic S10-N3 migration failure-injection tests and fixes ambiguous R2 HEAD handling so transient failure retains/counts the hot source; sanitizes Worker media-key/error diagnostics; adds an S02-I2 route-inventory guard for all 12 shared authenticated limiters; and records the owner decision needed for the S03-M3 capability-token residual. Existing auth-rate-limit/admin-session tests were rechecked for bounded local fallback and Firestore outage propagation.
+
+These additions are not yet verified until their own PR CI passes. The complete S10-N2 AST-aware Android log audit, S03-M3 owner acceptance, live R2/B2, staging/production operator evidence, SC-12 governance and deferred device matrix remain open. Keep this document **PENDING**.
