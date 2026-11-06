@@ -30,6 +30,7 @@ const path = require("node:path");
 
 const SERVER_SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
 const INVITE_STORE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteStore.js"), "utf8");
+const INVITE_ROUTE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteRoutes.js"), "utf8");
 
 // Every admin auth event that must leave a durable trace. The action strings are
 // asserted literally so a rename that breaks a forensic query fails here.
@@ -179,10 +180,10 @@ test("S05-M1: waitlist requestId is never logged to stdout in the clear", () => 
 });
 
 test("S05-H2: invite listing is bounded, newest-first, paginated, and exposes redemption linkage", () => {
-  const routeStart = SERVER_SOURCE.indexOf('req.method === "GET" && (req.url || "").split("?")[0] === "/admin/api/invites"');
-  const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "POST" && req.url === "/admin/api/invites/create"', routeStart);
-  assert.ok(routeStart > 0 && nextRouteStart > routeStart, "invite list route missing");
-  const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
+  const routeStart = INVITE_ROUTE_SOURCE.indexOf("async function listInvites(req, res)");
+  const nextRouteStart = INVITE_ROUTE_SOURCE.indexOf("function createInvite(req, res)", routeStart);
+  assert.ok(routeStart >= 0 && nextRouteStart > routeStart, "shared invite list handler missing");
+  const handler = INVITE_ROUTE_SOURCE.slice(routeStart, nextRouteStart);
   assert.ok(handler.includes("requireAdminAuth(req, res)"), "invite list must authenticate");
   assert.ok(handler.includes("inviteStore.list({"), "HTTP route must call the tested invite store");
   assert.ok(INVITE_STORE_SOURCE.includes('orderBy("createdAt", "desc")'), "invite scan must select newest records first");
@@ -203,10 +204,10 @@ test("S05-H2: invite listing is bounded, newest-first, paginated, and exposes re
 // hashed invites. Guard the current create/revoke paths, not deleted routes.
 
 test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
-  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/create"');
-  const nextRouteStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"', routeStart);
-  assert.ok(routeStart > 0 && nextRouteStart > routeStart, "current invite create route missing");
-  const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
+  const routeStart = INVITE_ROUTE_SOURCE.indexOf("function createInvite(req, res)");
+  const nextRouteStart = INVITE_ROUTE_SOURCE.indexOf("function revokeInvite(req, res)", routeStart);
+  assert.ok(routeStart >= 0 && nextRouteStart > routeStart, "shared invite create handler missing");
+  const handler = INVITE_ROUTE_SOURCE.slice(routeStart, nextRouteStart);
   assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite create must authenticate before reading its body");
   assert.ok(handler.includes("inviteStore.create(parsed, req)"), "HTTP handler must delegate to inviteStore");
   assert.ok(INVITE_STORE_SOURCE.includes("invite.hashInviteToken(rawToken)"), "only a token hash may be persisted");
@@ -219,10 +220,10 @@ test("S05-H2: invite creation is admin-gated, hash-only, and audited", () => {
 });
 
 test("S05-H2 / S05-L4: invite revocation is admin-gated, transactional, state-checked, and audited", () => {
-  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"');
-  const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "GET" && req.url === "/admin/api/locked"', routeStart);
-  assert.ok(routeStart > 0, "current invite revoke route missing");
-  const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart > routeStart ? nextRouteStart : routeStart + 5000);
+  const routeStart = INVITE_ROUTE_SOURCE.indexOf("function revokeInvite(req, res)");
+  const nextRouteStart = INVITE_ROUTE_SOURCE.indexOf("async function validateInvite(req, res)", routeStart);
+  assert.ok(routeStart >= 0 && nextRouteStart > routeStart, "shared invite revoke handler missing");
+  const handler = INVITE_ROUTE_SOURCE.slice(routeStart, nextRouteStart);
   assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite revoke must authenticate before reading its body");
   assert.ok(handler.includes("inviteStore.revoke("), "HTTP handler must delegate to inviteStore");
   assert.ok(INVITE_STORE_SOURCE.includes("firestore.runTransaction(async (tx) =>"), "invite revoke must be transactional");

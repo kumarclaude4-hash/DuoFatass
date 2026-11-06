@@ -1,9 +1,9 @@
 "use strict";
 
-// Structural guard for the HTTP-to-store wiring. The Firestore emulator suite
-// executes the same identity-claim transaction helper called by /mintToken;
-// these tests prevent production routes from drifting back to a parallel,
-// untested Firestore implementation or weakening the proof-of-possession gate.
+// Structural guard for the HTTP-to-store wiring. The route integration tests
+// exercise the shared invite router over real HTTP; this test prevents the
+// production server from bypassing that tested router or duplicating a second
+// invite lifecycle implementation.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -11,6 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+const ROUTE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteRoutes.js"), "utf8");
 const CLAIM_SOURCE = fs.readFileSync(path.join(__dirname, "identityClaim.js"), "utf8");
 
 function section(source, start, end) {
@@ -31,45 +32,55 @@ test("production creates inviteStore with required audit and pseudonymization de
   assert.match(SOURCE, /function auditAdminEventInTransaction[\s\S]*?tx\.create\(ref, buildAdminAuditRecord\(action, req, extra\)\)/);
 });
 
-test("admin invite listing is authenticated and delegates filtering/pagination to inviteStore", () => {
-  const route = section(
+test("production HTTP server dispatches invite endpoints through the shared tested router", () => {
+  assert.ok(SOURCE.includes('const { createInviteRouteHandler } = require("./lib/inviteRoutes");'));
+  const setup = section(
     SOURCE,
-    'if (req.method === "GET" && (req.url || "").split("?")[0] === "/admin/api/invites")',
-    'if (req.method === "POST" && req.url === "/admin/api/invites/create")'
+    "const handleInviteRoute = createInviteRouteHandler({",
+    "const server = http.createServer"
   );
-  assert.ok(route.includes("requireAdminAuth(req, res)"), "listing must authenticate before reading invite data");
-  assert.ok(route.includes("inviteStore.list({"));
-  assert.ok(route.includes("status: requestUrl.searchParams.get(\"status\")"));
-  assert.ok(route.includes("cursor: requestUrl.searchParams.get(\"cursor\")"));
-  assert.equal(route.includes('.where("tokenHash"'), false,
-    "the HTTP handler must not maintain a second invite-list implementation");
+  for (const dependency of [
+    "inviteStore", "invite", "db", "requireAdminAuth", "requireAdminAuthThenBody",
+    "checkWaitlistPollRateLimit", "getClientIp", "readBody", "sendServerError",
+  ]) {
+    assert.match(setup, new RegExp("\\b" + dependency + "\\b"), "missing production dependency: " + dependency);
+  }
+
+  const dispatch = section(
+    SOURCE,
+    "const server = http.createServer",
+    "// ── POST /mintChallenge"
+  );
+  assert.ok(dispatch.includes("if (handleInviteRoute(req, res)) return;"),
+    "invite routes must be dispatched before later route branches");
+  assert.equal(dispatch.includes('req.url === "/invite/validate"'), false,
+    "validation must not retain a parallel inline production handler");
+  assert.equal(dispatch.includes('req.url === "/admin/api/invites/create"'), false,
+    "creation must not retain a parallel inline production handler");
+  assert.equal(dispatch.includes('req.url === "/admin/api/invites/revoke"'), false,
+    "revocation must not retain a parallel inline production handler");
 });
 
-test("create and revoke routes authenticate before body parsing and delegate to the store", () => {
-  const createRoute = section(
-    SOURCE,
-    'if (req.method === "POST" && req.url === "/admin/api/invites/create")',
-    'if (req.method === "POST" && req.url === "/admin/api/invites/revoke")'
-  );
-  assert.ok(createRoute.includes("requireAdminAuthThenBody(req, res"));
-  assert.ok(createRoute.includes("inviteStore.create(parsed, req)"));
-  assert.ok(createRoute.includes('"Cache-Control": "no-store"'));
-
-  const revokeRoute = section(
-    SOURCE,
-    'if (req.method === "POST" && req.url === "/admin/api/invites/revoke")',
-    "// ── GET /admin/api/locked"
-  );
-  assert.ok(revokeRoute.includes("requireAdminAuthThenBody(req, res"));
-  assert.ok(revokeRoute.includes("inviteStore.revoke("));
-  assert.ok(revokeRoute.includes("outcome.status === \"conflict\""));
+test("shared invite router authenticates admin routes and delegates every lifecycle operation", () => {
+  assert.ok(ROUTE_SOURCE.includes('req.method === "GET" && pathname === "/admin/api/invites"'));
+  assert.ok(ROUTE_SOURCE.includes('req.method === "POST" && pathname === "/admin/api/invites/create"'));
+  assert.ok(ROUTE_SOURCE.includes('req.method === "POST" && pathname === "/admin/api/invites/revoke"'));
+  assert.ok(ROUTE_SOURCE.includes('req.method === "POST" && pathname === "/invite/validate"'));
+  assert.ok(ROUTE_SOURCE.includes("requireAdminAuth(req, res)"));
+  assert.ok(ROUTE_SOURCE.includes("requireAdminAuthThenBody(req, res"));
+  assert.ok(ROUTE_SOURCE.includes("inviteStore.list({"));
+  assert.ok(ROUTE_SOURCE.includes("inviteStore.create(parsed, req)"));
+  assert.ok(ROUTE_SOURCE.includes("inviteStore.revoke("));
+  assert.ok(ROUTE_SOURCE.includes("inviteStore.isActive(token)"));
+  assert.equal(ROUTE_SOURCE.includes('.where("tokenHash"'), false,
+    "HTTP handlers must not maintain a second invite persistence implementation");
 });
 
 test("mintToken preserves authentication and proof-of-possession before the identity transaction", () => {
   const mint = section(
     SOURCE,
     'if (req.method === "POST" && req.url === "/mintToken")',
-    "// ── POST /invite/validate"
+    "// ── POST /migrateUid"
   );
   assert.ok(mint.includes("verifyMintTokenSignature({ userId, identityPubKeyHex, nonceHex: nonce, signatureHex })"),
     "the mandatory nonce/signature proof-of-possession must remain in front of the transaction");
@@ -82,13 +93,6 @@ test("mintToken preserves authentication and proof-of-possession before the iden
     "the route must not duplicate the transactional identity/invite implementation");
   assert.equal(mint.includes('.where("tokenHash"'), false,
     "the route must not bypass the store's one-time-use transaction");
-
-  const validate = section(
-    SOURCE,
-    'req.method === "POST" && req.url === "/invite/validate"',
-    'req.method === "POST" && req.url === "/migrateUid"'
-  );
-  assert.ok(validate.includes("inviteStore.isActive(token)"));
 });
 
 test("identity claim helper owns the lock, one-time invite, legacy and identity writes in one caller transaction", () => {

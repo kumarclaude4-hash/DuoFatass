@@ -18,6 +18,7 @@ const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClie
 const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
 const { createInviteStore } = require("./lib/inviteStore");
+const { createInviteRouteHandler } = require("./lib/inviteRoutes");
 const { consumeDuressLockNonceInTransaction, pruneOutstandingDuressNonces } = require("./lib/duressLock");
 const { claimIdentityInTransaction } = require("./lib/identityClaim");
 
@@ -2378,6 +2379,18 @@ function setBaselineSecurityHeaders(req, res) {
 }
 
 // ── Health + status + mintToken HTTP server ──────────────────────────────────���
+const handleInviteRoute = createInviteRouteHandler({
+  inviteStore,
+  invite,
+  db,
+  requireAdminAuth,
+  requireAdminAuthThenBody,
+  checkWaitlistPollRateLimit,
+  getClientIp,
+  readBody,
+  sendServerError,
+});
+
 const server = http.createServer((req, res) => {
 
   // Baseline security headers on every response (merged with, and overridable by,
@@ -2392,6 +2405,10 @@ const server = http.createServer((req, res) => {
     res.end("Request body too large");
     return;
   }
+
+  // Invite endpoints are handled by the same injected router exercised by
+  // inviteRoutes.test.js; keep this dispatch before all later route branches.
+  if (handleInviteRoute(req, res)) return;
 
   // ── POST /mintChallenge ─────────────────────────────────────────────────────
   //
@@ -2632,40 +2649,6 @@ const server = http.createServer((req, res) => {
         }
       }
     });
-    return;
-  }
-
-  // ── POST /invite/validate ───────────────────────────────────────────────────
-  // Generic preflight for the Android onboarding screen. Every invalid state
-  // (unknown, malformed, expired, revoked, or used) returns the same payload so
-  // this endpoint cannot be used as a lifecycle/state oracle.
-  if (req.method === "POST" && req.url === "/invite/validate") {
-    (async () => {
-      try {
-        if (!checkWaitlistPollRateLimit(getClientIp(req))) {
-          res.writeHead(429, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ valid: false }));
-          return;
-        }
-        const body = await readBody(req, res);
-        let token = "";
-        try { token = invite.normalizeInviteToken(JSON.parse(body).inviteToken); } catch { /* generic invalid */ }
-        let valid = false;
-        if (invite.isInviteToken(token)) {
-          valid = await inviteStore.isActive(token);
-        } else if (/^[0-9a-f]{32}$/.test(token)) {
-          // Bounded migration support for previously approved waitlist IDs.
-          const legacy = await db.collection("waitlist").doc(token).get();
-          valid = legacy.exists && legacy.data().status === "approved";
-        }
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ valid }));
-      } catch (e) {
-        console.error("invite/validate error:", e.message);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ valid: false }));
-      }
-    })();
     return;
   }
 
@@ -4493,71 +4476,6 @@ const server = http.createServer((req, res) => {
   }
 
   // ── Admin-issued invitation lifecycle (S05-H2) ──────────────────────────────
-  if (req.method === "GET" && (req.url || "").split("?")[0] === "/admin/api/invites") {
-    (async () => {
-      if (!(await requireAdminAuth(req, res))) return;
-      try {
-        const requestUrl = new URL(req.url, "http://localhost");
-        const data = await inviteStore.list({
-          status: requestUrl.searchParams.get("status") || "all",
-          search: requestUrl.searchParams.get("search") || "",
-          pageSize: requestUrl.searchParams.get("pageSize"),
-          cursor: requestUrl.searchParams.get("cursor"),
-        });
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(data));
-      } catch (e) {
-        if (e instanceof TypeError) {
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end(e.message);
-        } else sendServerError(res, "admin/api/invites", e);
-      }
-    })();
-    return;
-  }
-
-  if (req.method === "POST" && req.url === "/admin/api/invites/create") {
-    requireAdminAuthThenBody(req, res, async (body) => {
-      try {
-        let parsed;
-        try { parsed = JSON.parse(body); } catch { throw new TypeError("Invalid JSON"); }
-        const created = await inviteStore.create(parsed, req);
-        res.writeHead(201, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify(created));
-      } catch (e) {
-        if (e instanceof TypeError) {
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end(e.message);
-        } else sendServerError(res, "admin/api/invites/create", e);
-      }
-    });
-    return;
-  }
-
-  if (req.method === "POST" && req.url === "/admin/api/invites/revoke") {
-    requireAdminAuthThenBody(req, res, async (body) => {
-      try {
-        let parsed;
-        try { parsed = JSON.parse(body); } catch { throw new TypeError("Invalid JSON"); }
-        const outcome = await inviteStore.revoke(parsed && parsed.inviteId, parsed && parsed.reason, req);
-        if (outcome.status === "missing") { res.writeHead(404); res.end("Invite not found"); return; }
-        if (outcome.status === "conflict") {
-          res.writeHead(409);
-          res.end(`Invite is ${outcome.current}`);
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-      } catch (e) {
-        if (e instanceof TypeError) {
-          res.writeHead(400, { "Content-Type": "text/plain" });
-          res.end(e.message);
-        } else sendServerError(res, "admin/api/invites/revoke", e);
-      }
-    });
-    return;
-  }
-
   // ── GET /admin/api/locked ─────────────────────────────────────────────────
   //
   // Auth: x-admin-token header, or an existing valid session (requireAdminAuth accepts either). Returns currently-locked accounts so the
