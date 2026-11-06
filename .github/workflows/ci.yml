@@ -108,6 +108,9 @@ jobs:
           java-version: '17'
           distribution: temurin
 
+      - name: Test Android release-log privacy policy guard
+        run: java scripts/AndroidReleaseLogPrivacyPolicy.java --self-test
+
       - name: Scan release-surviving Android log calls
         run: java scripts/AndroidReleaseLogPrivacyPolicy.java app/src/main/java
 
