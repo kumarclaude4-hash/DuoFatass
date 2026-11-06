@@ -190,7 +190,7 @@ public class AccountLockWorker extends Worker {
                     + " attempts (S06-L4 bounded retry cap). Account lock push NOT confirmed.");
             return Result.failure();
         }
-        Log.w(TAG, reason + " — will retry (attempt " + (attempt + 1) + "/" + MAX_ATTEMPTS + ").");
+        Log.w(TAG, com.duoshield.app.util.LogRedact.metadata(reason) + " — will retry (attempt " + (attempt + 1) + "/" + MAX_ATTEMPTS + ").");
         return Result.retry();
     }
 }
