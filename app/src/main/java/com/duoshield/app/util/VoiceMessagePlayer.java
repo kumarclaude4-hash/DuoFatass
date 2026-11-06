@@ -74,7 +74,7 @@ public class VoiceMessagePlayer {
             });
             player.prepareAsync();
         } catch (Exception e) {
-            Log.e(TAG, "play() failed for url=" + url + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            Log.e(TAG, "play() failed for media URL " + com.duoshield.app.util.LogRedact.metadata(url) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             PlayerListener l = listenerRef != null ? listenerRef.get() : null;
             if (l != null) l.onError(e.getMessage() != null ? e.getMessage() : "Playback setup failed");
         }
