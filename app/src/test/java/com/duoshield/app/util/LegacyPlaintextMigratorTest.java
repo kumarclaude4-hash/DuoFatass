@@ -132,4 +132,47 @@ public class LegacyPlaintextMigratorTest {
         assertEquals("legacy-db-secret", raw.getString("database_key", null));
         raw.edit().clear().commit();
     }
+
+    @Test
+    public void inaccessibleRawPreferencesFailClosed() {
+        Context base = RuntimeEnvironment.getApplication();
+        Context inaccessible = new ContextWrapper(base) {
+            @Override
+            public SharedPreferences getSharedPreferences(String name, int mode) {
+                throw new IllegalStateException("storage unavailable");
+            }
+        };
+
+        LegacyPlaintextMigrator.Result result =
+                LegacyPlaintextMigrator.migrate(inaccessible, uniqueFileName(),
+                        new FakeSharedPreferences(), true);
+
+        assertTrue("unknown source state must keep the onboarding gate closed",
+                result.plaintextRemains);
+    }
+
+    @Test
+    public void failedRawPreferenceEnumerationFailsClosed() {
+        Context base = RuntimeEnvironment.getApplication();
+        SharedPreferences unreadable = new FakeSharedPreferences() {
+            @Override
+            public Map<String, ?> getAll() {
+                throw new IllegalStateException("cannot enumerate");
+            }
+        };
+        Context context = new ContextWrapper(base) {
+            @Override
+            public SharedPreferences getSharedPreferences(String name, int mode) {
+                return unreadable;
+            }
+        };
+
+        LegacyPlaintextMigrator.Result result =
+                LegacyPlaintextMigrator.migrate(context, uniqueFileName(),
+                        new FakeSharedPreferences(), true);
+
+        assertTrue("failed enumeration cannot be interpreted as an empty source",
+                result.plaintextRemains);
+    }
+
 }
