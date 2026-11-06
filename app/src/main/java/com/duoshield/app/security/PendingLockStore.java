@@ -6,66 +6,50 @@ import android.content.SharedPreferences;
 import com.duoshield.app.util.SecurePrefs;
 
 /**
- * Wipe-surviving store for the account-lock intent and the teardown resume marker.
+ * Wipe-surviving store for the account-lock intent and teardown resume marker.
  *
  * <h3>Why this exists (S06-H3)</h3>
- * The duress path used to have two ways to set {@code accountLock}, and <em>both</em>
- * required network at, or within 24 hours of, trigger time:
- * <ul>
- *   <li>A synchronous Firestore {@code set()}. Offline, the SDK queues it locally — and
- *       then the wipe destroys the app's storage, so the queued mutation is deleted
- *       before it can flush. It is not "eventually consistent"; it is gone.</li>
- *   <li>A nonce fetch plus {@code AccountLockWorker}. Offline, the ID-token fetch and the
- *       {@code /requestLockNonce} call both fail, so the worker was never even
- *       enqueued.</li>
- * </ul>
- * So a device in airplane mode performed the full destructive local wipe and locked
- * nothing, silently, while the user believed their account was protected. That is
- * directly attacker-controlled: bagging or airplane-moding a seized phone is routine,
- * and it also defeats remote wipe, so it is standard practice. Worse than an honest
- * failure, because the user is left confident.
+ * An offline Firestore write queued locally is not durable across the subsequent
+ * app-data wipe: the local mutation queue is erased before it can reach the server.
+ * A remote lock therefore needs a request that reaches the server with a valid
+ * credential.
  *
- * <h3>What this changes</h3>
- * The lock <em>decision</em> becomes durable before any erasure runs, in a container the
- * wipe deliberately preserves ({@link SecurePrefs#getSessionState}) — mirroring how the
- * device gate is kept structurally isolated from every wipe path. A launch-time drain
- * ({@link DuressManager#drainPendingLockIntent}) retries it, so the lock survives
- * reboots, force-stops, and an indefinitely offline device rather than expiring with a
- * 24-hour nonce.
+ * <h3>Durable intent and credential lifecycle</h3>
+ * The lock <em>decision</em> is persisted before erasure in a container the wipe
+ * deliberately preserves ({@link SecurePrefs#getSessionState}). The intent is
+ * independent of its nonce. A warm, uid-bound server nonce may permit an immediate
+ * attempt while offline, but it expires after one hour and may be absent when the
+ * device has been offline.
  *
- * <p>The credential problem is solved by moving the nonce fetch <strong>off</strong> the
- * duress path: {@link DuressManager#maintainLockCredential} pre-fetches and rotates a
- * nonce during ordinary foreground operation while online and parks it here, so the
- * duress path always has a usable credential even when it is triggered offline.
+ * When the nonce is absent or expires, the intent is retained and the client does
+ * <strong>not</strong> report the account as remotely locked. After the same account
+ * next establishes a valid foreground session, {@link DuressManager#maintainLockCredential}
+ * obtains a fresh nonce, rotates only that uid's pending intent and enqueues a bounded
+ * retry. If the account never authenticates again or never regains connectivity, the
+ * server-side lock cannot be guaranteed; the durable local intent remains an explicit
+ * indication that the account may still be unlocked.
  *
- * <p><strong>This depends on that method actually being called.</strong> Its only caller
- * is {@code BaseActivity.onStart()}, in the branch reached when the session is valid and
- * the app is foregrounded and unlocked. Between the original S06-H3 change and
- * 2026-08-10 the method had <em>no caller at all</em>, which silently made the entire
- * offline path above inert while this javadoc claimed otherwise — the warm token was
- * never written, so {@code getWarmToken} always returned null on the duress path. If a
- * future refactor removes that call site, the offline duress lock stops working and
- * nothing will fail loudly; treat the call in {@code BaseActivity} as load-bearing.
+ * <p>Nonce state is compare-and-cleared. A delayed WorkManager response carrying an
+ * older token cannot erase a newer same-account intent or warm credential.
  *
- * <h3>Deniability constraints on this file</h3>
- * Every key name here reads as ordinary session/migration plumbing, and the file name
- * itself is neutral ({@code session_state_prefs}). This matters more here than anywhere
- * else in the app: the file's contents describe a teardown, so a self-describing name
- * would need no interpretation by anyone who found it. The store is encrypted
- * (EncryptedSharedPreferences, hardware-backed where a TEE exists), which is a real
- * improvement on the previous design — the old {@code duress_wipe_in_progress} flag sat
- * as a literal English string in unencrypted XML.
+ * <h3>Storage</h3>
+ * All state is stored through {@link SecurePrefs#getSessionState}, which is preserved
+ * by the canonical wipe path. No long-lived authentication token is persisted here;
+ * the server-issued nonce is short-lived and single-use.
  *
- * <p><strong>Residual risk, stated honestly:</strong> {@link #getSubject} holds a uid in
- * recoverable form until the lock is confirmed, because the retry cannot work without
- * knowing which account to lock. It is encrypted rather than plaintext, it is scoped to
- * one short-lived record instead of WorkManager's indefinitely-retained rows, and
- * {@link #clearLockIntent} destroys it the moment the server confirms. That is the
- * smallest window the retry requirement allows.
+ * <p><strong>Call-site invariant:</strong> {@link DuressManager#maintainLockCredential}
+ * is called by {@code BaseActivity.onStart()} only for a valid foreground session.
+ * It must remain wired there so a preserved intent can obtain a fresh nonce after the
+ * same account next signs in.
  */
+
 public final class PendingLockStore {
 
     private PendingLockStore() {}
+
+    // Protect compare-and-clear transitions from late WorkManager responses racing
+    // with a foreground refresh that has already installed a newer nonce.
+    private static final Object LOCK_STATE_MUTEX = new Object();
 
     /** Teardown is in flight or was interrupted; drives the resume path (S06-M5). */
     private static final String KEY_RESET_PENDING = "session_migration_pending";
@@ -153,13 +137,16 @@ public final class PendingLockStore {
      */
     public static void recordLockIntent(Context ctx, String uid, String nonce) {
         if (uid == null || uid.isEmpty()) return;
-        try {
-            SharedPreferences.Editor ed = sp(ctx).edit()
-                    .putString(KEY_SUBJECT, uid)
-                    .putLong(KEY_INTENT_TS, System.currentTimeMillis());
-            if (nonce != null && !nonce.isEmpty()) ed.putString(KEY_INTENT_TOKEN, nonce);
-            ed.commit();
-        } catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences.Editor ed = sp(ctx).edit()
+                        .putString(KEY_SUBJECT, uid)
+                        .putLong(KEY_INTENT_TS, System.currentTimeMillis());
+                if (nonce != null && !nonce.isEmpty()) ed.putString(KEY_INTENT_TOKEN, nonce);
+                else ed.remove(KEY_INTENT_TOKEN); // never inherit a previous account's credential
+                ed.commit();
+            } catch (Exception ignored) {}
+        }
     }
 
     public static boolean hasLockIntent(Context ctx) {
@@ -178,35 +165,100 @@ public final class PendingLockStore {
     }
 
     /**
+     * Replaces an expired/old intent credential only when the pending intent is
+     * still for the same uid that authenticated the newly issued nonce. This is
+     * called after sign-in/foreground credential refresh; it must never retarget
+     * a pending lock for a different account.
+     */
+    public static boolean replaceIntentTokenIfSubjectMatches(Context ctx, String uid, String nonce) {
+        if (ctx == null || uid == null || uid.isEmpty() || nonce == null || nonce.isEmpty()) {
+            return false;
+        }
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!uid.equals(prefs.getString(KEY_SUBJECT, null))) return false;
+                return prefs.edit().putString(KEY_INTENT_TOKEN, nonce).commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
+    }
+
+    /** Clears the pending intent only when it still belongs to the completed account. */
+    public static boolean clearLockIntentIfSubjectMatches(Context ctx, String uid) {
+        if (ctx == null || uid == null || uid.isEmpty()) return false;
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!uid.equals(prefs.getString(KEY_SUBJECT, null))) return false;
+                return prefs.edit()
+                        .remove(KEY_SUBJECT)
+                        .remove(KEY_INTENT_TOKEN)
+                        .remove(KEY_INTENT_TS)
+                        .commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
+    }
+
+    /**
      * Destroys the intent. Call this <strong>only</strong> once the server has
-     * confirmed the lock (or has told us the nonce was already consumed, which means
-     * the same thing). Clearing it on any other failure path is how the old design
-     * lost locks silently.
+     * confirmed the lock with a 200/204 response. An invalid, expired, or unknown
+     * nonce is not evidence that a lock landed; those paths must retain the intent.
      */
     public static void clearLockIntent(Context ctx) {
-        try {
-            sp(ctx).edit()
-                   .remove(KEY_SUBJECT)
-                   .remove(KEY_INTENT_TOKEN)
-                   .remove(KEY_INTENT_TS)
-                   .commit();
-        } catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                sp(ctx).edit()
+                       .remove(KEY_SUBJECT)
+                       .remove(KEY_INTENT_TOKEN)
+                       .remove(KEY_INTENT_TS)
+                       .commit();
+            } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Clears a completed request only if the intent still carries that request's
+     * nonce. A delayed response from an older WorkManager task must not erase a
+     * newer same-account intent that has already been rotated to a fresh nonce.
+     */
+    public static boolean clearLockIntentIfTokenMatches(Context ctx, String nonce) {
+        if (ctx == null || nonce == null || nonce.isEmpty()) return false;
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!nonce.equals(prefs.getString(KEY_INTENT_TOKEN, null))) return false;
+                return prefs.edit()
+                        .remove(KEY_SUBJECT)
+                        .remove(KEY_INTENT_TOKEN)
+                        .remove(KEY_INTENT_TS)
+                        .commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
     }
 
     // ── Warm lock credential (S06-H3 secondary) ───────────────────────────────
 
     /**
-     * Parks a nonce fetched during ordinary online operation, so the duress path has a
-     * credential without needing the network at trigger time.
+     * Parks a short-lived nonce fetched during ordinary online operation. It can
+     * support an offline trigger only while it remains within the server's one-hour
+     * validity window; durable intent recovery obtains a fresh nonce after sign-in.
      */
     public static void putWarmToken(Context ctx, String nonce) {
         if (nonce == null || nonce.isEmpty()) return;
-        try {
-            sp(ctx).edit()
-                   .putString(KEY_WARM_TOKEN, nonce)
-                   .putLong(KEY_WARM_TS, System.currentTimeMillis())
-                   .commit();
-        } catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                sp(ctx).edit()
+                       .putString(KEY_WARM_TOKEN, nonce)
+                       .putLong(KEY_WARM_TS, System.currentTimeMillis())
+                       .commit();
+            } catch (Exception ignored) {}
+        }
     }
 
     public static String getWarmToken(Context ctx) {
@@ -225,8 +277,24 @@ public final class PendingLockStore {
     }
 
     public static void clearWarmToken(Context ctx) {
-        try { sp(ctx).edit().remove(KEY_WARM_TOKEN).remove(KEY_WARM_TS).commit(); }
-        catch (Exception ignored) {}
+        synchronized (LOCK_STATE_MUTEX) {
+            try { sp(ctx).edit().remove(KEY_WARM_TOKEN).remove(KEY_WARM_TS).commit(); }
+            catch (Exception ignored) {}
+        }
+    }
+
+    /** Clears the cached nonce only when it is still the one that failed or completed. */
+    public static boolean clearWarmTokenIfMatches(Context ctx, String nonce) {
+        if (ctx == null || nonce == null || nonce.isEmpty()) return false;
+        synchronized (LOCK_STATE_MUTEX) {
+            try {
+                SharedPreferences prefs = sp(ctx);
+                if (!nonce.equals(prefs.getString(KEY_WARM_TOKEN, null))) return false;
+                return prefs.edit().remove(KEY_WARM_TOKEN).remove(KEY_WARM_TS).commit();
+            } catch (Exception e) {
+                return false;
+            }
+        }
     }
 
     // ── Forced rotation after unfreeze (S06-M6) ───────────────────────────────
