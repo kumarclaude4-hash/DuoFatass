@@ -189,7 +189,7 @@ public class PinManager {
             com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
             return true;
         } catch (Exception e) {
-            android.util.Log.e("PinManager", "Failed to store PIN hash", e);
+            android.util.Log.e("PinManager", "Failed to store PIN hash" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
@@ -474,7 +474,7 @@ public class PinManager {
                     .remove(KEY_DEVICE_PIN_LEN)
                     .apply();
         } catch (Exception e) {
-            android.util.Log.e("PinManager", "Failed to store device-level PIN hash", e);
+            android.util.Log.e("PinManager", "Failed to store device-level PIN hash" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
