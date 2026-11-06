@@ -144,14 +144,14 @@ public class AudioRouteController {
             try {
                 devices.addAll(am.getAvailableCommunicationDevices());
             } catch (Exception e) {
-                Log.w(TAG, "getAvailableCommunicationDevices failed", e);
+                Log.w(TAG, "getAvailableCommunicationDevices failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         } else {
             try {
                 AudioDeviceInfo[] outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
                 for (AudioDeviceInfo d : outs) devices.add(d);
             } catch (Exception e) {
-                Log.w(TAG, "getDevices failed", e);
+                Log.w(TAG, "getDevices failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }
 
@@ -227,7 +227,7 @@ public class AudioRouteController {
                 if (!ok) Log.w(TAG, "setCommunicationDevice rejected " + route.kind);
                 return ok;
             } catch (Exception e) {
-                Log.w(TAG, "setCommunicationDevice failed", e);
+                Log.w(TAG, "setCommunicationDevice failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 return false;
             }
         }
@@ -254,7 +254,7 @@ public class AudioRouteController {
                     return true;
             }
         } catch (Exception e) {
-            Log.w(TAG, "legacy routing failed", e);
+            Log.w(TAG, "legacy routing failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
@@ -283,7 +283,7 @@ public class AudioRouteController {
             } catch (Exception e) {
                 // Expected on OEMs that restrict volume changes in-call — the track-disable
                 // above is what actually silences playback, so this is not a failure.
-                Log.w(TAG, "volume fallback unavailable", e);
+                Log.w(TAG, "volume fallback unavailable (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }
 
@@ -346,7 +346,7 @@ public class AudioRouteController {
                 if (kindOf(d.getType()) == route.kind) return d;
             }
         } catch (Exception e) {
-            Log.w(TAG, "device lookup failed", e);
+            Log.w(TAG, "device lookup failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
         return null;
     }
