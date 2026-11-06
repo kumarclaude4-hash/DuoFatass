@@ -139,7 +139,7 @@ public final class AuthTokenHelper {
                 Log.i(TAG, "signInWithSeed: Firebase sign-in SUCCESS");
                 main.post(() -> cb.onSuccess(uid));
             } catch (Exception e) {
-                Log.e(TAG, "signInWithSeed FAILED", e);
+                Log.e(TAG, "signInWithSeed FAILED" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 main.post(() -> cb.onFailure(e));
             }
         }, "auth-token").start();
