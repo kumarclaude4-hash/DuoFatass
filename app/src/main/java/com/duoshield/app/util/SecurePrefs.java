@@ -324,7 +324,7 @@ public class SecurePrefs {
                 Log.w(TAG, "Deleted KeyStore master-key alias (" + com.duoshield.app.util.LogRedact.metadata(reason) + ").");
             }
         } catch (Exception e) {
-            Log.w(TAG, "Could not delete master-key alias (" + reason + "): "
+            Log.w(TAG, "Could not delete master-key alias (" + com.duoshield.app.util.LogRedact.metadata(reason) + "): "
                     + e.getClass().getSimpleName());
         }
     }
