@@ -82,10 +82,10 @@ for (const route of ROUTES) {
 test("authenticated route inventory and AUTH_RATE_LIMITS configuration stay in sync", () => {
   const marker = "const AUTH_RATE_LIMITS = {";
   const start = SOURCE.indexOf(marker);
-  const end = SOURCE.indexOf("\\n};", start);
+  const end = SOURCE.indexOf("};", start);
   assert.ok(start >= 0 && end > start, "could not locate AUTH_RATE_LIMITS configuration");
   const body = SOURCE.slice(start + marker.length, end);
-  const configuredKeys = body.split("\\n").flatMap((line) => {
+  const configuredKeys = body.split(String.fromCharCode(10)).flatMap((line) => {
     const colon = line.indexOf(":");
     if (colon < 0) return [];
     const key = line.slice(0, colon).trim();
