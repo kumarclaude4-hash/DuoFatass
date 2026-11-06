@@ -53,7 +53,7 @@ public class VoiceMessagePlayer {
                         params.setSpeed(currentSpeed);
                         mp.setPlaybackParams(params);
                     } catch (Exception e) {
-                        Log.w(TAG, "Failed to re-apply speed on new track: " + e.getMessage());
+                        Log.w(TAG, "Failed to re-apply speed on new track: " + com.duoshield.app.util.LogRedact.error(e));
                     }
                 }
                 PlayerListener l = listenerRef != null ? listenerRef.get() : null;
@@ -74,7 +74,7 @@ public class VoiceMessagePlayer {
             });
             player.prepareAsync();
         } catch (Exception e) {
-            Log.e(TAG, "play() failed for url=" + url, e);
+            Log.e(TAG, "play() failed for url=" + url + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             PlayerListener l = listenerRef != null ? listenerRef.get() : null;
             if (l != null) l.onError(e.getMessage() != null ? e.getMessage() : "Playback setup failed");
         }
@@ -95,7 +95,7 @@ public class VoiceMessagePlayer {
     public void seekTo(int posMs) {
         if (player == null) return;
         try { player.seekTo(Math.max(0, posMs)); }
-        catch (Exception e) { Log.w(TAG, "seekTo(" + posMs + ") failed: " + e.getMessage()); }
+        catch (Exception e) { Log.w(TAG, "seekTo(" + posMs + ") failed: " + com.duoshield.app.util.LogRedact.error(e)); }
     }
 
     public void pause() {
@@ -103,7 +103,7 @@ public class VoiceMessagePlayer {
             try {
                 if (player.isPlaying()) player.pause();
             } catch (Exception e) {
-                Log.w(TAG, "pause() failed: " + e.getMessage());
+                Log.w(TAG, "pause() failed: " + com.duoshield.app.util.LogRedact.error(e));
             }
         }
         stopProgressPolling();
@@ -117,7 +117,7 @@ public class VoiceMessagePlayer {
                     startProgressPolling();
                 }
             } catch (Exception e) {
-                Log.w(TAG, "resume() failed: " + e.getMessage());
+                Log.w(TAG, "resume() failed: " + com.duoshield.app.util.LogRedact.error(e));
             }
         }
     }
@@ -174,7 +174,7 @@ public class VoiceMessagePlayer {
                 player.pause();
             }
         } catch (Exception e) {
-            Log.w(TAG, "setSpeed(" + speed + ") failed: " + e.getMessage());
+            Log.w(TAG, "setSpeed(" + speed + ") failed: " + com.duoshield.app.util.LogRedact.error(e));
         }
     }
 
