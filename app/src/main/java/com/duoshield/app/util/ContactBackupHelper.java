@@ -63,7 +63,7 @@ public class ContactBackupHelper {
                .apply();
             Log.d(TAG, "Backed up " + contacts.size() + " contacts.");
         } catch (Exception e) {
-            Log.e(TAG, "backup() failed", e);
+            Log.e(TAG, "backup() failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -101,7 +101,7 @@ public class ContactBackupHelper {
             bak.edit().clear().apply();
             Log.d(TAG, "Restored " + restored + " contacts from backup.");
         } catch (Exception e) {
-            Log.e(TAG, "restoreIfNeeded() failed", e);
+            Log.e(TAG, "restoreIfNeeded() failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
