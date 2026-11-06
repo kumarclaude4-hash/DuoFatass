@@ -419,12 +419,13 @@ jobs:
           # default requested by this pinned action revision.
           packages: 'platform-tools'
 
-      # AVD snapshot cache. The cache is only restored on an exact key hit, so
-      # the key must encode every AVD-defining property (api-level, target,
-      # arch). A stale/partial restore is worse than no cache: the runner is
-      # then told an AVD exists (force-avd-creation: false) when the snapshot
-      # is unusable, which surfaces as
-      # "Failed to start Emulator console for 5554".
+      # API 30 AVD snapshot cache. This cache is used only by the API 30
+      # Espresso job below; its provisioning and test steps share the same
+      # api-level, target, architecture and profile. The dedicated API 35 job
+      # creates its own emulator and never restores this snapshot. If any API
+      # 30 AVD property or snapshot layout changes, rotate this exact-match
+      # cache key in the same change. A cache miss safely provisions a fresh
+      # device rather than restoring a partial snapshot.
       - name: Cache AVD
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: avd-cache
@@ -570,7 +571,12 @@ jobs:
           disable-animations: true
           script: |
             adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
-            adb shell getprop ro.build.version.sdk
+            API_LEVEL="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
+            echo "Android API level: $API_LEVEL"
+            if [ "$API_LEVEL" != "35" ]; then
+              echo "::error::Expected Android API 35, got $API_LEVEL."
+              exit 1
+            fi
             ./gradlew :app:connectedDebugAndroidTest --no-daemon -PdisableAbiSplits -Pandroid.testInstrumentationRunnerArguments.class=com.duoshield.app.ui.DevicePinGateInstrumentedTest#devicePinGate_consumesPlatformBackDispatch
 
       - name: Verify exactly one predictive-back test executed
