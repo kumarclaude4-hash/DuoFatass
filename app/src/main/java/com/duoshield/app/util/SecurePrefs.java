@@ -232,7 +232,7 @@ public class SecurePrefs {
             return finish(appCtx, fileName, sp, SecurityTier.HARDWARE);
         } catch (Exception e1) {
             Log.w(TAG, "ESP tier 1 failed for " + com.duoshield.app.util.LogRedact.metadata(fileName) + " ("
-                    + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                    + com.duoshield.app.util.LogRedact.metadata(android.os.Build.MANUFACTURER + "/" + android.os.Build.MODEL)
                     + " API=" + android.os.Build.VERSION.SDK_INT + "): "
                     + e1.getClass().getSimpleName() + ": " + com.duoshield.app.util.LogRedact.error(e1));
         }
@@ -280,8 +280,8 @@ public class SecurePrefs {
                     + e3.getClass().getSimpleName() + ": " + com.duoshield.app.util.LogRedact.error(e3)
                     + " — FAILING CLOSED to an in-memory store; nothing will be"
                     + " persisted for this file."
-                    + " Device: " + android.os.Build.MANUFACTURER
-                    + " " + android.os.Build.MODEL
+                    + " Device: " + com.duoshield.app.util.LogRedact.metadata(
+                            android.os.Build.MANUFACTURER + "/" + android.os.Build.MODEL)
                     + " API=" + android.os.Build.VERSION.SDK_INT + " (" + com.duoshield.app.util.LogRedact.error(e3) + ")");
         }
 
