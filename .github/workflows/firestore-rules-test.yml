@@ -5,36 +5,32 @@ on:
     branches: [ main, master ]
     paths:
       - 'firestore.rules'
+      - 'firestore.indexes.json'
       - 'firestore-tests/**'
-      - 'server/lib/adminSessionStore*'
-      - 'server/lib/inviteStore*'
-      - 'server/lib/inviteRoutes*'
-      - 'server/lib/mintTokenRoute*'
-      - 'server/lib/identityClaim*'
-      - 'server/lib/identityVerify*'
-      - 'server/lib/challengeStore*'
-      - 'server/index.js'
-      - 'server/lib/inviteStore*'
-      - 'server/package.json'
-      - 'server/package-lock.json'
+      - 'server/**'
       - '.github/workflows/firestore-rules-test.yml'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'firestore.rules'
+      - 'firestore.indexes.json'
       - 'firestore-tests/**'
-      - 'server/lib/adminSessionStore*'
-      - 'server/lib/inviteStore*'
-      - 'server/index.js'
-      - 'server/package.json'
-      - 'server/package-lock.json'
+      - 'server/**'
       - '.github/workflows/firestore-rules-test.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: firestore-rules-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rules-test:
-    name: Test Firestore Rules and durable admin sessions
+    name: Test Firestore Rules and server transactions
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -54,8 +50,8 @@ jobs:
             firestore-tests/package-lock.json
             server/package-lock.json
 
-      - name: Install Firebase CLI
-        run: npm install -g firebase-tools@15.26.0
+      - name: Install pinned Firebase CLI
+        run: npm install --global firebase-tools@15.35.0
 
       - name: Install Firestore rules test dependencies
         working-directory: firestore-tests
@@ -69,13 +65,12 @@ jobs:
       # gate fails even if the emulator itself is unavailable.
       - name: Static App Check gate guard (Suite C)
         working-directory: firestore-tests
-        run: npx jest appcheck-static.test.js
+        run: npx jest appcheck-static.test.js --runInBand
 
       # Suites A + B validate client security rules. The server integration
-      # suite in the same emulator process exercises real Admin SDK transactions
-      # across independent admin-session and invite-store instances; mocks alone
-      # cannot prove the cross-instance transaction/revocation/one-time-use contract.
-      - name: Start Firestore emulator and run rules + server integration tests
+      # suite exercises actual Admin SDK transactions across independent
+      # instances; mocks alone cannot prove cross-instance durability or races.
+      - name: Run rules and server integration suites on one isolated emulator
         working-directory: firestore-tests
         env:
           FIRESTORE_EMULATOR_HOST: '127.0.0.1:8080'
@@ -85,10 +80,10 @@ jobs:
           firebase emulators:exec \
             --only firestore \
             --project duoshield-test \
-            "npm test && cd ../server && npm run test:firestore-integration" \
-            2>&1
+            --config ../firebase.json \
+            "npm test && cd ../server && npm run test:firestore-integration"
 
-      - name: Upload test results
+      - name: Upload Firestore test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
