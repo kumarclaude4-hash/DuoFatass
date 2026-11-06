@@ -1221,8 +1221,20 @@ export default {
           // wrote, losing data. If it changed, leave R2 alone; the (now
           // stale) B2 copy is harmless because GET always checks R2 first,
           // and the object will be reconsidered on tomorrow's run.
-          const current = await env.HOT_BUCKET.head(obj.key).catch(() => null);
-          if (current && current.httpEtag === readEtag) {
+          let current = null;
+          let headFailed = false;
+          try {
+            current = await env.HOT_BUCKET.head(obj.key);
+          } catch {
+            // A transient R2 HEAD failure is not proof that the object was
+            // deleted. Keep the hot source and count its bytes conservatively;
+            // the next scheduled run can safely retry the migration.
+            headFailed = true;
+            console.warn('S10-N3: post-PUT R2 HEAD failed; retaining hot source for retry');
+          }
+          if (headFailed) {
+            r2TotalBytes += obj.size ?? 0;
+          } else if (current && current.httpEtag === readEtag) {
             await env.HOT_BUCKET.delete(obj.key);
             moved++;
             // Object now lives in B2 — do NOT add its size to r2TotalBytes.
