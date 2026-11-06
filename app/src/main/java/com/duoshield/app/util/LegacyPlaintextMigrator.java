@@ -241,9 +241,11 @@ final class LegacyPlaintextMigrator {
             Map<String, ?> values = target.getAll();
             if (values == null || !values.containsKey(key)) return false;
             Object actual = values.get(key);
-            if (actual == null || expected == null || actual.getClass() != expected.getClass()) {
-                return false;
+            if (actual == null || expected == null) return false;
+            if (expected instanceof Set) {
+                return actual instanceof Set && expected.equals(actual);
             }
+            if (actual.getClass() != expected.getClass()) return false;
             return expected.equals(actual);
         } catch (Exception e) {
             Log.e(TAG, "Unable to verify migrated value for key ("
