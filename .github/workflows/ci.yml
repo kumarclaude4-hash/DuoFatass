@@ -570,8 +570,7 @@ jobs:
           disable-animations: true
           script: |
             adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
-            SDK=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
-            test "$SDK" -ge 33
+            adb shell getprop ro.build.version.sdk
             ./gradlew :app:connectedDebugAndroidTest --no-daemon -PdisableAbiSplits -Pandroid.testInstrumentationRunnerArguments.class=com.duoshield.app.ui.DevicePinGateInstrumentedTest#devicePinGate_consumesPlatformBackDispatch
 
       - name: Verify exactly one predictive-back test executed
