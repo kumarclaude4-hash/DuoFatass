@@ -218,3 +218,21 @@ The root tracker has been reconciled from its 116 current rows: **83 Fixed, 20 P
 **Device-testing policy:** physical-device/manual app-flow acceptance is deliberately deferred until the owner declares the app feature-complete. Do not start that matrix early. Existing automated CI emulator tests remain required. A detailed current agent worklist is in [AGENTIC_WORK_REMAINING_2026-11-06.md](../security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md).
 
 No production credentials, Firestore rules/indexes/TTL, Render configuration, Worker secrets, production deployment or Android release were changed by this branch. Vercel preview remains a separate quota/rate-limit concern. Production sign-off remains pending.
+
+---
+
+## Post-PR #240 merge and verification — 2026-11-06
+
+PR #240 ([source-level closeout and agent handoff](https://github.com/kumarclaude4-hash/DuoFatass/pull/240)) was squash-merged to `main` at `f3694eff36ecd54e2112c253cb62d96523478de7` on 2026-11-06.
+
+Validation on the PR head `32a32be06eb426fb7b1c4c22452be80b508e0c67`: CI run [42172475903](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42172475903) passed **9/9 jobs** (server/Worker tests, Android JVM tests, lint, vendored libsignal integrity, Gradle wrapper integrity, debug APK, minified R8, Espresso and API 35 predictive-back). Security scan [42172475877](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42172475877) passed **3/3** (CodeQL, Gitleaks and SBOM).
+
+The root tracker was reconciled from the individual finding rows after this evidence: **116 total; 86 Fixed, 17 Partial, 1 Open and 12 Accepted**. S07-L1, S07-L3 and S08-L1 are now Fixed because their JVM policy/call-site regressions executed successfully in PR CI. S07-L2 remains Partial because nulling the Java cache reference does not prove byte-level zeroization inside libsignal. S08-L3 remains Partial because keypad timing, interrupted entry and duress edge cases require app-flow acceptance, intentionally deferred until the app is feature-complete. S10-N2 remains Partial until a complete AST-aware audit/guard covers all release-surviving `Log.w`/`Log.e` call sites.
+
+Other source/agent residuals remain explicitly open in `security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md`: S03-M3's 10-minute TTL/reusable READ-WRITE capability token policy requires owner ratification or a tested protocol redesign; S10-N3's expanded Cloudflare/R2/B2 failure-injection and isolated live-runtime verification; S05-M3 staging/outage/restart acceptance; S02-I2 Render/Worker shared-limiter pairing; S02-I3 live revoked-token staging acceptance; S05-H2 invite onboarding acceptance; and a documented/supported libsignal key-destruction boundary.
+
+Post-merge mainline security scan [42173185246](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42173185246) is successful. Mainline CI run [42173185263](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42173185263) was still running at the time of this addendum; check its final conclusion before final release reporting.
+
+**Device testing rule:** no additional manual/physical-device acceptance was performed. The owner explicitly deferred it until the app is feature-complete. Existing automated CI emulator jobs are still required and passed on the PR head. Only after the owner declares feature completion should the device matrix in the agent handoff be executed.
+
+**Production sign-off remains PENDING.** No production credentials, Firestore rules/indexes/TTL, Render configuration, Worker secrets, production deployment or Android release were changed by PR #240. The Vercel preview provider's build-rate limit remains an independent deployment-status issue.
