@@ -82,7 +82,7 @@ public class LegacyPlaintextMigratorTest {
 
     @Test
     public void migrationCopiesAndVerifiesEverySupportedPreferenceType() {
-        Context context = ApplicationProvider.getApplicationContext();
+        Context context = RuntimeEnvironment.getApplication();
         String fileName = uniqueFileName();
         SharedPreferences raw = context.getSharedPreferences(fileName, Context.MODE_PRIVATE);
         Set<String> labels = new HashSet<>(Arrays.asList("one", "two"));
@@ -116,7 +116,7 @@ public class LegacyPlaintextMigratorTest {
 
     @Test
     public void ephemeralTierRetainsPlaintextEvenAfterInMemoryCopy() {
-        Context context = ApplicationProvider.getApplicationContext();
+        Context context = RuntimeEnvironment.getApplication();
         String fileName = uniqueFileName();
         SharedPreferences raw = context.getSharedPreferences(fileName, Context.MODE_PRIVATE);
         raw.edit().putString("database_key", "legacy-db-secret").commit();
