@@ -90,13 +90,8 @@ test("authenticated route inventory and AUTH_RATE_LIMITS configuration stay in s
     if (colon < 0) return [];
     const key = line.slice(0, colon).trim();
     const value = line.slice(colon + 1).split(",")[0].trim();
-    const validIdentifier = key.length > 0
-      && ((key[0] >= "A" && key[0] <= "Z") || (key[0] >= "a" && key[0] <= "z"))
-      && [...key].every((ch) =>
-        (ch >= "A" && ch <= "Z") || (ch >= "a" && ch <= "z")
-          || (ch >= "0" && ch <= "9"));
-    const numericLimit = value.length > 0 && [...value].every((ch) => ch >= "0" && ch <= "9");
-    return validIdentifier && numericLimit ? [key] : [];
+    if (!key || !/^[A-Za-z][A-Za-z0-9]*$/.test(key) || !/^[0-9]+$/.test(value)) return [];
+    return [key];
   }).sort();
   const routeKeys = Object.values(RATE_LIMIT_KEY_BY_ROUTE).sort();
   assert.deepStrictEqual(configuredKeys, routeKeys,
