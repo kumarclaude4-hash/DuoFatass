@@ -131,7 +131,7 @@ public class TempFileCleaner extends Worker {
                     Log.d(TAG, "Deleted temp media: " + f.getName()
                             + " (age " + (ageMs / 1000) + "s)");
                 } else {
-                    Log.w(TAG, "Could not delete: " + f.getName());
+                    Log.w(TAG, "Could not delete: " + com.duoshield.app.util.LogRedact.metadata(f.getName()));
                 }
             }
         }
