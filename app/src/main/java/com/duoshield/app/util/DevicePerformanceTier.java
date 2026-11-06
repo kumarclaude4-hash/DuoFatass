@@ -409,7 +409,7 @@ public enum DevicePerformanceTier {
                 }
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to read /proc/cpuinfo", t);
+            Log.w(TAG, "Unable to read /proc/cpuinfo (" + com.duoshield.app.util.LogRedact.error(t) + ")");
         }
 
         if (partsSeen > 0) {
@@ -442,7 +442,7 @@ public enum DevicePerformanceTier {
                 return cpus.length;
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to enumerate CPUs", t);
+            Log.w(TAG, "Unable to enumerate CPUs (" + com.duoshield.app.util.LogRedact.error(t) + ")");
         }
         return Runtime.getRuntime().availableProcessors();
     }
