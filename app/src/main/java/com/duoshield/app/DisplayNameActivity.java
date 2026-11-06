@@ -149,7 +149,7 @@ public class DisplayNameActivity extends AppCompatActivity {
                                 }
                             }
                             @Override public void onFailure(Exception e) {
-                                Log.e(TAG, "[2/3] Firebase sign-in FAILED", e);
+                                Log.e(TAG, "[2/3] Firebase sign-in FAILED" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                                 synchronized (lock) {
                                     result[1] = e.getMessage() != null ? e.getMessage()
                                             : "Sign-in failed. Please try again.";
@@ -194,7 +194,7 @@ public class DisplayNameActivity extends AppCompatActivity {
                 });
 
             } catch (Exception e) {
-                Log.e(TAG, "Account creation failed", e);
+                Log.e(TAG, "Account creation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 String msg = e.getMessage() != null ? e.getMessage()
                         : "Something went wrong. Please try again.";
                 runOnUiThread(() -> {
