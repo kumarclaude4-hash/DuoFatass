@@ -58,6 +58,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
           + "authorization|header|subject|title|username|profile|deviceId|passphrase|"
           + "throwable|exception|cause|failure|stacktrace).*");
 
+    // Explicitly safe numeric operational metrics. Keep this allow-list narrow:
+    // these values reveal aggregate counts, not user identifiers or content.
+    private static final Set<String> SAFE_OPERATIONAL_COUNTERS =
+            Collections.unmodifiableSet(new HashSet<>(Collections.singletonList("checksumFailures")));
+
     private static final Pattern SENSITIVE_ACCESSOR = Pattern.compile(
             "(?i)(get|is|to)(uid|userId|accountId|callerId|senderId|recipientId|peerId|"
           + "address|phone|phoneNumber|email|url|uri|path|absolutePath|canonicalPath|"
@@ -139,18 +144,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 throw new IllegalStateException("Java parsing failed:\n" + join(syntaxErrors));
             }
 
-            // Collect names whose declarations prove they are Throwable values.
-            // Catch parameters are Throwable by Java language definition. The
-            // conservative cross-file name set may flag a same-name String too;
-            // that is intentional fail-closed behavior for a security gate.
-            Set<String> throwableVariables = new HashSet<>();
-            for (CompilationUnitTree unit : units) {
-                new ThrowableVariableCollector(throwableVariables).scan(unit, null);
-            }
-
             List<String> violations = new ArrayList<>();
             int[] inspectedCalls = new int[] {0};
+            // Keep inferred Throwable names scoped to one compilation unit. A
+            // project-global name set would misclassify unrelated local vars
+            // (especially common names such as e) in different Java files.
             for (CompilationUnitTree unit : units) {
+                Set<String> throwableVariables = new HashSet<>();
+                new ThrowableVariableCollector(throwableVariables).scan(unit, null);
                 new LogCallScanner(unit, positions, inspectedCalls, violations,
                         throwableVariables).scan(unit, null);
             }
@@ -168,6 +169,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"request failed: \" + LogRedact.error(failure));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(peerId));\n"
                   + "    Log.wtf(\"TAG\", \"static invariant failure\");\n"
+                  + "    long checksumFailures = 2;\n"
+                  + "    Log.w(\"TAG\", \"integrity failures=\" + checksumFailures);\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
@@ -305,7 +308,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             violations.add(unit.getSourceFile().getName() + ":" + line + ": " + reason);
         }
 
-        private final class MessageScanner extends TreeScanner<Void, Void> {
+        private final class MessageScanner extends TreePathScanner<Void, Void> {
             private final MethodInvocationTree logCall;
             private final Set<String> throwableVariables;
 
@@ -341,6 +344,18 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 return super.visitMethodInvocation(node, unused);
             }
 
+            private boolean isSafeThrowableClassNameUse(com.sun.source.util.TreePath identifierPath) {
+                com.sun.source.util.TreePath parent = identifierPath.getParentPath();
+                if (parent == null || !(parent.getLeaf() instanceof MemberSelectTree)) return false;
+                MemberSelectTree select = (MemberSelectTree) parent.getLeaf();
+                if (!"getClass".equals(select.getIdentifier())
+                        || select.getExpression() != identifierPath.getLeaf()) return false;
+                // getClass().getSimpleName() yields only a class label; it does
+                // not serialize the Throwable, message, stack or cause chain.
+                return parent.getParentPath() != null
+                        && parent.getParentPath().getLeaf() instanceof MethodInvocationTree;
+            }
+
             @Override
             public Void visitNewClass(NewClassTree node, Void unused) {
                 if (isThrowableType(node.getIdentifier().toString())) {
@@ -352,9 +367,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
             @Override
             public Void visitIdentifier(IdentifierTree node, Void unused) {
                 String name = node.getName().toString();
-                if (throwableVariables.contains(name)) {
+                if (throwableVariables.contains(name) && !isSafeThrowableClassNameUse(getCurrentPath())) {
                     addViolation(logCall, "Throwable variable '" + name + "' is interpolated");
-                } else if (SENSITIVE_IDENTIFIER.matcher(name).matches()) {
+                } else if (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                        && !SAFE_OPERATIONAL_COUNTERS.contains(name)) {
                     addViolation(logCall, "raw sensitive identifier '" + name + "' is interpolated");
                 }
                 return super.visitIdentifier(node, unused);
