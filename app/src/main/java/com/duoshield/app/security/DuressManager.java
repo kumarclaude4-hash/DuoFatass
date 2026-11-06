@@ -164,7 +164,7 @@ public class DuressManager {
               .putBoolean(armKey, false)
               .apply();
         } catch (Exception e) {
-            android.util.Log.e("DuressManager", "Failed to initialise secondary slot", e);
+            android.util.Log.e("DuressManager", "Failed to initialise secondary slot" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -208,7 +208,7 @@ public class DuressManager {
                     .apply();
             return true;
         } catch (Exception e) {
-            android.util.Log.e("DuressManager", "Failed to store secondary code", e);
+            android.util.Log.e("DuressManager", "Failed to store secondary code" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
@@ -341,7 +341,7 @@ public class DuressManager {
             if (legacyUidKey != null) ed.remove(legacyUidKey);
             ed.apply();
         } catch (Exception e) {
-            android.util.Log.e("DuressManager", "Failed to disarm secondary slot", e);
+            android.util.Log.e("DuressManager", "Failed to disarm secondary slot" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -407,7 +407,7 @@ public class DuressManager {
         } catch (Exception e) {
             // Leave the marker set: a wipe that failed must be retried on the next
             // launch, not forgotten. Returning true still keeps routing at sign-in.
-            android.util.Log.e("DuressManager", "Resumed teardown failed; will retry next launch", e);
+            android.util.Log.e("DuressManager", "Resumed teardown failed; will retry next launch" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return true;
         }
         clearResetMarkers(context);
@@ -544,7 +544,7 @@ public class DuressManager {
             try {
                 com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin);
             } catch (Exception e) {
-                android.util.Log.e("DuressManager", "Device-gate promotion failed", e);
+                android.util.Log.e("DuressManager", "Device-gate promotion failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
             // Disarm slot B so re-entering this same code later (after the account is
             // restored and this code becomes the primary again) cannot re-trigger the
@@ -575,7 +575,7 @@ public class DuressManager {
         try {
             SecurePrefs.get(context).edit().putBoolean(KEY_RESET_PENDING, true).commit();
         } catch (Exception e) {
-            android.util.Log.e("DuressManager", "Failed to set legacy reset-pending flag", e);
+            android.util.Log.e("DuressManager", "Failed to set legacy reset-pending flag" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
 
         // Drop any leftover forced-rotation intent from a PREVIOUS unfreeze cycle.
@@ -646,8 +646,7 @@ public class DuressManager {
                     android.util.Log.d("DuressManager",
                             "Synchronous account-lock write " + (lockConfirmed ? "confirmed." : "did not confirm."));
                 } catch (Exception ignored) {
-                    android.util.Log.w("DuressManager",
-                            "Synchronous account-lock write failed — will attempt nonce retry.");
+                    android.util.Log.w("DuressManager", "Synchronous account-lock write failed — will attempt nonce retry.");
                 }
             }
 
@@ -693,8 +692,7 @@ public class DuressManager {
                         }
                     }
                 } catch (Exception e) {
-                    android.util.Log.w("DuressManager",
-                            "Could not obtain lock nonce — WorkManager retry skipped: " + e.getMessage());
+                    android.util.Log.w("DuressManager", "Could not obtain lock nonce — WorkManager retry skipped: " + com.duoshield.app.util.LogRedact.error(e));
                 }
             }
 
@@ -724,7 +722,7 @@ public class DuressManager {
                 com.duoshield.app.util.WipeHelper.eraseLocalData(
                         context, com.duoshield.app.util.WipeHelper.WipeMode.DURESS);
             } catch (Exception e) {
-                android.util.Log.e("DuressManager", "eraseLocalData failed during duress wipe", e);
+                android.util.Log.e("DuressManager", "eraseLocalData failed during duress wipe" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
 
             // S06-M5: clear the resume marker only once the erasure above has actually
@@ -902,8 +900,7 @@ public class DuressManager {
                         if (prior == LockIntentDrainResult.TRANSIENT_FAILURE) {
                             // Do not rotate/prune a nonce whose request may already
                             // have committed while its HTTP response was lost.
-                            android.util.Log.w("DuressManager",
-                                    "Pending lock retry was transient; preserving its nonce for the next drain.");
+                            android.util.Log.w("DuressManager", "Pending lock retry was transient; preserving its nonce for the next drain.");
                             return;
                         }
                     }
@@ -925,8 +922,7 @@ public class DuressManager {
                     }
                 }
             } catch (Exception e) {
-                android.util.Log.w("DuressManager",
-                        "maintainLockCredential failed (non-fatal): " + e.getMessage());
+                android.util.Log.w("DuressManager", "maintainLockCredential failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
             } finally {
                 LOCK_CREDENTIAL_REFRESH_IN_FLIGHT.set(false);
             }
@@ -972,8 +968,7 @@ public class DuressManager {
 
         String token = PendingLockStore.getIntentToken(appCtx);
         if (token == null || token.isEmpty()) {
-            android.util.Log.w("DuressManager",
-                    "Pending lock intent has no usable credential — account believed UNLOCKED.");
+            android.util.Log.w("DuressManager", "Pending lock intent has no usable credential — account believed UNLOCKED.");
             return LockIntentDrainResult.NO_CREDENTIAL;
         }
 
@@ -990,17 +985,14 @@ public class DuressManager {
                 // the original atomic lock commit, even if an administrator has
                 // since unfrozen the account. A permanent 4xx means no commit exists.
                 PendingLockStore.clearWarmTokenIfMatches(appCtx, token);
-                android.util.Log.e("DuressManager",
-                        "Pending lock intent rejected (HTTP " + code
+                android.util.Log.e("DuressManager", "Pending lock intent rejected (HTTP " + code
                                 + ") — account lock NOT confirmed; intent retained.");
                 return LockIntentDrainResult.PERMANENT_FAILURE;
             }
-            android.util.Log.w("DuressManager",
-                    "Pending lock intent drain failed (HTTP " + code + ") — preserving nonce.");
+            android.util.Log.w("DuressManager", "Pending lock intent drain failed (HTTP " + code + ") — preserving nonce.");
             return LockIntentDrainResult.TRANSIENT_FAILURE;
         } catch (Exception e) {
-            android.util.Log.w("DuressManager",
-                    "Pending lock intent drain failed (offline?) — preserving nonce: " + e.getMessage());
+            android.util.Log.w("DuressManager", "Pending lock intent drain failed (offline?) — preserving nonce: " + com.duoshield.app.util.LogRedact.error(e));
             return LockIntentDrainResult.TRANSIENT_FAILURE;
         }
     }
@@ -1056,8 +1048,7 @@ public class DuressManager {
 
                 int code = conn.getResponseCode();
                 if (code != 200) {
-                    android.util.Log.w("DuressManager",
-                            "requestLockNonce: server returned HTTP " + code);
+                    android.util.Log.w("DuressManager", "requestLockNonce: server returned HTTP " + code);
                     return null;
                 }
                 InputStream is = conn.getInputStream();
@@ -1077,7 +1068,7 @@ public class DuressManager {
                 conn.disconnect();
             }
         } catch (Exception e) {
-            android.util.Log.w("DuressManager", "requestLockNonce failed: " + e.getMessage());
+            android.util.Log.w("DuressManager", "requestLockNonce failed: " + com.duoshield.app.util.LogRedact.error(e));
             return null;
         }
     }
