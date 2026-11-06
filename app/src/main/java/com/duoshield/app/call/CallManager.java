@@ -909,7 +909,7 @@ public class CallManager {
             }
             @Override public void onSetSuccess() {}
             @Override public void onCreateFailure(String s) {
-                Log.e(TAG, "createOffer failed: " + s);
+                Log.e(TAG, "createOffer failed");
                 setState(CallState.FAILED);
                 if (listener != null) listener.onError("Failed to create offer");
             }
@@ -1937,7 +1937,7 @@ public class CallManager {
         lastQualityChangeMs = android.os.SystemClock.elapsedRealtime();
         Log.w(TAG, "Thermal downgrade → rung " + qualityStep + " ("
                 + captureWidth() + "×" + captureHeight() + " @ " + captureFps()
-                + " fps): " + reason);
+                + " fps)");
         applyCurrentQualityStep();
     }
 
