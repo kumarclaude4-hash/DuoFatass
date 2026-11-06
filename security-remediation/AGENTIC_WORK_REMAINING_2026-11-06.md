@@ -77,7 +77,7 @@ All protected verifyIdToken call sites pass checkRevoked=true and the static rou
 
 ### H. S08-H5 / S07-M1 — legacy preference recovery source work
 
-Review every migration caller, rollback path and recovery route for an install where legacy plaintext cannot be migrated. Add JVM tests for unverified schema types, partial write/read-back failures, conflict handling, retry and preservation of original data. Do not delete retained legacy data before encrypted destination read-back is proven. Real Android Keystore and EncryptedSharedPreferences migration acceptance is deferred until app completion.
+Review of migration callers, rollback paths and recovery routes is source-complete for the current code. Existing regressions cover unverified schema types, conflicting destination values, retry and preservation of original data. PR #243 added deterministic one-shot fault injection for failed encrypted destination commit, post-write read-back exception, and failed plaintext cleanup commit; retry behavior is covered. The merged PR #243 head `a98d79e46919fa4c472b36a9ec33075d09479a2a` passed CI run `42185303041` (9/9 jobs, including Android unit tests, Espresso, predictive-back and minified R8) plus security run `42185303045`. Do not delete retained legacy data before exact encrypted destination read-back is proven. S08-H5/S07-M1 remain Partial until the real Android Keystore/EncryptedSharedPreferences upgrade/recovery flow and a verified support/recovery path for un-migratable installs are accepted on physical devices after app feature completion.
 
 ### I. S05-H2 — invite-only backend contract
 
