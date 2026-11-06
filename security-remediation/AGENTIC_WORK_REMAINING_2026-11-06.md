@@ -61,7 +61,7 @@ Remaining: live isolated Cloudflare Worker + R2 + B2 acceptance, including cron 
 
 ### D. S07-L2 — document and prove the key destruction boundary
 
-WipeHelper now calls SeedPhraseHelper.clearDerivationCache(), and JVM tests prove the AtomicReference is nulled. This does not prove private bytes inside libsignal's object graph are overwritten. Research whether libsignal exposes a documented safe destroy/zeroize primitive; do not reflectively mutate native internals or invent a guarantee. Add a deterministic test only if it proves an actual guarantee. Otherwise document process-lifetime/GC limitations and preserve Partial.
+WipeHelper calls SeedPhraseHelper.clearDerivationCache(), and JVM tests prove the AtomicReference is nulled. The exact pinned libsignal 0.54.1 source was checked: Java ECPrivateKey.finalize() releases the native handle, while its Rust PrivateKey owns x25519-dalek 2.0.0 StaticSecret; the default zeroize feature applies Zeroize on drop. However, the Java wrapper exposes no deterministic close/destroy API, finalization is GC-timed, and PrivateKey is Clone. The native key buffer is therefore zeroized on actual drop, not synchronously when the DuoFat wipe clears the cache. See `security-remediation/sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md`. Keep Partial; do not reflectively mutate native internals or invent a synchronous-erasure guarantee.
 
 ### E. S05-M3 — durable admin-session emulator coverage
 
