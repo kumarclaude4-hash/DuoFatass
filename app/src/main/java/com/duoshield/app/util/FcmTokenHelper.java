@@ -49,7 +49,7 @@ public class FcmTokenHelper {
                 uploadWithRetry(ctx.getApplicationContext(), token, 0);
             })
             .addOnFailureListener(e ->
-                Log.w(TAG, "register: getToken() failed: " + e.getMessage()));
+                Log.w(TAG, "register: getToken() failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /**
@@ -77,7 +77,7 @@ public class FcmTokenHelper {
                 .collection("users").document(uid)
                 .set(data, SetOptions.merge())
                 .addOnSuccessListener(v -> Log.d(TAG, "FCM token uploaded successfully"))
-                .addOnFailureListener(e -> Log.w(TAG, "FCM token upload failed: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "FCM token upload failed: " + com.duoshield.app.util.LogRedact.error(e)));
 
             // Per-device registry (item 4c): one doc per install, so a new-device
             // login never erases another device's token. This is the fan-out
@@ -95,7 +95,7 @@ public class FcmTokenHelper {
                 .collection("devices").document(deviceId)
                 .set(dev, SetOptions.merge())
                 .addOnSuccessListener(v -> Log.d(TAG, "Per-device token registered: " + deviceId))
-                .addOnFailureListener(e -> Log.w(TAG, "Per-device token upload failed: " + e.getMessage()));
+                .addOnFailureListener(e -> Log.w(TAG, "Per-device token upload failed: " + com.duoshield.app.util.LogRedact.error(e)));
         } else if (attempt < MAX_RETRY) {
             long delayMs = 3000L * (1L << attempt); // 3 s, 6 s, 12 s
             Log.d(TAG, "register: uid not ready, retry " + (attempt + 1) + " in " + delayMs + "ms");
