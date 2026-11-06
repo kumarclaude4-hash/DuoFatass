@@ -95,3 +95,15 @@ approved residual-risk decision.
 - Current ordered worklist: security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md.
 
 This addendum does not change the sign-off decision. Production Firestore/App Check configuration, credential rotation, live Render/Worker pairing, staging acceptance, complete log-policy audit, S03-M3 residual approval, repository governance and the deferred device matrix remain outstanding. Keep this document PENDING.
+
+## Post-PR #240 evidence — 2026-11-06
+
+- PR #240 merged to `main`: `f3694eff36ecd54e2112c253cb62d96523478de7`.
+- PR-head CI run [42172475903](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42172475903): **9/9 jobs passed**, including Android JVM tests, lint, backend tests, debug APK, R8, Espresso and API 35 predictive-back.
+- PR-head Security scan [42172475877](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42172475877): **3/3 passed** (CodeQL, Gitleaks, SBOM).
+- Finding register row-level recount after PR #240: **116 rows; 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S07-L1, S07-L3 and S08-L1 were promoted based on executed JVM evidence. S07-L2, S08-L3 and S10-N2 remain Partial for the explicitly stated residuals.
+- Post-merge mainline Security scan [42173185246](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42173185246) passed. Mainline CI [42173185263](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42173185263) was in progress at the time this addendum was written.
+- Manual/physical-device testing remains deferred until the owner declares the app feature-complete. Automated CI emulator jobs on the PR head passed; this is not physical-device acceptance.
+- The next-agent execution plan is `security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md`.
+
+These results do not satisfy production sign-off. Credential rotation, live Firestore/App Check configuration, Render/Worker pairing, staging integration, governance enforcement, the full AST-aware logging audit, S03-M3 residual approval, isolated/live storage-runtime verification and later device acceptance remain. Keep this document **PENDING**.
