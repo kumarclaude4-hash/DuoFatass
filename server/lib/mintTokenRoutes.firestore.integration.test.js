@@ -258,16 +258,27 @@ if (!emulatorHost) {
       "audit records must use the redacted UID tag, not the raw UID");
 
     // 4. Existing-account restore still verifies possession of its key and
-    // returns a token without consuming a new invite.
-    const restoreNonce = challengeStore.issue(validUid);
+    // returns a token without consuming a new invite. Use a separate UID so
+    // the successful-mint cooldown tested above is not bypassed in production.
+    const restoreUid = "mint-restore-" + suffix;
+    identityUids.push(restoreUid);
+    const restoreIdentity = makeIdentity();
+    const restoreHash = crypto.createHash("sha256")
+      .update(Buffer.from(restoreIdentity.publicKeyHex, "hex")).digest("hex");
+    await db.collection("identities").doc(restoreUid).set({
+      uid: restoreUid,
+      identityPubKeyHash: restoreHash,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    const restoreNonce = challengeStore.issue(restoreUid);
     const restore = await post({
-      userId: validUid,
-      identityPubKeyHex: validIdentity.publicKeyHex,
+      userId: restoreUid,
+      identityPubKeyHex: restoreIdentity.publicKeyHex,
       nonce: restoreNonce,
-      signatureHex: sign(validIdentity.privateKey, validUid, restoreNonce),
+      signatureHex: sign(restoreIdentity.privateKey, restoreUid, restoreNonce),
     });
     assert.equal(restore.status, 200);
-    assert.deepEqual(JSON.parse(restore.text), { token: "emulated-custom-token-" + validUid });
+    assert.deepEqual(JSON.parse(restore.text), { token: "emulated-custom-token-" + restoreUid });
     assert.equal(mintedUsers.length, 2);
     assert.equal((await db.collection(collections.invites).count().get()).data().count, 1);
   });
