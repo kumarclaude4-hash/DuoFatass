@@ -99,7 +99,7 @@ final class LegacyPlaintextMigrator {
         try {
             raw = appCtx.getSharedPreferences(fileName, Context.MODE_PRIVATE);
         } catch (Exception e) {
-            Log.w(TAG, "Cannot open raw prefs for " + fileName + ": "
+            Log.w(TAG, "Cannot open raw prefs for " + com.duoshield.app.util.LogRedact.metadata(fileName) + ": "
                     + e.getClass().getSimpleName());
             // We cannot prove the source is empty when it could not be opened.
             // Treat the migration state as unsafe so onboarding/restore remains
@@ -112,7 +112,7 @@ final class LegacyPlaintextMigrator {
         if (legacy.isEmpty()) return Result.none();
 
         Log.w(TAG, "Found " + legacy.size() + " legacy plaintext entr"
-                + (legacy.size() == 1 ? "y" : "ies") + " in " + fileName
+                + (legacy.size() == 1 ? "y" : "ies") + " in " + com.duoshield.app.util.LogRedact.metadata(fileName)
                 + " — migrating (canPersist=" + canPersist + ").");
 
         int migrated = copyInto(target, legacy);
@@ -137,7 +137,7 @@ final class LegacyPlaintextMigrator {
             // Partial migration: leave everything in place rather than clearing a
             // file we only half-copied.
             Log.e(TAG, "Migrated only " + migrated + " of " + legacy.size()
-                    + " entries for " + fileName + " — retaining plaintext for retry.");
+                    + " entries for " + com.duoshield.app.util.LogRedact.metadata(fileName) + " — retaining plaintext for retry.");
             return new Result(legacy.size(), migrated, true);
         }
 

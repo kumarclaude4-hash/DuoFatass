@@ -182,7 +182,7 @@ public final class ChatExportHelper {
                             if (ok) saved++; else failed++;
                         }
                     } catch (Exception e) {
-                        Log.w(TAG, "album mediaItems parse failed for msg=" + m.getId(), e);
+                        Log.w(TAG, "album mediaItems parse failed for msg=" + com.duoshield.app.util.LogRedact.metadata(m.getId()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         failed++;
                     }
                 } else if ("voice".equals(type)) {

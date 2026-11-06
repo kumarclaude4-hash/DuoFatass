@@ -429,7 +429,7 @@ public class GroupChatActivity extends BaseActivity {
                       localDb.groupDao().updateGroupKey(groupId, groupKey);
                       seedFromRoom();
                   } catch (Exception e) {
-                      Log.e(TAG, "Failed to decrypt group key", e);
+                      Log.e(TAG, "Failed to decrypt group key" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                       runOnUiThread(() ->
                           Toast.makeText(this, "Could not decrypt group key", Toast.LENGTH_LONG).show());
                   }
@@ -479,7 +479,7 @@ public class GroupChatActivity extends BaseActivity {
         q = q.limitToLast(300);
 
         msgListener = q.addSnapshotListener((snaps, e) -> {
-            if (e != null) { Log.e(TAG, "Message listener error", e); return; }
+            if (e != null) { Log.e(TAG, "Message listener error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")"); return; }
             if (snaps == null || snaps.isEmpty()) return;
 
             // Charge only documents changed in this event; snaps.size() is the entire result
@@ -569,7 +569,7 @@ public class GroupChatActivity extends BaseActivity {
                         ? GroupCipherHelper.decrypt(cipher, groupKey, aad)
                         : cipher;
                 } catch (Exception ex) {
-                    Log.e(TAG, "Decrypt failed for msg " + id, ex);
+                    Log.e(TAG, "Decrypt failed for msg " + com.duoshield.app.util.LogRedact.metadata(id) + " (" + com.duoshield.app.util.LogRedact.error(ex) + ")");
                     plain = "[Decryption failed]";
                 }
                 final String displayPlain = plain;
@@ -605,7 +605,7 @@ public class GroupChatActivity extends BaseActivity {
                 toRoom.forwarded = Boolean.TRUE.equals(fwdFlag);
                 executor.execute(() -> {
                     try { localDb.messageDao().insert(toRoom); }
-                    catch (Exception ex) { Log.w(TAG, "Room insert conflict for " + id); }
+                    catch (Exception ex) { Log.w(TAG, "Room insert conflict for " + com.duoshield.app.util.LogRedact.metadata(id)); }
                     String preview = caption != null && !caption.isEmpty()
                             ? caption
                             : (mediaItems != null && !mediaItems.isEmpty()
@@ -654,7 +654,7 @@ public class GroupChatActivity extends BaseActivity {
                 byte[] aad = GroupCipherHelper.buildAad(groupId, myUid, msgId);
                 cipher = GroupCipherHelper.encrypt(text, groupKey, aad);
             } catch (Exception ex) {
-                Log.e(TAG, "Group encrypt failed", ex);
+                Log.e(TAG, "Group encrypt failed" + " (" + com.duoshield.app.util.LogRedact.error(ex) + ")");
                 runOnUiThread(() -> {
                     optimistic.setStatus("failed");
                     adapter.updateMessage(msgId, m -> m.setStatus("failed"));
@@ -704,7 +704,7 @@ public class GroupChatActivity extends BaseActivity {
                   db.collection("groups").document(groupId)
                     .update("lastActivity", FieldValue.serverTimestamp())
                     .addOnFailureListener(ex ->
-                        Log.w(TAG, "nudge failed (non-critical): " + ex.getMessage()));
+                        Log.w(TAG, "nudge failed (non-critical): " + com.duoshield.app.util.LogRedact.error(ex)));
               })
               .addOnFailureListener(ex -> {
                   runOnUiThread(() -> {
@@ -936,7 +936,7 @@ public class GroupChatActivity extends BaseActivity {
                     this, getPackageName() + ".provider", photoFile);
             takeGroupPictureLauncher.launch(cameraGroupPhotoUri);
         } catch (java.io.IOException e) {
-            Log.e(TAG, "Failed to create group camera temp file", e);
+            Log.e(TAG, "Failed to create group camera temp file" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             Toast.makeText(this, "Camera error — could not create photo file",
                     Toast.LENGTH_SHORT).show();
         }
@@ -1162,7 +1162,7 @@ public class GroupChatActivity extends BaseActivity {
                     });
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Group media upload failed (attempt " + retryCount + ")", e);
+                Log.e(TAG, "Group media upload failed (attempt " + retryCount + ")" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 if (retryCount >= 3) {
                     runOnUiThread(this::onGroupUploadFailed);
                     return;
@@ -1243,7 +1243,7 @@ public class GroupChatActivity extends BaseActivity {
               db.collection("groups").document(groupId)
                 .update("lastActivity", FieldValue.serverTimestamp())
                 .addOnFailureListener(ex ->
-                    Log.w(TAG, "nudge failed (non-critical): " + ex.getMessage()));
+                    Log.w(TAG, "nudge failed (non-critical): " + com.duoshield.app.util.LogRedact.error(ex)));
           })
           .addOnFailureListener(ex -> {
               adapter.updateMessage(msgId, m -> m.setStatus("failed"));
@@ -1327,7 +1327,7 @@ public class GroupChatActivity extends BaseActivity {
                     db.collection("groups").document(groupId)
                             .update("lastActivity", FieldValue.serverTimestamp())
                             .addOnFailureListener(ex ->
-                                    Log.w(TAG, "nudge failed (non-critical): " + ex.getMessage()));
+                                    Log.w(TAG, "nudge failed (non-critical): " + com.duoshield.app.util.LogRedact.error(ex)));
                 })
                 .addOnFailureListener(ex -> {
                     adapter.updateMessage(msgId, m -> m.setStatus("failed"));
@@ -1351,7 +1351,7 @@ public class GroupChatActivity extends BaseActivity {
             while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
             return baos.toByteArray();
         } catch (Exception e) {
-            Log.e(TAG, "readGroupUriBytes failed", e);
+            Log.e(TAG, "readGroupUriBytes failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -1389,7 +1389,7 @@ public class GroupChatActivity extends BaseActivity {
             byte[] compressed = out.toByteArray();
             return compressed.length < raw.length ? compressed : raw;
         } catch (Exception e) {
-            Log.w(TAG, "compressGroupImage failed — using original", e);
+            Log.w(TAG, "compressGroupImage failed — using original" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return raw;
         }
     }
@@ -1516,7 +1516,7 @@ public class GroupChatActivity extends BaseActivity {
                 conn.disconnect();
                 if (code != 200) throw new Exception("Server returned HTTP " + code);
             } catch (Exception e) {
-                Log.e(TAG, "removeMember server call failed", e);
+                Log.e(TAG, "removeMember server call failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 runOnUiThread(() -> Toast.makeText(this,
                     "Failed to remove member: " + e.getMessage(), Toast.LENGTH_LONG).show());
                 return;
@@ -1527,7 +1527,7 @@ public class GroupChatActivity extends BaseActivity {
             try {
                 newKey = com.duoshield.app.crypto.GroupCipherHelper.generateGroupKey();
             } catch (Exception e) {
-                Log.e(TAG, "generateGroupKey failed", e);
+                Log.e(TAG, "generateGroupKey failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 runOnUiThread(() -> Toast.makeText(this,
                     "Member removed but key rotation failed.", Toast.LENGTH_LONG).show());
                 return;
@@ -1553,7 +1553,7 @@ public class GroupChatActivity extends BaseActivity {
                           .addOnSuccessListener(v -> guard.recordWrites(1));
                     }
                 } catch (Exception e) {
-                    Log.w(TAG, "Key dist failed for " + LogRedact.uid(uid) + ": " + e.getMessage());
+                    Log.w(TAG, "Key dist failed for " + LogRedact.uid(uid) + ": " + com.duoshield.app.util.LogRedact.error(e));
                 }
             }
 

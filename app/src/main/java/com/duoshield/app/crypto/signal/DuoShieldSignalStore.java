@@ -409,7 +409,7 @@ public final class DuoShieldSignalStore
                             Base64.encodeToString(record.serialize(), Base64.NO_WRAP))
                     .apply();
         } catch (Exception e) {
-            Log.e(TAG, "storePreKey failed for id=" + preKeyId, e);
+            Log.e(TAG, "storePreKey failed for id=" + preKeyId + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -462,7 +462,7 @@ public final class DuoShieldSignalStore
                             Base64.encodeToString(record.serialize(), Base64.NO_WRAP))
                     .apply();
         } catch (Exception e) {
-            Log.e(TAG, "storeSignedPreKey failed for id=" + signedPreKeyId, e);
+            Log.e(TAG, "storeSignedPreKey failed for id=" + signedPreKeyId + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -526,8 +526,8 @@ public final class DuoShieldSignalStore
             // S07-L4/S10-N2: `key` embeds address.getName() (the peer uid) — redact
             // it before logging at a level (Log.e) that survives release builds.
             String redactedKey = LogRedact.uid(address.getName()) + "." + address.getDeviceId();
-            Log.e(TAG, "Session deserialisation failed for " + redactedKey
-                    + " — row deleted, session reset required.", e);
+            Log.e(TAG, "Session deserialisation failed for " + com.duoshield.app.util.LogRedact.metadata(redactedKey)
+                    + " — row deleted, session reset required." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             throw new SessionDeserializationException(
                     "Session deserialisation failed for " + redactedKey, e);
         }
@@ -544,7 +544,7 @@ public final class DuoShieldSignalStore
             // S07-L4/S10-N2: `key` embeds address.getName() (the peer uid) — redact
             // it before logging at a level (Log.e) that survives release builds.
             Log.e(TAG, "Failed to store session for " + LogRedact.uid(address.getName())
-                    + "." + address.getDeviceId(), e);
+                    + "." + address.getDeviceId() + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -646,7 +646,7 @@ public final class DuoShieldSignalStore
                             String.valueOf(kyberPreKeyId))
                     .apply();
         } catch (Exception e) {
-            Log.e(TAG, "storeKyberPreKey failed for id=" + kyberPreKeyId, e);
+            Log.e(TAG, "storeKyberPreKey failed for id=" + kyberPreKeyId + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 

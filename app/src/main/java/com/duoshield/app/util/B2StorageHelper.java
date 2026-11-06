@@ -256,7 +256,7 @@ public final class B2StorageHelper {
                 last = e;
                 if (attempt < MAX_RETRIES) {
                     Log.w(TAG, opName + " failed (attempt " + (attempt + 1) + "/" + MAX_RETRIES
-                            + "), retrying in " + backoff + " ms — " + e.getMessage());
+                            + "), retrying in " + backoff + " ms — " + com.duoshield.app.util.LogRedact.error(e));
                     try {
                         Thread.sleep(backoff);
                     } catch (InterruptedException ie) {
@@ -265,7 +265,7 @@ public final class B2StorageHelper {
                     }
                     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
                 } else {
-                    Log.e(TAG, opName + " failed after " + MAX_RETRIES + " retries.", e);
+                    Log.e(TAG, opName + " failed after " + MAX_RETRIES + " retries." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 }
             }
         }
@@ -443,7 +443,7 @@ public final class B2StorageHelper {
                     for (MediaCallback c : waiters) c.onLoaded(raw);
                 });
             } catch (Exception e) {
-                Log.e(TAG, "loadAvatarBytes failed: " + b2Path, e);
+                Log.e(TAG, "loadAvatarBytes failed: " + com.duoshield.app.util.LogRedact.metadata(b2Path) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 new Handler(Looper.getMainLooper()).post(() -> {
                     for (MediaCallback c : waiters) c.onError(e);
                 });
@@ -751,7 +751,7 @@ public final class B2StorageHelper {
                     for (MediaCallback c : waiters) c.onLoaded(plain);
                 });
             } catch (Exception e) {
-                Log.e(TAG, "loadMedia failed: " + b2Path, e);
+                Log.e(TAG, "loadMedia failed: " + com.duoshield.app.util.LogRedact.metadata(b2Path) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 new Handler(Looper.getMainLooper()).post(() -> {
                     for (MediaCallback c : waiters) c.onError(e);
                 });
@@ -856,7 +856,7 @@ public final class B2StorageHelper {
                         THUMB_CACHE.put(b2Path, jpeg);
                         new Handler(Looper.getMainLooper()).post(() -> cb.onLoaded(jpeg));
                     } catch (Exception e) {
-                        Log.w(TAG, "loadVideoThumbnail: extraction failed for " + b2Path, e);
+                        Log.w(TAG, "loadVideoThumbnail: extraction failed for " + com.duoshield.app.util.LogRedact.metadata(b2Path) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         new Handler(Looper.getMainLooper()).post(() -> cb.onError(e));
                     } finally {
                         //noinspection ResultOfMethodCallIgnored
@@ -916,7 +916,7 @@ public final class B2StorageHelper {
             cachePut(b2Path, plain);
             Log.d(TAG, "preCacheSync: verified " + b2Path + " (" + plain.length + " B)");
         } catch (Exception e) {
-            Log.w(TAG, "preCacheSync: skipped " + b2Path + " — " + e.getMessage());
+            Log.w(TAG, "preCacheSync: skipped " + com.duoshield.app.util.LogRedact.metadata(b2Path) + " — " + com.duoshield.app.util.LogRedact.error(e));
         }
     }
 
@@ -933,7 +933,7 @@ public final class B2StorageHelper {
                     for (File file : files) {
                         if (!file.delete()) {
                             Log.w(TAG, "Unable to remove legacy plaintext cache file: "
-                                    + file.getName());
+                                    + com.duoshield.app.util.LogRedact.metadata(file.getName()));
                         }
                     }
                 }
@@ -2053,7 +2053,7 @@ public final class B2StorageHelper {
                 }
                 new Handler(Looper.getMainLooper()).post(() -> cb.onReady(dest));
             } catch (Exception e) {
-                Log.e(TAG, "loadMediaToFile failed: " + b2Path, e);
+                Log.e(TAG, "loadMediaToFile failed: " + com.duoshield.app.util.LogRedact.metadata(b2Path) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 //noinspection ResultOfMethodCallIgnored
                 dest.delete();
                 new Handler(Looper.getMainLooper()).post(() -> cb.onError(e));

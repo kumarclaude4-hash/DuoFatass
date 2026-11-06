@@ -73,7 +73,7 @@ public class EditMessageHelper {
                             "Edit saved locally — cloud sync failed. Retry when online.",
                             Toast.LENGTH_SHORT).show()));
             } catch (Exception e) {
-                android.util.Log.e("EditMessageHelper", "Encryption failed for edit", e);
+                android.util.Log.e("EditMessageHelper", "Encryption failed for edit" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 ui.post(() -> Toast.makeText(ctx,
                         "Edit failed — encryption error. Please try again.",
                         Toast.LENGTH_SHORT).show());

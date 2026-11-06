@@ -111,7 +111,7 @@ public final class ChunkedMediaDataSource implements DataSource {
             // The header's length field and the chunk's real plaintext length disagree. Treat it
             // as end-of-input rather than looping forever on a chunk that can never satisfy the
             // request — a short read is recoverable for the player, a spin is not.
-            Log.w(TAG, "chunk " + chunkIndex + " shorter than header implies for " + b2Path);
+            Log.w(TAG, "chunk " + chunkIndex + " shorter than header implies for " + com.duoshield.app.util.LogRedact.metadata(b2Path));
             return C.RESULT_END_OF_INPUT;
         }
 

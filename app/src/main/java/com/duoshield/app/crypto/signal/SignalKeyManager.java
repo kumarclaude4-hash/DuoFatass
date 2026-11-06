@@ -144,7 +144,7 @@ public final class SignalKeyManager {
                 generate(ctx);
                 uploadPublicBundle(ctx, onSuccess, onFailure);
             } catch (Exception e) {
-                Log.e(TAG, "Signal key generation failed", e);
+                Log.e(TAG, "Signal key generation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 if (onFailure != null)
                     new Handler(Looper.getMainLooper()).post(onFailure);
             }
@@ -240,7 +240,7 @@ public final class SignalKeyManager {
                 uploadPublicBundle(ctx, onSuccess, onFailure);
 
             } catch (Exception e) {
-                Log.e(TAG, "generateFromSeedDerivedKey failed", e);
+                Log.e(TAG, "generateFromSeedDerivedKey failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 if (onFailure != null)
                     new Handler(Looper.getMainLooper()).post(onFailure);
             }
@@ -302,7 +302,7 @@ public final class SignalKeyManager {
         try {
             return new IdentityKeyPair(Base64.decode(b64, Base64.NO_WRAP));
         } catch (Exception e) {
-            Log.e(TAG, "IdentityKeyPair deserialisation failed", e);
+            Log.e(TAG, "IdentityKeyPair deserialisation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -326,7 +326,7 @@ public final class SignalKeyManager {
         try {
             return new SignedPreKeyRecord(Base64.decode(b64, Base64.NO_WRAP));
         } catch (Exception e) {
-            Log.e(TAG, "SignedPreKeyRecord deserialisation failed", e);
+            Log.e(TAG, "SignedPreKeyRecord deserialisation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -344,7 +344,7 @@ public final class SignalKeyManager {
         try {
             return new SignedPreKeyRecord(Base64.decode(b64, Base64.NO_WRAP));
         } catch (Exception e) {
-            Log.e(TAG, "Prev SignedPreKeyRecord deserialisation failed", e);
+            Log.e(TAG, "Prev SignedPreKeyRecord deserialisation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -408,7 +408,7 @@ public final class SignalKeyManager {
         try {
             return new KyberPreKeyRecord(Base64.decode(b64, Base64.NO_WRAP));
         } catch (Exception e) {
-            Log.e(TAG, "KyberPreKeyRecord #" + id + " deserialisation failed", e);
+            Log.e(TAG, "KyberPreKeyRecord #" + id + " deserialisation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -484,7 +484,7 @@ public final class SignalKeyManager {
                         + KYBER_PREKEY_ID_START);
                 uploadRotatedKyberPreKey(ctx, kpk);
             } catch (Exception e) {
-                Log.e(TAG, "ensureKyberKeyExists: failed — PQXDH unavailable until next rotation", e);
+                Log.e(TAG, "ensureKyberKeyExists: failed — PQXDH unavailable until next rotation" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             } finally {
                 if (onDone != null) new Handler(Looper.getMainLooper()).post(onDone);
             }
@@ -559,7 +559,7 @@ public final class SignalKeyManager {
             SignalKeyApi.updatePreKey("kyberPreKey", buildKyberPreKeyMap(kpk));
             Log.d(TAG, "Rotated Kyber pre-key uploaded (id=" + kpk.getId() + ").");
         } catch (Exception e) {
-            Log.e(TAG, "Kyber pre-key upload failed — will retry on next rotation.", e);
+            Log.e(TAG, "Kyber pre-key upload failed — will retry on next rotation." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -609,7 +609,7 @@ public final class SignalKeyManager {
             SignalKeyApi.updatePreKey("signedPreKey", spkMap);
             Log.d(TAG, "Rotated signed pre-key uploaded (id=" + spk.getId() + ").");
         } catch (Exception e) {
-            Log.e(TAG, "Signed pre-key upload failed — will retry on next rotation cycle.", e);
+            Log.e(TAG, "Signed pre-key upload failed — will retry on next rotation cycle." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -622,7 +622,7 @@ public final class SignalKeyManager {
         try {
             return new PreKeyRecord(Base64.decode(b64, Base64.NO_WRAP));
         } catch (Exception e) {
-            Log.e(TAG, "PreKeyRecord #" + id + " deserialisation failed", e);
+            Log.e(TAG, "PreKeyRecord #" + id + " deserialisation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -910,7 +910,7 @@ public final class SignalKeyManager {
             if (onSuccess != null)
                 new Handler(Looper.getMainLooper()).post(onSuccess);
         } catch (Exception e) {
-            Log.e(TAG, "Signal key bundle upload failed for uid=" + LogRedact.uid(uid), e);
+            Log.e(TAG, "Signal key bundle upload failed for uid=" + LogRedact.uid(uid) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             if (onFailure != null)
                 new Handler(Looper.getMainLooper()).post(onFailure);
         }

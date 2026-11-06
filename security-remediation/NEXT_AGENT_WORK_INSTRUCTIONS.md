@@ -1,5 +1,9 @@
 # Next Agent Instructions — DuoShield Security Closeout
 
+
+> **Current handoff — 2026-11-06:** This historical runbook is retained for audit context. Follow [AGENTIC_WORK_REMAINING_2026-11-06.md](AGENTIC_WORK_REMAINING_2026-11-06.md) for the current ordered agent work, latest main baseline, source-level follow-ups and the explicit owner requirement that physical-device testing is deferred until the app is feature-complete. Where older instructions conflict with that current handoff, the 2026-11-06 handoff controls.
+
+
 **Date:** 2026-11-04  
 **Repository:** kumarclaude4-hash/DuoFatass  
 **Purpose:** Continue the security work after the repository-side closeout. This is an execution plan, not a security sign-off.

@@ -1,5 +1,6 @@
 package com.duoshield.app.security;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -88,6 +89,78 @@ public class ReleaseLogPrivacyTest {
                 "Migrated legacy uid-keyed trust record for \" + address"));
         assertFalse(source.contains(
                 "Failed to deserialise stored identity for \" + address.getName()"));
+    }
+
+    @Test
+    public void groupKeyAndDistributionWarningsPseudonymisePeerIdentifiers() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/GroupChatActivity.java");
+
+        assertTrue(source.contains("LogRedact.uid(sender)"));
+        assertTrue(source.contains("LogRedact.uid(creatorUid)"));
+        assertTrue(source.contains("LogRedact.uid(uid)"));
+        assertFalse(source.contains("senderUid (" + String.valueOf('"') + " + sender"));
+        assertFalse(source.contains("group creator (" + String.valueOf('"') + " + creatorUid"));
+        assertFalse(source.contains("Key dist failed for " + String.valueOf('"') + " + uid"));
+    }
+
+    @Test
+    public void metadataPseudonymizationIsStableOnlyWithinTheProcess() {
+        String sensitive = "media/private-conversation/message-123.jpg";
+        String first = com.duoshield.app.util.LogRedact.metadata(sensitive);
+        String second = com.duoshield.app.util.LogRedact.metadata(sensitive);
+
+        assertFalse("raw storage metadata must not be returned to logcat",
+                first.contains(sensitive));
+        assertTrue("metadata tags must use the compact pseudonym format",
+                first.matches("m:[0-9a-f]{8}"));
+        assertTrue("one process must be able to correlate the same value",
+                first.equals(second));
+        assertEquals("null metadata has a stable non-identifying sentinel",
+                "m:none", com.duoshield.app.util.LogRedact.metadata(null));
+    }
+
+    @Test
+    public void exceptionDiagnosticsExposeOnlyTheExceptionType() {
+        String diagnostic = com.duoshield.app.util.LogRedact.error(
+                new IllegalStateException("secret path and response body"));
+        assertEquals("IllegalStateException", diagnostic);
+        assertFalse(diagnostic.contains("secret"));
+        assertEquals("unknown", com.duoshield.app.util.LogRedact.error(null));
+    }
+
+    @Test
+    public void storageAndCleanupWarningsPseudonymisePathsAndOmitThrowablePayloads()
+            throws IOException {
+        String storage = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/B2StorageHelper.java");
+        String cleanup = readProjectFile(
+                "app/src/main/java/com/duoshield/app/db/B2CleanupWorker.java");
+        String selfDestruct = readProjectFile(
+                "app/src/main/java/com/duoshield/app/db/SelfDestructWorker.java");
+
+        assertTrue(storage.contains("LogRedact.metadata(b2Path)"));
+        assertTrue(cleanup.contains("LogRedact.metadata(b2Path)"));
+        assertTrue(selfDestruct.contains("LogRedact.metadata(mediaPath)"));
+        assertFalse(storage.contains("loadMedia failed: \" + b2Path"));
+        assertFalse(cleanup.contains("B2 delete failed — will retry: \" + b2Path"));
+        assertFalse(selfDestruct.contains("path=\" + mediaPath"));
+    }
+
+    @Test
+    public void callAndBackupWarningsDoNotIncludeExceptionMessagesOrRawMessageIds()
+            throws IOException {
+        String calls = readProjectFile(
+                "app/src/main/java/com/duoshield/app/call/CallSignalRepository.java");
+        String backup = readProjectFile(
+                "app/src/main/java/com/duoshield/app/backup/BackupManager.java");
+        String builder = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/MessageBuilder.java");
+
+        assertFalse(calls.contains("e.getMessage()"));
+        assertFalse(backup.contains("e.getMessage()"));
+        assertFalse(builder.contains("msgId=\" + msgId"));
+        assertTrue(builder.contains("LogRedact.metadata(msgId)"));
     }
 
     private static String readProjectFile(String relativePath) throws IOException {

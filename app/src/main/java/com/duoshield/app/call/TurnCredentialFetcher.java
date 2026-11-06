@@ -91,7 +91,7 @@ public class TurnCredentialFetcher {
                         "turn-cred-fetch").start();
             })
             .addOnFailureListener(e -> {
-                Log.w(TAG, "getIdToken failed: " + e.getMessage());
+                Log.w(TAG, "getIdToken failed: " + com.duoshield.app.util.LogRedact.error(e));
                 if (callback != null) callback.onResult(false);
             });
     }
@@ -158,7 +158,7 @@ public class TurnCredentialFetcher {
             return true;
 
         } catch (Exception e) {
-            Log.w(TAG, "TURN credential fetch attempt failed: " + e.getMessage());
+            Log.w(TAG, "TURN credential fetch attempt failed: " + com.duoshield.app.util.LogRedact.error(e));
             return false;
         }
     }

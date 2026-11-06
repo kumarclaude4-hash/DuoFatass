@@ -852,7 +852,7 @@ public class ChatMediaActivity extends BaseActivity {
                           db.collection("chats").document(conversationId)
                             .update("partnerPhotoUrl_" + myUid, photoStr)
                             .addOnFailureListener(e ->
-                                Log.w(TAG, "partnerPhotoUrl write non-critical: " + e.getMessage()));
+                                Log.w(TAG, "partnerPhotoUrl write non-critical: " + com.duoshield.app.util.LogRedact.error(e)));
                       }
                   }
               });
@@ -1091,7 +1091,7 @@ public class ChatMediaActivity extends BaseActivity {
                 });
                 f.delete();
             } catch (Exception e) {
-                Log.e(TAG, "Voice upload failed (attempt " + (retryCount + 1) + "/4)", e);
+                Log.e(TAG, "Voice upload failed (attempt " + (retryCount + 1) + "/4)" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 final String errMsg = e.getMessage();
                 if (retryCount >= 3) {
                     markVoiceUploadFailed(pendingMsgId, "Voice note upload failed.", errMsg);
@@ -1229,7 +1229,7 @@ public class ChatMediaActivity extends BaseActivity {
               notifyPartner("DuoShield", "Sent a voice note 🎙", msgId);
           })
           .addOnFailureListener(e -> {
-              Log.e(TAG, "Failed to send voice message: " + e.getMessage());
+              Log.e(TAG, "Failed to send voice message: " + com.duoshield.app.util.LogRedact.error(e));
               voiceMessage.setStatus("failed");
               adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
               saveToRoom(voiceMessage);
@@ -1437,7 +1437,7 @@ public class ChatMediaActivity extends BaseActivity {
                 }
                 @Override public void onError(Exception e) {
                     String detail = e != null && e.getMessage() != null ? e.getMessage() : "unknown error";
-                    Log.e(TAG, "Voice note B2 load failed: " + detail, e);
+                    Log.e(TAG, "Voice note B2 load failed: " + detail + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     runOnUiThread(() -> {
                         Toast.makeText(ChatMediaActivity.this,
                                 "Couldn't load voice note: " + detail, Toast.LENGTH_LONG).show();
@@ -1998,7 +1998,7 @@ public class ChatMediaActivity extends BaseActivity {
                             signalMsgQueued = true;
                         } else {
                             // sigType == 0: message pre-dates Signal Protocol.
-                            Log.w(TAG, "listenForMessages: sigType=0 msg=" + id + " — legacy, not decryptable");
+                            Log.w(TAG, "listenForMessages: sigType=0 msg=" + com.duoshield.app.util.LogRedact.metadata(id) + " — legacy, not decryptable");
                             displayText   = "[Legacy message — not decryptable]";
                             shouldPersist = false;
                         }
@@ -2176,7 +2176,7 @@ public class ChatMediaActivity extends BaseActivity {
                                         AppDatabase.getInstance(ChatMediaActivity.this)
                                                 .messageDao().updateText(fId, plain);
                                     } catch (Exception ex) {
-                                        Log.w(TAG, "MODIFIED edit re-decrypt failed for " + fId, ex);
+                                        Log.w(TAG, "MODIFIED edit re-decrypt failed for " + com.duoshield.app.util.LogRedact.metadata(fId) + " (" + com.duoshield.app.util.LogRedact.error(ex) + ")");
                                     }
                                 });
                             }
@@ -2974,7 +2974,7 @@ public class ChatMediaActivity extends BaseActivity {
                     this, getPackageName() + ".provider", photoFile);
             takePictureLauncher.launch(cameraPhotoUri);
         } catch (java.io.IOException e) {
-            Log.e(TAG, "Failed to create camera temp file", e);
+            Log.e(TAG, "Failed to create camera temp file" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             Toast.makeText(this, "Camera error — could not create photo file",
                     Toast.LENGTH_SHORT).show();
         }
@@ -3107,7 +3107,7 @@ public class ChatMediaActivity extends BaseActivity {
                 }
                 onAlbumItemComplete();
             } catch (Exception e) {
-                Log.e(TAG, "Album item upload failed (attempt " + (retryCount + 1) + "): " + e.getMessage());
+                Log.e(TAG, "Album item upload failed (attempt " + (retryCount + 1) + "): " + com.duoshield.app.util.LogRedact.error(e));
                 if (retryCount >= 3) { onAlbumItemFailed(); return; }
                 long delay = (long) (2000 * Math.pow(2, retryCount));
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -3215,7 +3215,7 @@ public class ChatMediaActivity extends BaseActivity {
               notifyPartner("DuoShield", "Sent " + items.size() + " " + noun, msgId);
           })
           .addOnFailureListener(e -> {
-              Log.e(TAG, "Failed to send album message: " + e.getMessage());
+              Log.e(TAG, "Failed to send album message: " + com.duoshield.app.util.LogRedact.error(e));
               adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
               m.setStatus("failed");
               saveToRoom(m);
@@ -3367,7 +3367,7 @@ public class ChatMediaActivity extends BaseActivity {
                     });
                 }
             } catch (Exception e) {
-                Log.e(TAG, "B2 media upload failed (attempt " + (retryCount + 1) + "/4): " + e.getMessage());
+                Log.e(TAG, "B2 media upload failed (attempt " + (retryCount + 1) + "/4): " + com.duoshield.app.util.LogRedact.error(e));
                 final String errMsg = e.getMessage();
                 if (retryCount >= 3) {
                     runOnUiThread(() -> {
@@ -3598,7 +3598,7 @@ public class ChatMediaActivity extends BaseActivity {
             byte[] compressed = out.toByteArray();
             return compressed.length < raw.length ? compressed : raw;
         } catch (Exception e) {
-            Log.w(TAG, "Image compression failed, using original: " + e.getMessage());
+            Log.w(TAG, "Image compression failed, using original: " + com.duoshield.app.util.LogRedact.error(e));
             return raw;
         }
     }
@@ -3692,7 +3692,7 @@ public class ChatMediaActivity extends BaseActivity {
               }
           })
           .addOnFailureListener(e -> {
-              Log.e(TAG, "Failed to send media message to Firestore: " + e.getMessage());
+              Log.e(TAG, "Failed to send media message to Firestore: " + com.duoshield.app.util.LogRedact.error(e));
               // Keep the encrypted object: the outbox has enough metadata to retry the
               // Firestore write without re-uploading or re-encrypting the media.
               m.setStatus("failed");
@@ -3747,7 +3747,7 @@ public class ChatMediaActivity extends BaseActivity {
                               "Failed to share contact. Tap to retry.", Toast.LENGTH_SHORT).show());
                   });
             } catch (Exception e) {
-                Log.e(TAG, "Contact card encryption failed", e);
+                Log.e(TAG, "Contact card encryption failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 m.setStatus("failed");
                 adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
                 saveToRoom(m);
@@ -3917,7 +3917,7 @@ public class ChatMediaActivity extends BaseActivity {
                   });
 
             } catch (Exception e) {
-                Log.e(TAG, "Signal encryption failed for msg " + msgId, e);
+                Log.e(TAG, "Signal encryption failed for msg " + com.duoshield.app.util.LogRedact.metadata(msgId) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 // Check whether this is a "no session" failure — if so, trigger X3DH automatically
                 // so the user only needs to tap Send once more after the toast clears.
                 String exName = e.getClass().getSimpleName();
@@ -4105,7 +4105,7 @@ public class ChatMediaActivity extends BaseActivity {
         if (conversationId == null || partnerUid == null) return;
         db.collection("chats").document(conversationId)
           .update("lastActivity", com.google.firebase.firestore.FieldValue.serverTimestamp())
-          .addOnFailureListener(e -> Log.w(TAG, "nudge update failed (non-critical): " + e.getMessage()));
+          .addOnFailureListener(e -> Log.w(TAG, "nudge update failed (non-critical): " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /**
@@ -4184,8 +4184,8 @@ public class ChatMediaActivity extends BaseActivity {
                     failedTries.put(id, tries);
                     reQueue.add(pending);
                     reQueueSigs.put(id, sigType);
-                    Log.w(TAG, "retryPendingDecryption: failed msg=" + id
-                            + " attempt=" + tries + " sigType=" + sigType, ex);
+                    Log.w(TAG, "retryPendingDecryption: failed msg=" + com.duoshield.app.util.LogRedact.metadata(id)
+                            + " attempt=" + tries + " sigType=" + sigType + " (" + com.duoshield.app.util.LogRedact.error(ex) + ")");
                 }
             }
 

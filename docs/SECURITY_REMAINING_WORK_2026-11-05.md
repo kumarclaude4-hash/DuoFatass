@@ -203,3 +203,18 @@ PRs #234 and #235 are closed predecessors of #237; PR #239 is closed as supersed
 ### Release decision
 
 **Code-level work in PR #237 is a merge candidate after the final updated branch checks pass. This report is not a production security sign-off.** Production Firebase/Firestore configuration, secret rotation, staging tests, physical-device acceptance and governance enforcement remain explicit release gates. Do not infer that CI green means the product is production-secure.
+
+
+---
+
+## Source-level closeout update — 2026-11-06
+
+PR #237 is merged to main at 745f1601448a2b35ffe4ff024b8cde0e9454ebcb. Post-merge CI run [42162494191](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42162494191) passed **9/9 jobs**, including Server + Worker tests, Android JVM unit tests, lint, debug APK, Espresso, API 35 dispatch, minified release R8, vendored libsignal integrity and Gradle wrapper validation. Security scan [42162494131](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42162494131) also succeeded.
+
+The current follow-up branch is security/remaining-code-and-agent-handoff-2026-11-06. It adds source-wiring tests for group-key authorization order, wipe/cache clearing, deep-link/clipboard/ContactManager Account ID validation, PIN metadata cleanup and Turkish-locale BIP39 derivation. It corrects an outdated no-toolchain comment in PinLengthNotPersistedTest. It also introduces LogRedact.metadata() and LogRedact.error(), extends redaction across multiple Android release-log call sites (call signaling, FCM/TURN, media playback/export/storage/restore, backup, outbox, duress/PIN, notifications, Signal key/session storage and app startup), and adds helper/call-site privacy tests. **These new branch changes have not yet passed their own CI**; do not promote S07-L1, S07-L3, S08-L1 or S10-N2 based only on their presence.
+
+The root tracker has been reconciled from its 116 current rows: **83 Fixed, 20 Partial, 1 Open, 12 Accepted** at the pre-follow-up-CI snapshot. This replaces the older 2026-11-04 74/29/1/12 summary, which remains historical. S07-L2 stays Partial because nulling the Java cache reference does not prove libsignal internal key-byte zeroization. S03-M3 remains Partial: the 10-minute TTL and reusable READ/WRITE tokens need an owner-approved residual-risk decision or a versioned client/server redesign. S05-M3 and S02-I2/S02-I3 still need staging/live operator evidence. S10-N3 has two deterministic scheduled-handler race tests but still lacks isolated live Cloudflare/R2/B2 runtime evidence.
+
+**Device-testing policy:** physical-device/manual app-flow acceptance is deliberately deferred until the owner declares the app feature-complete. Do not start that matrix early. Existing automated CI emulator tests remain required. A detailed current agent worklist is in [AGENTIC_WORK_REMAINING_2026-11-06.md](../security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md).
+
+No production credentials, Firestore rules/indexes/TTL, Render configuration, Worker secrets, production deployment or Android release were changed by this branch. Vercel preview remains a separate quota/rate-limit concern. Production sign-off remains pending.

@@ -180,7 +180,7 @@ public class VoiceRecorderHelper {
             recordThread.start();
 
         } catch (Exception e) {
-            Log.e(TAG, "start() failed", e);
+            Log.e(TAG, "start() failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             String msg = e.getMessage() != null ? e.getMessage() : "start failed";
             cb.onError(msg);
             releaseAll();
@@ -271,7 +271,7 @@ public class VoiceRecorderHelper {
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "runLoop error", e);
+            Log.e(TAG, "runLoop error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             if (!cancelRequested) {
                 final String msg = e.getMessage() != null ? e.getMessage() : "record error";
                 mainHandler.post(() -> {

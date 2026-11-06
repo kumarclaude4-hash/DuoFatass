@@ -56,7 +56,7 @@ public class ForwardMessageHelper {
                     }
                     @Override
                     public void onError(Exception e) {
-                        Log.e(TAG, "B2 download failed for forward", e);
+                        Log.e(TAG, "B2 download failed for forward" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         new Handler(Looper.getMainLooper()).post(() ->
                             Toast.makeText(ctx, "Cannot forward — download failed",
                                 Toast.LENGTH_SHORT).show());
@@ -106,7 +106,7 @@ public class ForwardMessageHelper {
                         stored, mediaType, em.keyBase64, /* forwarded= */ true);
 
             } catch (Exception e) {
-                Log.e(TAG, "Re-encrypt + B2 re-upload failed for forward", e);
+                Log.e(TAG, "Re-encrypt + B2 re-upload failed for forward" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 new Handler(Looper.getMainLooper()).post(() ->
                     Toast.makeText(ctx, "Forward failed — check connection",
                         Toast.LENGTH_SHORT).show());

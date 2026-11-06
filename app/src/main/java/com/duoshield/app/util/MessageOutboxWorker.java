@@ -106,7 +106,7 @@ public final class MessageOutboxWorker extends Worker {
                                     }
                                     doc.put("amplitudes", amplitudes);
                                 } catch (org.json.JSONException ignored) {
-                                    Log.w(TAG, "Ignoring malformed voice waveform for " + item.id);
+                                    Log.w(TAG, "Ignoring malformed voice waveform for " + com.duoshield.app.util.LogRedact.metadata(item.id));
                                 }
                             }
                             if (item.durationMs > 0) doc.put("durationMs", item.durationMs);
@@ -133,7 +133,7 @@ public final class MessageOutboxWorker extends Worker {
                             TimeUnit.SECONDS.toMillis(15L << Math.min(attempts, 8)));
                     database.outboxDao().recordFailure(item.id, attempts,
                             System.currentTimeMillis() + delay, safeMessage(error));
-                    Log.w(TAG, "Retry failed for message " + item.id + " (attempt " + attempts + ")");
+                    Log.w(TAG, "Retry failed for message " + com.duoshield.app.util.LogRedact.metadata(item.id) + " (attempt " + attempts + ")");
                     if (attempts >= MAX_ATTEMPTS) {
                         // Keep the row for manual recovery/diagnostics, but do not hot-loop.
                         database.outboxDao().recordFailure(item.id, attempts,
@@ -144,7 +144,7 @@ public final class MessageOutboxWorker extends Worker {
             }
             return retry ? Result.retry() : Result.success();
         } catch (Exception error) {
-            Log.w(TAG, "Outbox worker unavailable; retrying", error);
+            Log.w(TAG, "Outbox worker unavailable; retrying" + " (" + com.duoshield.app.util.LogRedact.error(error) + ")");
             return Result.retry();
         }
     }

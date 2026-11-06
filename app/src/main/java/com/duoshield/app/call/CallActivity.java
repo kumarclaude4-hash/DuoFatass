@@ -554,7 +554,7 @@ public class CallActivity extends AppCompatActivity implements CallSession.UiHoo
             return enterPictureInPictureMode(buildPipParams());
         } catch (IllegalStateException | IllegalArgumentException e) {
             // PiP disabled by the user in system settings, or not allowed right now.
-            Log.w(TAG, "enterPictureInPictureMode failed — falling back to background", e);
+            Log.w(TAG, "enterPictureInPictureMode failed — falling back to background" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
@@ -587,7 +587,7 @@ public class CallActivity extends AppCompatActivity implements CallSession.UiHoo
         try {
             setPictureInPictureParams(buildPipParams());
         } catch (IllegalStateException | IllegalArgumentException e) {
-            Log.w(TAG, "setPictureInPictureParams failed", e);
+            Log.w(TAG, "setPictureInPictureParams failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -1134,7 +1134,7 @@ public class CallActivity extends AppCompatActivity implements CallSession.UiHoo
                     new String[]{Manifest.permission.BLUETOOTH_CONNECT},
                     REQ_BLUETOOTH_CONNECT);
         } catch (Exception e) {
-            Log.w(TAG, "BLUETOOTH_CONNECT request failed", e);
+            Log.w(TAG, "BLUETOOTH_CONNECT request failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             suppressAutoPip = false;
             updatePipParams();
         }
@@ -1357,7 +1357,7 @@ public class CallActivity extends AppCompatActivity implements CallSession.UiHoo
                         // ADDED changes cannot double-banner, and any message sent during
                         // the dead window still surfaces on the first successful snapshot.
                         Log.w(TAG, "In-call chat listener error — re-attaching (attempt "
-                                + chatListenAttempts + ")", e);
+                                + chatListenAttempts + ")" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         if (chatMessageListener != null) {
                             chatMessageListener.remove();
                             chatMessageListener = null;

@@ -123,7 +123,7 @@ public class IncomingCallActivity extends AppCompatActivity {
             }
             ringtone.play();
         } catch (Exception e) {
-            Log.w(TAG, "Ringtone failed: " + e.getMessage());
+            Log.w(TAG, "Ringtone failed: " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);

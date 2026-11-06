@@ -112,12 +112,12 @@ public class MessageBuilder {
                             .update("lastActivity", FieldValue.serverTimestamp());
                     })
                     .addOnFailureListener(e -> {
-                        Log.e(TAG, "sendTextMessage: Firestore set failed for msgId=" + msgId, e);
+                        Log.e(TAG, "sendTextMessage: Firestore set failed for msgId=" + com.duoshield.app.util.LogRedact.metadata(msgId) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         AppDatabase.getInstance(ctx).messageDao().updateStatus(msgId, "failed");
                     });
 
             } catch (Exception e) {
-                Log.e(TAG, "sendTextMessage: Signal encryption failed — message NOT sent", e);
+                Log.e(TAG, "sendTextMessage: Signal encryption failed — message NOT sent" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         });
     }
@@ -198,7 +198,7 @@ public class MessageBuilder {
                         .update("lastActivity", FieldValue.serverTimestamp());
                 })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "sendMediaMessage: Firestore set failed for msgId=" + msgId, e);
+                    Log.e(TAG, "sendMediaMessage: Firestore set failed for msgId=" + com.duoshield.app.util.LogRedact.metadata(msgId) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     AppDatabase.getInstance(ctx).messageDao().updateStatus(msgId, "failed");
                 });
         });

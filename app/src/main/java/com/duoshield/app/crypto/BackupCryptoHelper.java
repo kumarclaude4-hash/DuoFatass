@@ -91,7 +91,7 @@ public final class BackupCryptoHelper {
                 throw new IllegalStateException("Unable to persist backup key");
             }
         } catch (Exception e) {
-            Log.e(TAG, "storeKey: derivation failed", e);
+            Log.e(TAG, "storeKey: derivation failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             throw new IllegalStateException("Unable to prepare encrypted backup restore", e);
         }
     }
@@ -107,7 +107,7 @@ public final class BackupCryptoHelper {
         try {
             return Base64.decode(b64, Base64.NO_WRAP);
         } catch (Exception e) {
-            Log.e(TAG, "getStoredKey: decode failed", e);
+            Log.e(TAG, "getStoredKey: decode failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -146,7 +146,7 @@ public final class BackupCryptoHelper {
         try {
             return expectedChecksum.equalsIgnoreCase(computeChecksum(plaintext));
         } catch (Exception e) {
-            Log.e(TAG, "verifyChecksum: failed", e);
+            Log.e(TAG, "verifyChecksum: failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
@@ -193,7 +193,7 @@ public final class BackupCryptoHelper {
             byte[] actual   = hexToBytes(computeHmac(backupKey, plaintext));
             return MessageDigest.isEqual(expected, actual);
         } catch (Exception e) {
-            Log.e(TAG, "verifyHmac: failed", e);
+            Log.e(TAG, "verifyHmac: failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }

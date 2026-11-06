@@ -83,3 +83,15 @@ App Check/Firestore settings and coordinated production release need live eviden
 Do not change this status to COMPLETE based solely on merged PRs or CI. Sign only after every
 unchecked criterion above is either satisfied with evidence or formally deferred with an explicit,
 approved residual-risk decision.
+
+
+## Evidence addendum — 2026-11-06
+
+- Main HEAD: 745f1601448a2b35ffe4ff024b8cde0e9454ebcb (PR #237 merged).
+- Main CI run 42162494191: 9/9 jobs passed. Main security scan 42162494131: successful.
+- Tracker recount before follow-up branch CI: 116 rows, 83 Fixed, 20 Partial, 1 Open and 12 Accepted.
+- Follow-up branch adds Android call-site wiring tests and targeted release-log privacy hardening. Its CI has not yet been recorded; do not promote affected findings until that CI succeeds.
+- Physical-device testing is deferred until the owner declares the app feature-complete. Existing automated CI emulator tests remain required; no physical-device acceptance is claimed.
+- Current ordered worklist: security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md.
+
+This addendum does not change the sign-off decision. Production Firestore/App Check configuration, credential rotation, live Render/Worker pairing, staging acceptance, complete log-policy audit, S03-M3 residual approval, repository governance and the deferred device matrix remain outstanding. Keep this document PENDING.

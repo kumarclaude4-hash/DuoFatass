@@ -1123,7 +1123,7 @@ public class CallManager {
             return out.toString();
         } catch (Exception e) {
             // Never let SDP rewriting break a call — quality tuning is an optimisation.
-            Log.w(TAG, "SDP quality tuning skipped: " + e.getMessage());
+            Log.w(TAG, "SDP quality tuning skipped: " + com.duoshield.app.util.LogRedact.error(e));
             return sdp;
         }
     }
@@ -1312,7 +1312,7 @@ public class CallManager {
             remoteAudioTrack.setEnabled(!muted);
             return true;
         } catch (Exception e) {
-            Log.w(TAG, "remote audio track mute failed", e);
+            Log.w(TAG, "remote audio track mute failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
@@ -1342,7 +1342,7 @@ public class CallManager {
                 if (enabled) videoCapturer.startCapture(captureWidth(), captureHeight(), captureFps());
                 else videoCapturer.stopCapture();
             } catch (Exception e) {
-                Log.w(TAG, "Camera toggle failed: " + e.getMessage());
+                Log.w(TAG, "Camera toggle failed: " + com.duoshield.app.util.LogRedact.error(e));
             }
         }
     }
@@ -1959,7 +1959,7 @@ public class CallManager {
                 videoCapturer.changeCaptureFormat(
                         captureWidth(), captureHeight(), captureFps());
             } catch (Exception ex) {
-                Log.w(TAG, "changeCaptureFormat failed: " + ex.getMessage());
+                Log.w(TAG, "changeCaptureFormat failed: " + com.duoshield.app.util.LogRedact.error(ex));
             }
         }
         // Re-derive the bitrate policy so the ceiling stays consistent with the resolution;
@@ -1989,7 +1989,7 @@ public class CallManager {
             };
             pm.addThermalStatusListener(thermalListener);
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to register thermal listener", t);
+            Log.w(TAG, "Unable to register thermal listener" + " (" + com.duoshield.app.util.LogRedact.error(t) + ")");
             thermalListener = null;
         }
     }
@@ -2002,7 +2002,7 @@ public class CallManager {
                 pm.removeThermalStatusListener(thermalListener);
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to remove thermal listener", t);
+            Log.w(TAG, "Unable to remove thermal listener" + " (" + com.duoshield.app.util.LogRedact.error(t) + ")");
         } finally {
             thermalListener = null;
         }

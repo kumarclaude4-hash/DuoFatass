@@ -132,7 +132,7 @@ public final class BackupManager {
                   synchronized (lock) { succeeded[0] = true; lock.notifyAll(); }
               })
               .addOnFailureListener(e -> {
-                  Log.w(TAG, "backup write failed (attempt " + (attempt + 1) + "): " + e.getMessage());
+                  Log.w(TAG, "backup write failed (attempt " + (attempt + 1) + "): " + com.duoshield.app.util.LogRedact.error(e));
                   synchronized (lock) { lock.notifyAll(); }
               });
 
@@ -147,11 +147,11 @@ public final class BackupManager {
                 Thread.sleep(2_000L * (1 << attempt));
                 backupWithRetry(ctx, msg, uid, key, attempt + 1);
             } else {
-                Log.e(TAG, "backup: gave up after 3 attempts for msg=" + msg.getId());
+                Log.e(TAG, "backup: gave up after 3 attempts for msg=" + com.duoshield.app.util.LogRedact.metadata(msg.getId()));
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "backup: failed for msg=" + msg.getId(), e);
+            Log.e(TAG, "backup: failed for msg=" + com.duoshield.app.util.LogRedact.metadata(msg.getId()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -203,7 +203,7 @@ public final class BackupManager {
                 }
 
                 if (err[0] != null) {
-                    Log.e(TAG, "restoreAllSync: Firestore fetch failed", err[0]);
+                    Log.e(TAG, "restoreAllSync: Firestore fetch failed" + " (" + com.duoshield.app.util.LogRedact.error(err[0]) + ")");
                     return count > 0 ? count : -1;
                 }
                 if (holder[0] == null) {
@@ -256,7 +256,7 @@ public final class BackupManager {
                         if (!integrityOk) {
                             checksumFailures++;
                             Log.e(TAG, "restoreAllSync: INTEGRITY CHECK FAILED for doc "
-                                    + docSnap.getId() + " — skipping (corruption or tampering detected)");
+                                    + com.duoshield.app.util.LogRedact.metadata(docSnap.getId()) + " — skipping (corruption or tampering detected)");
                             continue;
                         }
 
@@ -266,7 +266,7 @@ public final class BackupManager {
                             count++;
                         }
                     } catch (Exception e) {
-                        Log.w(TAG, "restoreAllSync: skipping doc " + docSnap.getId(), e);
+                        Log.w(TAG, "restoreAllSync: skipping doc " + com.duoshield.app.util.LogRedact.metadata(docSnap.getId()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     }
                 }
 
@@ -285,7 +285,7 @@ public final class BackupManager {
             return count;
 
         } catch (Exception e) {
-            Log.e(TAG, "restoreAllSync: unexpected error", e);
+            Log.e(TAG, "restoreAllSync: unexpected error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return -1;
         }
     }
@@ -309,9 +309,9 @@ public final class BackupManager {
                     .collection(COL_MSGS).document(messageId)
                     .set(patch, SetOptions.merge())
                     .addOnFailureListener(e ->
-                        Log.w(TAG, "markDeleted failed for " + messageId + ": " + e.getMessage()));
+                        Log.w(TAG, "markDeleted failed for " + com.duoshield.app.util.LogRedact.metadata(messageId) + ": " + com.duoshield.app.util.LogRedact.error(e)));
             } catch (Exception e) {
-                Log.e(TAG, "markDeleted: unexpected error for msg=" + messageId, e);
+                Log.e(TAG, "markDeleted: unexpected error for msg=" + com.duoshield.app.util.LogRedact.metadata(messageId) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         });
     }
@@ -388,7 +388,7 @@ public final class BackupManager {
                         encDocIds.add(msg.getId());
                         encDocs.add(doc);
                     } catch (Exception e) {
-                        Log.w(TAG, "syncAll: encryption failed for " + msg.getId(), e);
+                        Log.w(TAG, "syncAll: encryption failed for " + com.duoshield.app.util.LogRedact.metadata(msg.getId()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         failed++;
                     }
                 }
@@ -463,12 +463,12 @@ public final class BackupManager {
                     }
                     Log.d(TAG, "syncAll: queued contacts/groups+members backup");
                 } catch (Exception ce) {
-                    Log.w(TAG, "syncAll: metadata backup error (non-fatal)", ce);
+                    Log.w(TAG, "syncAll: metadata backup error (non-fatal)" + " (" + com.duoshield.app.util.LogRedact.error(ce) + ")");
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "syncAll: unexpected error", e);
-                logEvent(uid, "backup_failed", written, e.getMessage());
+                Log.e(TAG, "syncAll: unexpected error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                logEvent(uid, "backup_failed", written, com.duoshield.app.util.LogRedact.error(e));
             }
             final SyncResult result = new SyncResult(written, failed, total);
             if (callback != null) callback.onComplete(result);
@@ -555,7 +555,7 @@ public final class BackupManager {
                         encDocIds.add(msg.getId());
                         encDocs.add(doc);
                     } catch (Exception e) {
-                        Log.w(TAG, "syncIncremental: encryption failed for " + msg.getId(), e);
+                        Log.w(TAG, "syncIncremental: encryption failed for " + com.duoshield.app.util.LogRedact.metadata(msg.getId()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         failed++;
                     }
                 }
@@ -624,12 +624,12 @@ public final class BackupManager {
                     }
                     Log.d(TAG, "syncIncremental: queued contacts/groups backup");
                 } catch (Exception ce) {
-                    Log.w(TAG, "syncIncremental: contacts/groups backup error (non-fatal)", ce);
+                    Log.w(TAG, "syncIncremental: contacts/groups backup error (non-fatal)" + " (" + com.duoshield.app.util.LogRedact.error(ce) + ")");
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "syncIncremental: unexpected error", e);
-                logEvent(uid, "backup_failed", written, e.getMessage());
+                Log.e(TAG, "syncIncremental: unexpected error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                logEvent(uid, "backup_failed", written, com.duoshield.app.util.LogRedact.error(e));
             }
             final SyncResult result = new SyncResult(written, failed, total);
             if (callback != null) callback.onComplete(result);
@@ -720,7 +720,7 @@ public final class BackupManager {
                     long remaining = DEADLINE_MS - (System.currentTimeMillis() - startMs);
                     if (remaining <= 0) {
                         Log.w(TAG, "syncIncrementalSync: deadline hit before upload of "
-                                + msg.getId());
+                                + com.duoshield.app.util.LogRedact.metadata(msg.getId()));
                         return;
                     }
 
@@ -732,7 +732,7 @@ public final class BackupManager {
                        })
                        .addOnFailureListener(e -> {
                            Log.w(TAG, "syncIncrementalSync: upload failed for "
-                                   + msg.getId() + ": " + e.getMessage());
+                                   + com.duoshield.app.util.LogRedact.metadata(msg.getId()) + ": " + com.duoshield.app.util.LogRedact.error(e));
                            synchronized (lock) { lock.notifyAll(); }
                        });
 
@@ -744,7 +744,7 @@ public final class BackupManager {
                     if (success[0]) written++;
 
                 } catch (Exception e) {
-                    Log.w(TAG, "syncIncrementalSync: skipping msg " + msg.getId(), e);
+                    Log.w(TAG, "syncIncrementalSync: skipping msg " + com.duoshield.app.util.LogRedact.metadata(msg.getId()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 }
             }
 
@@ -788,12 +788,12 @@ public final class BackupManager {
                         Log.d(TAG, "syncIncrementalSync: queued group metadata panic-backup");
                     }
                 } catch (Exception ge) {
-                    Log.w(TAG, "syncIncrementalSync: group panic-backup failed (non-fatal)", ge);
+                    Log.w(TAG, "syncIncrementalSync: group panic-backup failed (non-fatal)" + " (" + com.duoshield.app.util.LogRedact.error(ge) + ")");
                 }
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "syncIncrementalSync: unexpected error (non-fatal)", e);
+            Log.e(TAG, "syncIncrementalSync: unexpected error (non-fatal)" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -816,7 +816,7 @@ public final class BackupManager {
         try {
             return BackupCryptoHelper.encryptCompressed(key, plaintext != null ? plaintext : "");
         } catch (Exception e) {
-            Log.w(TAG, "encMeta: encryption failed — field will be omitted", e);
+            Log.w(TAG, "encMeta: encryption failed — field will be omitted" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }
@@ -866,7 +866,7 @@ public final class BackupManager {
                 }
                 Log.d(TAG, "backupContacts: backed up " + contacts.size() + " contacts");
             } catch (Exception e) {
-                Log.e(TAG, "backupContacts: error", e);
+                Log.e(TAG, "backupContacts: error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         });
     }
@@ -949,14 +949,14 @@ public final class BackupManager {
                             }
                         }
                     } catch (Exception me) {
-                        Log.w(TAG, "restoreContactsSync: member restore failed for group " + gid, me);
+                        Log.w(TAG, "restoreContactsSync: member restore failed for group " + com.duoshield.app.util.LogRedact.metadata(gid) + " (" + com.duoshield.app.util.LogRedact.error(me) + ")");
                     }
                 }
             }
 
             Log.d(TAG, "restoreContactsSync: restored " + count + " contacts, groups, and group members");
         } catch (Exception e) {
-            Log.e(TAG, "restoreContactsSync: unexpected error", e);
+            Log.e(TAG, "restoreContactsSync: unexpected error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return -1;
         }
         return count;
@@ -997,7 +997,7 @@ public final class BackupManager {
                                                .getMessagesSince(lastTs);
             return pending == null ? 0 : pending.size();
         } catch (Exception e) {
-            Log.w(TAG, "getUnsyncedCount: error", e);
+            Log.w(TAG, "getUnsyncedCount: error" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return -1;
         }
     }
@@ -1057,7 +1057,7 @@ public final class BackupManager {
                  .addOnSuccessListener(v -> { synchronized (lock) { success[0] = true; lock.notifyAll(); } })
                  .addOnFailureListener(e -> {
                      Log.w(TAG, "commitBatched: batch [" + batchStart + ".." + batchEnd
-                             + ") failed: " + e.getMessage());
+                             + ") failed: " + com.duoshield.app.util.LogRedact.error(e));
                      synchronized (lock) { lock.notifyAll(); }
                  });
             try {
@@ -1108,7 +1108,7 @@ public final class BackupManager {
         meta.put("count",        FieldValue.increment(1));
         db.collection(COL_BACKUPS).document(uid)
           .set(meta, SetOptions.merge())
-          .addOnFailureListener(e -> Log.w(TAG, "updateMeta failed: " + e.getMessage()));
+          .addOnFailureListener(e -> Log.w(TAG, "updateMeta failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     private static void updateMetaAbsolute(FirebaseFirestore db, String uid, int count) {
@@ -1117,7 +1117,7 @@ public final class BackupManager {
         meta.put("count",        (long) count);
         db.collection(COL_BACKUPS).document(uid)
           .set(meta, SetOptions.merge())
-          .addOnFailureListener(e -> Log.w(TAG, "updateMetaAbsolute failed: " + e.getMessage()));
+          .addOnFailureListener(e -> Log.w(TAG, "updateMetaAbsolute failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /**
@@ -1139,9 +1139,9 @@ public final class BackupManager {
                 .collection(COL_LOGS)
                 .add(entry)
                 .addOnFailureListener(e ->
-                    Log.w(TAG, "logEvent(" + event + ") failed: " + e.getMessage()));
+                    Log.w(TAG, "logEvent(" + event + ") failed: " + com.duoshield.app.util.LogRedact.error(e)));
         } catch (Exception e) {
-            Log.w(TAG, "logEvent: unexpected error for event=" + event, e);
+            Log.w(TAG, "logEvent: unexpected error for event=" + event + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 

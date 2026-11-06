@@ -95,7 +95,7 @@ public final class MediaRestoreHelper {
                 try {
                     B2StorageHelper.preCacheSync(ctx, path, key);
                 } catch (Exception e) {
-                    Log.w(TAG, "preCacheMedia: failed for " + path, e);
+                    Log.w(TAG, "preCacheMedia: failed for " + com.duoshield.app.util.LogRedact.metadata(path) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 } finally {
                     int d = done.incrementAndGet();
                     if (callback != null) callback.onProgress(d, 0); // total patched below
