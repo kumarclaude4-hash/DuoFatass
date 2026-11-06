@@ -307,7 +307,9 @@ public class SecurePrefs {
             // Migration must never prevent the app from opening its store.
             Log.e(TAG, "Legacy plaintext migration threw for " + fileName + ": "
                     + e.getClass().getSimpleName(), e);
-            r = LegacyPlaintextMigrator.Result.none();
+            // An exception means the raw source could not be proven empty or
+            // fully migrated. Preserve the fail-closed onboarding/restore gate.
+            r = new LegacyPlaintextMigrator.Result(0, 0, true);
         }
         return new Built(store, resolvedTier, r.plaintextRemains);
     }
