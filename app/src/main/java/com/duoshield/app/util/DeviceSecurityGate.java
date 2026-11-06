@@ -111,7 +111,8 @@ public final class DeviceSecurityGate {
      */
     public static boolean checkOrExplain(@NonNull Activity activity,
                                          @Nullable Runnable onBlockedDismissed) {
-        if (evaluate(activity).isAllowed()) return true;
+        Decision decision = evaluate(activity);
+        if (decision.isAllowed()) return true;
 
         if (activity.isFinishing() || activity.isDestroyed()) return false;
 
@@ -120,7 +121,7 @@ public final class DeviceSecurityGate {
             if (onBlockedDismissed != null) onBlockedDismissed.run();
         };
 
-        boolean migrationBlocked = evaluate(activity) == Decision.BLOCKED_LEGACY_PLAINTEXT_REMAINS;
+        boolean migrationBlocked = decision == Decision.BLOCKED_LEGACY_PLAINTEXT_REMAINS;
         new AlertDialog.Builder(activity)
                 .setTitle(migrationBlocked
                         ? com.duoshield.app.R.string.device_legacy_migration_title
