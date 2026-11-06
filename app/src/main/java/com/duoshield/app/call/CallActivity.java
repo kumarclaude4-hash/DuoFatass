@@ -1574,7 +1574,7 @@ public class CallActivity extends AppCompatActivity implements CallSession.UiHoo
     public void onError(String message) {
         runOnUiThread(() -> {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-            Log.e(TAG, "Call error: " + message);
+            Log.e(TAG, "Call error received (message withheld)");
         });
     }
 
