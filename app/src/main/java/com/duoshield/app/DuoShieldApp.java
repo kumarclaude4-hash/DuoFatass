@@ -1,8 +1,10 @@
 package com.duoshield.app;
 
 import android.app.Application;
+import android.app.Activity;
 import android.content.ComponentCallbacks2;
 import android.os.Looper;
+import android.os.Bundle;
 import android.util.Log;
 import com.bumptech.glide.Glide;
 import androidx.work.Configuration;
@@ -40,6 +42,15 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
     @Override
     public void onCreate() {
         super.onCreate();
+
+        // S08-H2: enforce the screenshot preference for EVERY Activity, not only
+        // screens that happen to extend BaseActivity. Several sensitive flows
+        // (calls, PIN/recovery/onboarding and update/preview screens) are direct
+        // AppCompatActivity subclasses and otherwise bypass BaseActivity's
+        // onCreate hook. onActivityCreated runs before the first Activity frame;
+        // onActivityResumed reapplies the current preference after returning from
+        // external UI or changing the setting while this process stays alive.
+        installScreenshotProtectionLifecycle();
 
         // S08-H3 upgrade cleanup: older releases used Glide's shared disk cache
         // for decrypted private B2 media. New MessageAdapter requests disable
@@ -201,6 +212,36 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
         AppLockManager.init(this);
 
         scheduleDeferredStartupWork();
+    }
+
+
+    /**
+     * Applies the app-wide screenshot policy to every Activity window.
+     *
+     * <p>FLAG_SECURE is a window property, not an Application property. Applying
+     * it through Application.ActivityLifecycleCallbacks closes the inheritance
+     * gap for screens that do not extend BaseActivity, while the BaseActivity
+     * hook remains as defense in depth. The callback is registered once per
+     * process and is automatically scoped to this Application instance.
+     */
+    private void installScreenshotProtectionLifecycle() {
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+                BaseActivity.applyScreenshotSecurity(activity);
+            }
+
+            @Override
+            public void onActivityResumed(Activity activity) {
+                BaseActivity.applyScreenshotSecurity(activity);
+            }
+
+            @Override public void onActivityStarted(Activity activity) { }
+            @Override public void onActivityPaused(Activity activity) { }
+            @Override public void onActivityStopped(Activity activity) { }
+            @Override public void onActivitySaveInstanceState(Activity activity, Bundle outState) { }
+            @Override public void onActivityDestroyed(Activity activity) { }
+        });
     }
 
     /**
