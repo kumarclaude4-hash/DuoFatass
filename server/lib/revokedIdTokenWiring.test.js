@@ -63,7 +63,7 @@ const RATE_LIMIT_KEY_BY_ROUTE = {
   "/requestLockNonce": "requestLockNonce",
   "/signal/registerBundle": "signalRegisterBundle",
   "/signal/appendPreKeys": "signalAppendPreKeys",
-  "/signal/updatePreKey": "signalUpdatePreKeys",
+  "/signal/updatePreKey": "signalUpdatePreKey",
   "/signal/claimPreKey": "signalClaimPreKey",
 };
 
@@ -72,10 +72,15 @@ for (const route of ROUTES) {
     const handler = handlerFor('req.url === "' + route + '"');
     const limitKey = RATE_LIMIT_KEY_BY_ROUTE[route];
     assert.ok(limitKey, "route must have an explicit limiter inventory entry");
+    const callPattern = new RegExp(
+      "checkAuthRateLimit\\\\(\\\\s*[A-Za-z_$][\\\\w$]*\\\\s*,\\\\s*['\\\"]"
+        + limitKey
+        + "['\\\"]\\\\s*\\\\)"
+    );
     assert.match(
       handler,
-      new RegExp('checkAuthRateLimit\\\\(\\\\s*[A-Za-z_$][\\\\w$]*\\\\s*,\\\\s*["\\\\']' + limitKey + '["\\\\']\\\\s*\\\\)'),
-      route + " must await checkAuthRateLimit() with its dedicated endpoint bucket"
+      callPattern,
+      route + " must call checkAuthRateLimit() with its dedicated endpoint bucket"
     );
   });
 }
