@@ -49,15 +49,15 @@ Do not mark the audit complete yet. Finish a compiler/AST-aware scan of every re
 
 ### B. S03-M3 — decide the media capability-token residual
 
-Current token format carries a random jti; DELETE replay is single-use and fail-closed. The 10-minute TTL remains, and READ/WRITE tokens remain reusable to preserve normal upload/download/retry behavior.
+Current token format carries a random jti; DELETE replay is single-use and fail-closed. The 10-minute TTL remains, and READ/WRITE tokens remain reusable to preserve normal upload/download/retry behavior. A dated decision record is now available at `security-remediation/S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md`.
 
-Do not shorten TTL or make READ/WRITE single-use without tracing Android upload, retry, range-read and re-fetch flows. Produce a decision record with a client/server/Worker call-flow matrix and failure/retry analysis. Recommend either an owner-ratified residual (10-minute TTL and reusable READ/WRITE) or a versioned protocol with idempotent retry/re-mint semantics and end-to-end automated tests. Only the owner can accept the residual. Keep Partial until that decision is recorded.
+The decision record compares the current residual, a versioned one-shot protocol and TTL-only shortening; it recommends retaining the current behavior until the owner either ratifies the residual or approves a protocol redesign. Do not shorten TTL or make READ/WRITE single-use without tracing Android upload, retry, range-read and re-fetch flows. The owner decision remains **PENDING**, so keep S03-M3 Partial.
 
 ### C. S10-N3 — expand deterministic R2/B2 race tests
 
-The Worker suite already has two scheduled-handler race regressions using fake R2 and mocked B2 fetch: a concurrent client DELETE between R2 get and B2 PUT triggers a compensating B2 DELETE; a normal migration does not fire that compensating delete.
+The Worker suite now also has deterministic failure-injection cases for changed ETag, transient post-PUT R2 HEAD failure, B2 PUT failure and failed compensating B2 DELETE. The handler was corrected so a failed HEAD is not treated as proof of deletion: it retains the R2 source, counts its bytes and lets a later cron retry. Failed compensation now emits an operator-visible, key-free diagnostic, and migration warnings no longer expose object keys. These changes are on the current PR branch; its CI must pass before updating the tracker evidence.
 
-Add failure-injection cases for changed ETag, R2 HEAD failure, missing object, B2 PUT failure, compensating B2 DELETE failure and cron retry/observability. Verify the user-visible result never resurrects deleted media and that ambiguous outcomes stay visible for retry/operator investigation. Use local fakes or an isolated emulator; never use production bucket credentials. Live Cloudflare/R2/B2 acceptance remains a later operator gate. Keep Partial until an isolated live-runtime run is evidenced.
+Remaining: live isolated Cloudflare Worker + R2 + B2 acceptance, including cron retry/recovery and confirmation that the production runtime behaves like the deterministic fakes. Never use production bucket credentials in local tests. Keep S10-N3 Partial until isolated live-runtime evidence is recorded.
 
 ### D. S07-L2 — document and prove the key destruction boundary
 
@@ -69,7 +69,7 @@ Firestore emulator tests already cover independent store instances, cross-instan
 
 ### F. S02-I2 — ensure every authenticated route uses the shared limiter
 
-The server uses the Cloudflare Durable Object through adminLockoutWorkerClient; local tests cover request construction, malformed responses, timeouts and fail-closed errors. Audit every authenticated route for bypasses and verify local fallback remains bounded and observable. Add an automated route inventory guard. Actual Render ADMIN_LOCKOUT_WORKER_URL / ADMIN_LOCKOUT_WORKER_SECRET pairing with the Worker's ADMIN_LOCKOUT_SECRET must be read back by an authorized operator without exposing values.
+The server uses the Cloudflare Durable Object through adminLockoutWorkerClient; local tests cover request construction, malformed responses, timeouts and fail-closed errors. The current PR adds a route-inventory regression to `server/lib/revokedIdTokenWiring.test.js`: all 12 protected routes must call `checkAuthRateLimit()` with their dedicated endpoint bucket, and the `AUTH_RATE_LIMITS` map must exactly match the inventory. Wait for CI before counting that guard as verified. Actual Render `ADMIN_LOCKOUT_WORKER_URL` / `ADMIN_LOCKOUT_WORKER_SECRET` pairing with the Worker's `ADMIN_LOCKOUT_SECRET` must still be read back by an authorized operator without exposing values.
 
 ### G. S02-I3 — revoked Firebase ID-token integration acceptance
 
