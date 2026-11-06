@@ -90,6 +90,19 @@ public class ReleaseLogPrivacyTest {
                 "Failed to deserialise stored identity for \" + address.getName()"));
     }
 
+    @Test
+    public void groupKeyAndDistributionWarningsPseudonymisePeerIdentifiers() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/GroupChatActivity.java");
+
+        assertTrue(source.contains("LogRedact.uid(sender)"));
+        assertTrue(source.contains("LogRedact.uid(creatorUid)"));
+        assertTrue(source.contains("LogRedact.uid(uid)"));
+        assertFalse(source.contains("senderUid (" + String.valueOf('"') + " + sender"));
+        assertFalse(source.contains("group creator (" + String.valueOf('"') + " + creatorUid"));
+        assertFalse(source.contains("Key dist failed for " + String.valueOf('"') + " + uid"));
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 7 && dir != null; i++) {
