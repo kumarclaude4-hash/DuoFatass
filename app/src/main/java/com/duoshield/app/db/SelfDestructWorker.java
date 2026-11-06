@@ -111,7 +111,7 @@ public class SelfDestructWorker extends Worker {
                     Log.d(TAG, "Cleared Glide disk cache after " +
                             (roomDeleted + firestoreDeleted) + " expired message(s).");
                 } catch (Exception e) {
-                    Log.w(TAG, "Glide clearDiskCache() failed after self-destruct (non-fatal)", e);
+                    Log.w(TAG, "Glide clearDiskCache() failed after self-destruct (non-fatal)" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 }
             }
 
@@ -127,7 +127,7 @@ public class SelfDestructWorker extends Worker {
             Log.i(TAG, "Session locked mid-pass — deferring self-destruct until unlocked.");
             return Result.retry();
         } catch (Exception e) {
-            Log.e(TAG, "SelfDestructWorker failed — will retry", e);
+            Log.e(TAG, "SelfDestructWorker failed — will retry" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return Result.retry();
         }
     }
@@ -177,11 +177,11 @@ public class SelfDestructWorker extends Worker {
                 try {
                     B2StorageHelper.deleteFile(mediaPath);
                 } catch (Exception e) {
-                    Log.w(TAG, "B2 delete failed for path=" + mediaPath
-                            + " — Firestore doc will still be deleted.", e);
+                    Log.w(TAG, "B2 delete failed for path=" + com.duoshield.app.util.LogRedact.metadata(mediaPath)
+                            + " — Firestore doc will still be deleted." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 }
             } else if (mediaPath != null && !mediaPath.isEmpty()) {
-                Log.w(TAG, "F10: refusing to delete B2 path '" + mediaPath
+                Log.w(TAG, "F10: refusing to delete B2 path '" + com.duoshield.app.util.LogRedact.metadata(mediaPath)
                         + "' — not owned by this conversation.");
             }
 
