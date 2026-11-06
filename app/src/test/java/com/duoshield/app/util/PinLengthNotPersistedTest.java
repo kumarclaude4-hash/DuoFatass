@@ -25,9 +25,10 @@ import static org.junit.Assert.assertTrue;
  * is representative coverage for both, not exhaustive proof of the
  * account-scoped path specifically.
  *
- * <p>Not compiled/run in this environment (no JDK) — see
- * {@code S319ManifestTest}'s class javadoc for why; hand-verified against the
- * live source instead.
+ * <p>This test is part of {@code :app:testDebugUnitTest} and runs in the main CI
+ * workflow. Device-level keypad timing and recovery acceptance are intentionally
+ * deferred until the app's feature set is complete; this JVM test makes no claim
+ * about those runtime flows.
  */
 public class PinLengthNotPersistedTest {
 
