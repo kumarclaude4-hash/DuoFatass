@@ -296,7 +296,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     addViolation(node, "Throwable/third-argument overload is forbidden");
                 }
                 if (args.size() >= 2) {
-                    new MessageScanner(node, throwableVariables).scan(args.get(1), null);
+                    new MessageScanner(node, throwableVariables).scan(
+                            new com.sun.source.util.TreePath(getCurrentPath(), args.get(1)), null);
                 }
             }
             return super.visitMethodInvocation(node, unused);
