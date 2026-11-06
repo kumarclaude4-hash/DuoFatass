@@ -81,7 +81,7 @@ jobs:
             --only firestore \
             --project duoshield-test \
             --config ../firebase.json \
-            "npm test -- --runInBand && cd ../server && npm run test:firestore-integration"
+            "npm test && cd ../server && npm run test:firestore-integration"
 
       - name: Upload Firestore test results
         if: always()
