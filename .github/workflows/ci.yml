@@ -571,12 +571,7 @@ jobs:
           disable-animations: true
           script: |
             adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
-            API_LEVEL="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
-            echo "Android API level: $API_LEVEL"
-            if [ "$API_LEVEL" != "35" ]; then
-              echo "::error::Expected Android API 35, got $API_LEVEL."
-              exit 1
-            fi
+            API_LEVEL="$(adb shell getprop ro.build.version.sdk | tr -d '\r')"; echo "Android API level: $API_LEVEL"; [ "$API_LEVEL" = "35" ] || { echo "::error::Expected Android API 35, got $API_LEVEL."; exit 1; }
             ./gradlew :app:connectedDebugAndroidTest --no-daemon -PdisableAbiSplits -Pandroid.testInstrumentationRunnerArguments.class=com.duoshield.app.ui.DevicePinGateInstrumentedTest#devicePinGate_consumesPlatformBackDispatch
 
       - name: Verify exactly one predictive-back test executed
