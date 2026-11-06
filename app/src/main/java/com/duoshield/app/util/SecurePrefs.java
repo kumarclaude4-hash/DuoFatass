@@ -321,7 +321,7 @@ public class SecurePrefs {
             ks.load(null);
             if (ks.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
                 ks.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS);
-                Log.w(TAG, "Deleted KeyStore master-key alias (" + reason + ").");
+                Log.w(TAG, "Deleted KeyStore master-key alias (" + com.duoshield.app.util.LogRedact.metadata(reason) + ").");
             }
         } catch (Exception e) {
             Log.w(TAG, "Could not delete master-key alias (" + reason + "): "
