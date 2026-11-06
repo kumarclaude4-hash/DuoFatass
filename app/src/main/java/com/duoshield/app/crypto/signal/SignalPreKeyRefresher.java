@@ -84,7 +84,7 @@ public final class SignalPreKeyRefresher {
             try {
                 replenish(ctx);
             } catch (Exception e) {
-                Log.e(TAG, "Pre-key replenishment failed", e);
+                Log.e(TAG, "Pre-key replenishment failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             } finally {
                 sRunning.set(false);
             }
