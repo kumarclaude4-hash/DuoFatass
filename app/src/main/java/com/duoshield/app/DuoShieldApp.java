@@ -117,7 +117,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
             // and server-side auth still apply). A provider-install failure must
             // not crash app startup for every user on a device/Play Services
             // combination that cannot attest.
-            Log.w(TAG, "App Check provider install failed (non-fatal): " + e.getMessage());
+            Log.w(TAG, "App Check provider install failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // ── libsignal native library explicit load ────────────────────────────
@@ -140,7 +140,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
             // adb logcat -s DuoShieldApp surfaces it immediately.
             Log.e(TAG, "FATAL: signal_jni could not be loaded. "
                     + "Verify libsignal-android AAR is in the APK and the "
-                    + "device ABI is one of arm64-v8a / armeabi-v7a / x86_64 / x86.", e);
+                    + "device ABI is one of arm64-v8a / armeabi-v7a / x86_64 / x86." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
 
         // Firestore offline cache, sized by DevicePerformanceTier rather than by
@@ -164,7 +164,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
                     .build();
             FirebaseFirestore.getInstance().setFirestoreSettings(settings);
         } catch (Exception e) {
-            Log.w(TAG, "Firestore persistence setup failed (may already be configured): " + e.getMessage());
+            Log.w(TAG, "Firestore persistence setup failed (may already be configured): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // Warm up Room/SQLCipher and run the libsignal JNI diagnostic on a single
@@ -192,7 +192,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
                     Log.i(TAG, "Skipping Room warm-up — PIN gate enrolled, session locked.");
                 }
             } catch (Exception e) {
-                Log.w(TAG, "Room warm-up failed (non-fatal): " + e.getMessage());
+                Log.w(TAG, "Room warm-up failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
             }
             // Step 2: confirm libsignal JNI is wired up correctly end-to-end.
             try {
@@ -201,7 +201,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
             } catch (Throwable e) {
                 Log.e(TAG, "libsignal JNI check FAILED — identity generation will crash. "
                         + "Check that libsignal-android AAR is correctly packaged in the APK "
-                        + "and that the device ABI is supported (arm64-v8a / armeabi-v7a / x86_64).", e);
+                        + "and that the device ABI is supported (arm64-v8a / armeabi-v7a / x86_64)." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }, "startup-warmup").start();
 
@@ -264,7 +264,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
                             + "could not be persisted; cleanup will retry next launch.");
                 }
             } catch (Exception e) {
-                Log.w(TAG, "Legacy private-media cache cleanup failed; will retry next launch.", e);
+                Log.w(TAG, "Legacy private-media cache cleanup failed; will retry next launch." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }, "glide-legacy-cache-purge");
         cleanup.setDaemon(true);
@@ -321,7 +321,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
             } catch (Exception e) {
                 // Housekeeping only: a failure here must never take down the process, and the
                 // work is all periodic so the next launch retries it.
-                Log.w(TAG, "Deferred startup work failed (non-fatal): " + e.getMessage());
+                Log.w(TAG, "Deferred startup work failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
             }
             return false; // one-shot
         });
