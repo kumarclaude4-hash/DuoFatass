@@ -268,6 +268,7 @@ public class LegacyPlaintextMigratorTest {
     private static final class CommitFaultPreferences extends FakeSharedPreferences {
         private boolean failNextCommit;
         private boolean failReadBackAfterCommit;
+        private boolean failNextReadBack;
 
         void failNextCommit() {
             failNextCommit = true;
@@ -279,7 +280,8 @@ public class LegacyPlaintextMigratorTest {
 
         @Override
         public Map<String, ?> getAll() {
-            if (failReadBackAfterCommit) {
+            if (failNextReadBack) {
+                failNextReadBack = false;
                 throw new IllegalStateException("injected read-back failure");
             }
             return super.getAll();
@@ -321,7 +323,7 @@ public class LegacyPlaintextMigratorTest {
                     boolean committed = delegate.commit();
                     if (committed && failReadBackAfterCommit) {
                         failReadBackAfterCommit = false;
-                        failReadBackAfterCommit = true;
+                        failNextReadBack = true;
                     }
                     return committed;
                 }
