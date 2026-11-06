@@ -299,6 +299,68 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 7
 
+  # S08-I1: compile the actual minified release variant in CI. Debug builds
+  # have minifyEnabled=false and cannot validate that narrowed R8 keep rules
+  # preserve the app's reflective entry points. minifyReleaseWithR8 does not
+  # sign or publish an APK, so this gate needs no release keystore credentials.
+  minified-release:
+    name: Minified release R8 build
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Cache Gradle
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - run: chmod +x gradlew
+
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON not set — using stub for R8 validation."
+            cat app/google-services.json.template > app/google-services.json
+          fi
+
+      - name: Write local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
+      # This task runs release compilation + R8 shrinking/obfuscation, but stops
+      # before signing. The release keystore and signing secrets are not needed.
+      - name: Run minified release R8 task
+        run: ./gradlew :app:minifyReleaseWithR8 --no-daemon
+
+      - name: Verify R8 mapping output
+        run: |
+          MAPPING=app/build/outputs/mapping/release/mapping.txt
+          if [ ! -s "$MAPPING" ]; then
+            echo "::error::R8 did not produce a non-empty release mapping file."
+            exit 1
+          fi
+          echo "R8 mapping generated: $(wc -l < "$MAPPING") lines."
+
+      - name: Upload R8 mapping artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: DuoShield-release-r8-mapping-${{ github.sha }}
+          path: app/build/outputs/mapping/release/mapping.txt
+          retention-days: 14
+
   instrumented-tests:
     name: Instrumented tests (Espresso)
     runs-on: ubuntu-latest
