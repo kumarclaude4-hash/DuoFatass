@@ -3446,8 +3446,10 @@ public class ChatMediaActivity extends BaseActivity {
                 android.content.ClipboardManager cm =
                     (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                 if (cm != null) {
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText(
-                        "B2 error", finalCode + "\n" + (detail != null ? detail : "")));
+                    android.content.ClipData errorClip = android.content.ClipData.newPlainText(
+                        "B2 error", finalCode + "\n" + (detail != null ? detail : ""));
+                    com.duoshield.app.util.ClipboardHelper.markSensitive(errorClip); // S08-L2
+                    cm.setPrimaryClip(errorClip);
                     Toast.makeText(this, "Error copied to clipboard", Toast.LENGTH_SHORT).show();
                 }
             })
