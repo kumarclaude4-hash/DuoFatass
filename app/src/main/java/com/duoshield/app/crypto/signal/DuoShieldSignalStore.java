@@ -544,7 +544,7 @@ public final class DuoShieldSignalStore
             // S07-L4/S10-N2: `key` embeds address.getName() (the peer uid) — redact
             // it before logging at a level (Log.e) that survives release builds.
             Log.e(TAG, "Failed to store session for " + LogRedact.uid(address.getName())
-                    + "." + address.getDeviceId() + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                    + "." + com.duoshield.app.util.LogRedact.metadata(String.valueOf(address.getDeviceId())) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
