@@ -400,7 +400,7 @@ public final class CallSession {
             historyExecutor.execute(() ->
                     AppDatabase.getInstance(appCtx).callHistoryDao().insert(record));
         } catch (RuntimeException e) {
-            Log.w(TAG, "Could not queue call history row", e);
+            Log.w(TAG, "Could not queue call history row (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
