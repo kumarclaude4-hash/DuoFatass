@@ -267,7 +267,7 @@ public class FullScreenImageActivity extends BaseActivity {
             }
             return src;
         } catch (Exception e) {
-            android.util.Log.w("FullScreenImage", "Rotate-on-export failed — " + e.getMessage());
+            android.util.Log.w("FullScreenImage", "Rotate-on-export failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return src;
         } finally {
             // Only recycle the copies this method made; never the shared display bitmap.
@@ -375,7 +375,7 @@ public class FullScreenImageActivity extends BaseActivity {
                         timeoutHandler.removeCallbacks(loadTimeoutRunnable);
                         if (isDestroyed() || isFinishing()) return;
                         showProgress(false);
-                        android.util.Log.e("FullScreenImage", "B2 media load error", e);
+                        android.util.Log.e("FullScreenImage", "B2 media load error (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         Toast.makeText(FullScreenImageActivity.this,
                                 "Failed to load image — " + e.getMessage(), Toast.LENGTH_SHORT).show();
                     }
@@ -391,7 +391,7 @@ public class FullScreenImageActivity extends BaseActivity {
                         timeoutHandler.removeCallbacks(loadTimeoutRunnable);
                         if (isDestroyed() || isFinishing()) return;
                         showProgress(false);
-                        android.util.Log.e("FullScreenImage", "B2 avatar load error", e);
+                        android.util.Log.e("FullScreenImage", "B2 avatar load error (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         Toast.makeText(FullScreenImageActivity.this,
                                 "Could not load photo", Toast.LENGTH_SHORT).show();
                     }
