@@ -101,10 +101,14 @@ final class LegacyPlaintextMigrator {
         } catch (Exception e) {
             Log.w(TAG, "Cannot open raw prefs for " + fileName + ": "
                     + e.getClass().getSimpleName());
-            return Result.none();
+            // We cannot prove the source is empty when it could not be opened.
+            // Treat the migration state as unsafe so onboarding/restore remains
+            // blocked until a later successful migration can inspect it.
+            return new Result(0, 0, true);
         }
 
         Map<String, Object> legacy = collectLegacyEntries(raw);
+        if (legacy == null) return new Result(0, 0, true);
         if (legacy.isEmpty()) return Result.none();
 
         Log.w(TAG, "Found " + legacy.size() + " legacy plaintext entr"
@@ -149,7 +153,11 @@ final class LegacyPlaintextMigrator {
             all = raw.getAll();
         } catch (Exception e) {
             Log.w(TAG, "Cannot enumerate raw prefs: " + e.getClass().getSimpleName());
-            return legacy;
+            return null;
+        }
+        if (all == null) {
+            Log.w(TAG, "Cannot enumerate raw prefs: getAll() returned null.");
+            return null;
         }
         for (Map.Entry<String, ?> e : all.entrySet()) {
             String key = e.getKey();
@@ -192,9 +200,16 @@ final class LegacyPlaintextMigrator {
             String key = e.getKey();
             Object val = e.getValue();
             try {
-                if (target.contains(key)) {
-                    // Already migrated on a previous run, or written fresh since.
+                if (matchesTargetValue(target, key, val)) {
+                    // A previous migration or a newer write already contains the
+                    // exact value. Presence alone is not enough: clearing the raw
+                    // source after a key/type collision would destroy the only
+                    // recoverable copy of a secret.
                     ok++;
+                    continue;
+                }
+                if (target.contains(key)) {
+                    Log.e(TAG, "Existing encrypted value did not match legacy entry; retaining source.");
                     continue;
                 }
                 SharedPreferences.Editor ed = target.edit();
@@ -214,13 +229,37 @@ final class LegacyPlaintextMigrator {
                     Log.e(TAG, "commit() returned false while migrating an entry.");
                     continue;
                 }
-                if (target.contains(key)) ok++;
-                else Log.e(TAG, "Migrated entry failed read-back verification.");
+                if (matchesTargetValue(target, key, val)) ok++;
+                else Log.e(TAG, "Migrated entry failed value read-back verification.");
             } catch (Exception ex) {
                 Log.e(TAG, "Failed to migrate an entry: " + ex.getClass().getSimpleName());
             }
         }
         return ok;
+    }
+
+    /**
+     * Verifies the actual stored value and type, not merely key presence.
+     * SharedPreferences.getAll() returns decoded values for both ESP and the
+     * in-memory test implementation; Set equality is value-based.
+     */
+    private static boolean matchesTargetValue(SharedPreferences target, String key,
+                                              Object expected) {
+        try {
+            Map<String, ?> values = target.getAll();
+            if (values == null || !values.containsKey(key)) return false;
+            Object actual = values.get(key);
+            if (actual == null || expected == null) return false;
+            if (expected instanceof Set) {
+                return actual instanceof Set && expected.equals(actual);
+            }
+            if (actual.getClass() != expected.getClass()) return false;
+            return expected.equals(actual);
+        } catch (Exception e) {
+            Log.e(TAG, "Unable to verify migrated value for key ("
+                    + e.getClass().getSimpleName() + ").");
+            return false;
+        }
     }
 
     /** Removes the migrated plaintext entries from the raw file. */
