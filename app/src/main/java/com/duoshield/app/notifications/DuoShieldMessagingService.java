@@ -206,6 +206,6 @@ public class DuoShieldMessagingService extends FirebaseMessagingService {
                 .addOnSuccessListener(v ->
                         Log.d(TAG, "Delivery ACK written: " + messageId))
                 .addOnFailureListener(e ->
-                        Log.w(TAG, "Delivery ACK failed (non-critical): " + e.getMessage()));
+                        Log.w(TAG, "Delivery ACK failed (non-critical): " + com.duoshield.app.util.LogRedact.error(e)));
     }
 }
