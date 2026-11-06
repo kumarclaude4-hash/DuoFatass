@@ -101,10 +101,14 @@ final class LegacyPlaintextMigrator {
         } catch (Exception e) {
             Log.w(TAG, "Cannot open raw prefs for " + fileName + ": "
                     + e.getClass().getSimpleName());
-            return Result.none();
+            // We cannot prove the source is empty when it could not be opened.
+            // Treat the migration state as unsafe so onboarding/restore remains
+            // blocked until a later successful migration can inspect it.
+            return new Result(0, 0, true);
         }
 
         Map<String, Object> legacy = collectLegacyEntries(raw);
+        if (legacy == null) return new Result(0, 0, true);
         if (legacy.isEmpty()) return Result.none();
 
         Log.w(TAG, "Found " + legacy.size() + " legacy plaintext entr"
@@ -149,7 +153,11 @@ final class LegacyPlaintextMigrator {
             all = raw.getAll();
         } catch (Exception e) {
             Log.w(TAG, "Cannot enumerate raw prefs: " + e.getClass().getSimpleName());
-            return legacy;
+            return null;
+        }
+        if (all == null) {
+            Log.w(TAG, "Cannot enumerate raw prefs: getAll() returned null.");
+            return null;
         }
         for (Map.Entry<String, ?> e : all.entrySet()) {
             String key = e.getKey();
