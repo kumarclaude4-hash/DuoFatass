@@ -62,8 +62,8 @@ public class B2CleanupWorker extends Worker {
         // defense-in-depth against a tampered WorkManager job input or a future code path
         // that might schedule from external data.
         if (!B2StorageHelper.isOwnedB2Path(b2Path, chatId)) {
-            Log.e(TAG, "F10: refusing to delete B2 path '" + b2Path
-                    + "' — not owned by chat '" + chatId + "'. Dropping job.");
+            Log.e(TAG, "F10: refusing to delete B2 path '" + com.duoshield.app.util.LogRedact.metadata(b2Path)
+                    + "' — not owned by chat '" + com.duoshield.app.util.LogRedact.metadata(chatId) + "'. Dropping job.");
             return Result.success(); // don't retry — this path should never be trusted
         }
 
@@ -71,7 +71,7 @@ public class B2CleanupWorker extends Worker {
             B2StorageHelper.deleteFile(b2Path);
             Log.d(TAG, "B2 file deleted after 24 h: " + b2Path);
         } catch (Exception e) {
-            Log.e(TAG, "B2 delete failed — will retry: " + b2Path, e);
+            Log.e(TAG, "B2 delete failed — will retry: " + com.duoshield.app.util.LogRedact.metadata(b2Path) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return Result.retry();
         }
 
@@ -89,7 +89,7 @@ public class B2CleanupWorker extends Worker {
                 );
                 Log.d(TAG, "Firestore path cleared for message: " + messageId);
             } catch (Exception e) {
-                Log.w(TAG, "Firestore path clear failed (non-fatal): " + e.getMessage());
+                Log.w(TAG, "Firestore path clear failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
             }
         }
 
