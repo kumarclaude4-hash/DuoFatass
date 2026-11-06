@@ -78,7 +78,7 @@ public class MediaStoreWipeHelper {
             }
             Log.d(TAG, "wipeAll: deleted " + deleted + "/" + arr.length() + " gallery items");
         } catch (JSONException e) {
-            Log.w(TAG, "Failed to parse saved_media_uris — nothing deleted", e);
+            Log.w(TAG, "Failed to parse saved_media_uris — nothing deleted (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
         // Clear the list now; the outer prefs.clear() will also cover it, but being
         // explicit here means the list is gone even if the caller forgets to clear prefs.
