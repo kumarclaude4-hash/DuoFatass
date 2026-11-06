@@ -7,7 +7,7 @@ const http = require("node:http");
 const { PrivateKey } = require("@signalapp/libsignal-client");
 const { createChallengeStore } = require("./challengeStore");
 const { verifyMintTokenSignature, buildMintTokenChallenge } = require("./identityVerify");
-const { createMintTokenRouteHandler } = require("./mintTokenRoutes");
+const { createMintTokenRouteHandler } = require("./mintTokenRoute");
 
 const USER_ID = "mint-http-user-123";
 
@@ -56,6 +56,7 @@ async function fixture(t, overrides = {}) {
     ...overrides,
   };
   const logger = { warn() {}, log() {}, error() {} };
+  const db = { async runTransaction(operation) { return operation({}); } };
   const handler = createMintTokenRouteHandler({
     collectBody,
     getClientIp: () => "127.0.0.1",
@@ -71,11 +72,16 @@ async function fixture(t, overrides = {}) {
     sha256hex(hex) {
       return crypto.createHash("sha256").update(Buffer.from(hex, "hex")).digest("hex");
     },
-    async claimIdentity(args) {
+    db,
+    FieldValue: { serverTimestamp() { return "test-timestamp"; } },
+    inviteStore: {},
+    invite: {},
+    claimIdentityInTransaction(args) {
       calls.claim.push(args);
       if (state.claimError) throw state.claimError;
       return state.claimResult;
     },
+    auditAdminEventInTransaction() {},
     async createCustomToken(userId) {
       calls.customToken.push(userId);
       return "custom-token-for-" + userId;
