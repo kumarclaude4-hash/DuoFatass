@@ -236,3 +236,16 @@ Post-merge mainline security scan [42173185246](https://github.com/kumarclaude4-
 **Device testing rule:** no additional manual/physical-device acceptance was performed. The owner explicitly deferred it until the app is feature-complete. Existing automated CI emulator jobs are still required and passed on the PR head. Only after the owner declares feature completion should the device matrix in the agent handoff be executed.
 
 **Production sign-off remains PENDING.** No production credentials, Firestore rules/indexes/TTL, Render configuration, Worker secrets, production deployment or Android release were changed by PR #240. The Vercel preview provider's build-rate limit remains an independent deployment-status issue.
+---
+
+## Additional agentic source work — 2026-11-06 (PR branch; CI pending)
+
+Follow-up branch `security/agentic-followups-r2b2-logging-limiter-2026-11-06` adds the following source-level work; do not promote the related tracker dispositions until its PR CI passes:
+
+- **S10-N3:** Four deterministic R2/B2 failure-injection tests cover changed ETag, transient R2 HEAD failure, B2 PUT failure and failed compensating B2 DELETE. A failed HEAD is no longer treated as proof of object deletion: the R2 source remains and its bytes stay charged until a later cron retry. Failed compensation now emits a sanitized status/network diagnostic; migration warnings omit raw media keys.
+- **S02-I2:** A static route-inventory regression asserts all 12 token-authenticated route handlers call `checkAuthRateLimit()` with their dedicated endpoint bucket, and that `AUTH_RATE_LIMITS` matches the inventory exactly. Existing `authRateLimitStore.test.js` covers bounded local fallback, user/endpoint isolation, durable failure and degraded-mode reporting. Live Render/Worker secret pairing remains an operator task.
+- **S03-M3:** Added `security-remediation/S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md`, documenting the current 10-minute TTL / reusable READ-WRITE residual, alternatives, recommendation and explicit pending owner approval. No owner risk acceptance is presumed.
+- **Worker log privacy:** storage error paths now omit raw object keys and exception messages; error class/status remains available for diagnosis.
+- **S05-M3:** Re-read existing tests: independent-instance creation/validation/revocation, global revocation, concurrent revocation and Firestore outage propagation are covered. Deployed Firestore/staging restart/outage acceptance remains separate.
+
+PR-head CI/security must execute the added Worker and server route-guard tests before the tracker can describe them as verified. The full compiler/AST-aware audit of every Android release-surviving log call remains outstanding under S10-N2. Production Firestore/App Check, credential rotation, Render/Worker pairing, staging and release governance are still operator gates. Device acceptance remains deferred until app feature completion.

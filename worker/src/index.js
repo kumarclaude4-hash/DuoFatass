@@ -387,7 +387,7 @@ async function isTokenAlreadyUsed(env, jti) {
   try {
     return (await env.RATE_KV.get(`token:used:${jti}`)) !== null;
   } catch (err) {
-    console.error('Delete-token replay lookup failed:', err?.message || err);
+    console.error('Delete-token replay lookup failed:', err?.name || 'Error');
     throw new Error('Delete-token replay protection is unavailable');
   }
 }
@@ -399,7 +399,7 @@ async function markTokenUsed(env, jti, ttlSeconds) {
       expirationTtl: Math.max(60, ttlSeconds),
     });
   } catch (err) {
-    console.error('Delete-token replay write failed:', err?.message || err);
+    console.error('Delete-token replay write failed:', err?.name || 'Error');
     throw new Error('Delete-token replay protection is unavailable');
   }
 }
@@ -422,7 +422,7 @@ async function kvSet(env, key, value, opts = {}) {
   } catch (err) {
     // KV write quota exhausted (1K writes/day free tier) or transient error.
     // Safety controls degrade gracefully — log and continue rather than crashing.
-    console.error(`KV write failed for ${key}: ${err.message}`);
+    console.error(`KV write failed (${err?.name || 'Error'})`);
   }
 }
 
@@ -1101,7 +1101,7 @@ export default {
         try {
           headResp = await b2.fetch(b2Url(env, key), { method: 'HEAD' });
         } catch (err) {
-          console.error(`B2 HEAD network error for ${key}: ${err.message}`);
+          console.error(`B2 HEAD network error (${err?.name || 'Error'})`);
           return respond({ error: 'B2 delete failed (network error)', key }, 502);
         }
         if (headResp.ok) {
@@ -1117,14 +1117,14 @@ export default {
         try {
           delResp = await b2.fetch(b2Url(env, key), { method: 'DELETE' });
         } catch (err) {
-          console.error(`B2 delete network error for ${key}: ${err.message}`);
+          console.error(`B2 delete network error (${err?.name || 'Error'})`);
           // Surface the failure — returning a false 200 here would tell the
           // Android client the file is gone when it isn't, making it
           // impossible to retry and leaving orphaned cold-tier objects forever.
           return respond({ error: 'B2 delete failed (network error)', key }, 502);
         }
         if (!delResp.ok && delResp.status !== 404) {
-          console.warn(`B2 delete non-OK for ${key}: ${delResp.status}`);
+          console.warn(`B2 delete non-OK: ${delResp.status}`);
           return respond({ error: 'B2 delete failed', status: delResp.status, key }, 502);
         }
       }
@@ -1221,8 +1221,20 @@ export default {
           // wrote, losing data. If it changed, leave R2 alone; the (now
           // stale) B2 copy is harmless because GET always checks R2 first,
           // and the object will be reconsidered on tomorrow's run.
-          const current = await env.HOT_BUCKET.head(obj.key).catch(() => null);
-          if (current && current.httpEtag === readEtag) {
+          let current = null;
+          let headFailed = false;
+          try {
+            current = await env.HOT_BUCKET.head(obj.key);
+          } catch {
+            // A transient R2 HEAD failure is not proof that the object was
+            // deleted. Keep the hot source and count its bytes conservatively;
+            // the next scheduled run can safely retry the migration.
+            headFailed = true;
+            console.warn('S10-N3: post-PUT R2 HEAD failed; retaining hot source for retry');
+          }
+          if (headFailed) {
+            r2TotalBytes += obj.size ?? 0;
+          } else if (current && current.httpEtag === readEtag) {
             await env.HOT_BUCKET.delete(obj.key);
             moved++;
             // Object now lives in B2 — do NOT add its size to r2TotalBytes.
@@ -1233,7 +1245,7 @@ export default {
             const uploader = current.customMetadata?.uploader;
             if (uploader) ctx.waitUntil(adjustUserBytes(env, uploader, -(current.size ?? 0)));
           } else if (current) {
-            console.warn(`Skipped R2 delete for ${obj.key} — object changed during migration`);
+            console.warn('Skipped R2 delete because the object changed during migration');
             r2TotalBytes += current.size ?? 0;
           } else {
             // S10-N3: deleted concurrently — and this is the one interleaving
@@ -1260,13 +1272,30 @@ export default {
             // R2 HEAD miss on an object that is actually still present), no
             // data is lost: R2 still holds the object, GET serves it from the
             // hot tier, and tomorrow's run re-migrates it.
-            console.warn(`S10-N3: undoing orphaned B2 copy of ${obj.key} — R2 was deleted during migration`);
-            ctx.waitUntil(b2.fetch(b2Url(env, obj.key), { method: 'DELETE' }).catch(() => {}));
+            console.warn('S10-N3: undoing orphaned B2 copy because R2 was deleted during migration');
+            ctx.waitUntil(
+              b2.fetch(b2Url(env, obj.key), { method: 'DELETE' })
+                .then((deleteResponse) => {
+                  if (!deleteResponse.ok && deleteResponse.status !== 404) {
+                    // Keep the media key out of release logs; a failed
+                    // compensation is operationally important, but the path
+                    // contains the conversation identifier.
+                    console.error(
+                      `S10-N3: compensating B2 DELETE failed with status ${deleteResponse.status}; orphan may remain`
+                    );
+                  }
+                })
+                .catch(() => {
+                  console.error(
+                    'S10-N3: compensating B2 DELETE failed due to a network error; orphan may remain'
+                  );
+                })
+            );
           }
         } else {
           // B2 PUT failed — object stays in R2. Count it and retry tomorrow.
           r2TotalBytes += obj.size ?? 0;
-          console.error(`Failed to tier ${obj.key} to B2: ${putResp.status}`);
+          console.error(`Failed to tier R2 object to B2: ${putResp.status}`);
         }
       }
 

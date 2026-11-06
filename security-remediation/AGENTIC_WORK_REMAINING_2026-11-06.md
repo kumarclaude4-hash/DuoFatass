@@ -2,8 +2,8 @@
 
 Repository: kumarclaude4-hash/DuoFatass
 Base branch: main
-Main HEAD at handoff: 745f1601448a2b35ffe4ff024b8cde0e9454ebcb
-Current work branch: security/remaining-code-and-agent-handoff-2026-11-06
+Main HEAD before PR #242 merge: a0c40f4f55faa1babeaaefaee036e4f9d4e44069
+Current work branch: security/agentic-followups-r2b2-logging-limiter-2026-11-06 (PR #242; branch CI verified)
 Status: source-level security closeout in progress; production sign-off is not approved.
 
 This is the current execution handoff for the next coding agent. It supersedes the task ordering in older agent handoff notes. Finish the source-level, JVM, backend and isolated-emulator work while the app is being completed. Physical-device acceptance must happen only after the owner declares the app feature-complete.
@@ -49,15 +49,15 @@ Do not mark the audit complete yet. Finish a compiler/AST-aware scan of every re
 
 ### B. S03-M3 — decide the media capability-token residual
 
-Current token format carries a random jti; DELETE replay is single-use and fail-closed. The 10-minute TTL remains, and READ/WRITE tokens remain reusable to preserve normal upload/download/retry behavior.
+Current token format carries a random jti; DELETE replay is single-use and fail-closed. The 10-minute TTL remains, and READ/WRITE tokens remain reusable to preserve normal upload/download/retry behavior. The analysis and owner-decision template are documented in `security-remediation/S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md`. A dated decision record is now available at `security-remediation/S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md`.
 
-Do not shorten TTL or make READ/WRITE single-use without tracing Android upload, retry, range-read and re-fetch flows. Produce a decision record with a client/server/Worker call-flow matrix and failure/retry analysis. Recommend either an owner-ratified residual (10-minute TTL and reusable READ/WRITE) or a versioned protocol with idempotent retry/re-mint semantics and end-to-end automated tests. Only the owner can accept the residual. Keep Partial until that decision is recorded.
+The decision record compares the current residual, a versioned one-shot protocol and TTL-only shortening; it recommends retaining the current behavior until the owner either ratifies the residual or approves a protocol redesign. Do not shorten TTL or make READ/WRITE single-use without tracing Android upload, retry, range-read and re-fetch flows. The owner decision remains **PENDING**, so keep S03-M3 Partial.
 
 ### C. S10-N3 — expand deterministic R2/B2 race tests
 
-The Worker suite already has two scheduled-handler race regressions using fake R2 and mocked B2 fetch: a concurrent client DELETE between R2 get and B2 PUT triggers a compensating B2 DELETE; a normal migration does not fire that compensating delete.
+The Worker suite now also has deterministic failure-injection cases for changed ETag, transient post-PUT R2 HEAD failure, B2 PUT failure and failed compensating B2 DELETE. The handler was corrected so a failed HEAD is not treated as proof of deletion: it retains the R2 source, counts its bytes and lets a later cron retry. Failed compensation now emits an operator-visible, key-free diagnostic, and migration warnings no longer expose object keys. PR #242 CI has now executed the new tests successfully: the Server + Worker tests job passed on commit `92cf469dd0b574cf87816cfd0d9c3df59be5cb20` (workflow run `42181494097`). The tracker records the four added regressions as CI-verified; S10-N3 remains Partial pending isolated live Worker/R2/B2 cron-retry acceptance.
 
-Add failure-injection cases for changed ETag, R2 HEAD failure, missing object, B2 PUT failure, compensating B2 DELETE failure and cron retry/observability. Verify the user-visible result never resurrects deleted media and that ambiguous outcomes stay visible for retry/operator investigation. Use local fakes or an isolated emulator; never use production bucket credentials. Live Cloudflare/R2/B2 acceptance remains a later operator gate. Keep Partial until an isolated live-runtime run is evidenced.
+Remaining: live isolated Cloudflare Worker + R2 + B2 acceptance, including cron retry/recovery and confirmation that the production runtime behaves like the deterministic fakes. Never use production bucket credentials in local tests. Keep S10-N3 Partial until isolated live-runtime evidence is recorded.
 
 ### D. S07-L2 — document and prove the key destruction boundary
 
@@ -65,11 +65,11 @@ WipeHelper now calls SeedPhraseHelper.clearDerivationCache(), and JVM tests prov
 
 ### E. S05-M3 — durable admin-session emulator coverage
 
-Firestore emulator tests already cover independent store instances, cross-instance validation, single/global revocation, concurrent global revoke and idle/absolute expiry. Review remaining test gaps around Firestore outage/fail-closed behavior, process recreation, transaction retry and cookie invalidation. Add real-store emulator tests for gaps. Do not call emulator evidence production verification; production Firestore rules/index/TTL deployment and staging acceptance remain external.
+Existing JVM/server tests cover independent store instances, cross-instance validation, single/global revocation, concurrent global revoke, idle/absolute expiry and explicit Firestore outage propagation (callers can fail closed). The Firestore emulator integration covers durable transactional behavior across independent instances. The remaining gap is staging/production acceptance with deployed rules/indexes/TTL, restart/outage behavior in the actual environment and authorized synthetic session cookies; do not use a real operator cookie. Do not call emulator evidence production verification; production Firestore rules/index/TTL deployment and staging acceptance remain external.
 
 ### F. S02-I2 — ensure every authenticated route uses the shared limiter
 
-The server uses the Cloudflare Durable Object through adminLockoutWorkerClient; local tests cover request construction, malformed responses, timeouts and fail-closed errors. Audit every authenticated route for bypasses and verify local fallback remains bounded and observable. Add an automated route inventory guard. Actual Render ADMIN_LOCKOUT_WORKER_URL / ADMIN_LOCKOUT_WORKER_SECRET pairing with the Worker's ADMIN_LOCKOUT_SECRET must be read back by an authorized operator without exposing values.
+The server uses the Cloudflare Durable Object through adminLockoutWorkerClient; local tests cover request construction, malformed responses, timeouts and fail-closed errors. The current PR adds a route-inventory regression to `server/lib/revokedIdTokenWiring.test.js`: all 12 protected routes must call `checkAuthRateLimit()` with their dedicated endpoint bucket, and the `AUTH_RATE_LIMITS` map must exactly match the inventory. The route-inventory guard passed in PR #242's Server + Worker CI (run `42181494097`). Its source-level coverage is verified; S02-I2 remains Partial until an authorized operator reads back the Render `ADMIN_LOCKOUT_WORKER_URL` / `ADMIN_LOCKOUT_WORKER_SECRET` pairing with the Worker's `ADMIN_LOCKOUT_SECRET`, without exposing values.
 
 ### G. S02-I3 — revoked Firebase ID-token integration acceptance
 
