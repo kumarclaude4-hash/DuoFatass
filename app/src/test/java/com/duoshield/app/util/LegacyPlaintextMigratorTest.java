@@ -175,4 +175,163 @@ public class LegacyPlaintextMigratorTest {
                 result.plaintextRemains);
     }
 
+
+    @Test
+    public void failedEncryptedCommitRetainsPlaintextForRetry() {
+        Context context = RuntimeEnvironment.getApplication();
+        String fileName = uniqueFileName();
+        SharedPreferences raw = context.getSharedPreferences(fileName, Context.MODE_PRIVATE);
+        raw.edit().putString("identity_key", "legacy-secret").commit();
+
+        CommitFaultPreferences encrypted = new CommitFaultPreferences();
+        encrypted.failNextCommit();
+
+        LegacyPlaintextMigrator.Result first =
+                LegacyPlaintextMigrator.migrate(context, fileName, encrypted, true);
+
+        assertEquals(1, first.found);
+        assertEquals(0, first.migrated);
+        assertTrue(first.plaintextRemains);
+        assertEquals("legacy-secret", raw.getString("identity_key", null));
+        assertFalse(encrypted.contains("identity_key"));
+
+        LegacyPlaintextMigrator.Result second =
+                LegacyPlaintextMigrator.migrate(context, fileName, encrypted, true);
+
+        assertEquals(1, second.migrated);
+        assertFalse(second.plaintextRemains);
+        assertFalse(raw.contains("identity_key"));
+        assertEquals("legacy-secret", encrypted.getString("identity_key", null));
+        raw.edit().clear().commit();
+    }
+
+    @Test
+    public void failedEncryptedReadBackRetainsPlaintextEvenAfterCommit() {
+        Context context = RuntimeEnvironment.getApplication();
+        String fileName = uniqueFileName();
+        SharedPreferences raw = context.getSharedPreferences(fileName, Context.MODE_PRIVATE);
+        raw.edit().putString("identity_key", "legacy-secret").commit();
+
+        CommitFaultPreferences encrypted = new CommitFaultPreferences();
+        encrypted.failReadBackAfterNextCommit();
+
+        LegacyPlaintextMigrator.Result result =
+                LegacyPlaintextMigrator.migrate(context, fileName, encrypted, true);
+
+        assertEquals(1, result.found);
+        assertEquals(0, result.migrated);
+        assertTrue(result.plaintextRemains);
+        assertEquals("legacy-secret", raw.getString("identity_key", null));
+        assertEquals("the write may have landed, but the migrator cannot prove it by read-back",
+                "legacy-secret", encrypted.getString("identity_key", null));
+        raw.edit().clear().commit();
+    }
+
+    @Test
+    public void failedPlaintextCleanupCommitRetainsSourceAndAllowsSafeRetry() {
+        Context base = RuntimeEnvironment.getApplication();
+        String fileName = uniqueFileName();
+        CommitFaultPreferences raw = new CommitFaultPreferences();
+        raw.edit().putString("database_key", "legacy-db-secret").commit();
+        raw.failNextCommit();
+
+        Context context = new ContextWrapper(base) {
+            @Override
+            public SharedPreferences getSharedPreferences(String name, int mode) {
+                return raw;
+            }
+        };
+        FakeSharedPreferences encrypted = new FakeSharedPreferences();
+
+        LegacyPlaintextMigrator.Result first =
+                LegacyPlaintextMigrator.migrate(context, fileName, encrypted, true);
+
+        assertEquals(1, first.migrated);
+        assertTrue(first.plaintextRemains);
+        assertEquals("legacy-db-secret", raw.getString("database_key", null));
+        assertEquals("legacy-db-secret", encrypted.getString("database_key", null));
+
+        LegacyPlaintextMigrator.Result second =
+                LegacyPlaintextMigrator.migrate(context, fileName, encrypted, true);
+
+        assertEquals(1, second.migrated);
+        assertFalse(second.plaintextRemains);
+        assertFalse(raw.contains("database_key"));
+        assertEquals("legacy-db-secret", encrypted.getString("database_key", null));
+    }
+
+    /**
+     * Fault-injecting SharedPreferences used to distinguish a durable write from
+     * a verified write and a completed cleanup. Failures are one-shot so the tests
+     * can exercise a real retry against the same stores.
+     */
+    private static final class CommitFaultPreferences extends FakeSharedPreferences {
+        private boolean failNextCommit;
+        private boolean failReadBackAfterCommit;
+        private boolean failNextReadBack;
+
+        void failNextCommit() {
+            failNextCommit = true;
+        }
+
+        void failReadBackAfterNextCommit() {
+            failReadBackAfterCommit = true;
+        }
+
+        @Override
+        public Map<String, ?> getAll() {
+            if (failNextReadBack) {
+                failNextReadBack = false;
+                throw new IllegalStateException("injected read-back failure");
+            }
+            return super.getAll();
+        }
+
+        @Override
+        public SharedPreferences.Editor edit() {
+            SharedPreferences.Editor delegate = super.edit();
+            return new SharedPreferences.Editor() {
+                @Override public SharedPreferences.Editor putString(String key, String value) {
+                    delegate.putString(key, value); return this;
+                }
+                @Override public SharedPreferences.Editor putStringSet(String key, Set<String> values) {
+                    delegate.putStringSet(key, values); return this;
+                }
+                @Override public SharedPreferences.Editor putInt(String key, int value) {
+                    delegate.putInt(key, value); return this;
+                }
+                @Override public SharedPreferences.Editor putLong(String key, long value) {
+                    delegate.putLong(key, value); return this;
+                }
+                @Override public SharedPreferences.Editor putFloat(String key, float value) {
+                    delegate.putFloat(key, value); return this;
+                }
+                @Override public SharedPreferences.Editor putBoolean(String key, boolean value) {
+                    delegate.putBoolean(key, value); return this;
+                }
+                @Override public SharedPreferences.Editor remove(String key) {
+                    delegate.remove(key); return this;
+                }
+                @Override public SharedPreferences.Editor clear() {
+                    delegate.clear(); return this;
+                }
+                @Override public boolean commit() {
+                    if (failNextCommit) {
+                        failNextCommit = false;
+                        return false;
+                    }
+                    boolean committed = delegate.commit();
+                    if (committed && failReadBackAfterCommit) {
+                        failReadBackAfterCommit = false;
+                        failNextReadBack = true;
+                    }
+                    return committed;
+                }
+                @Override public void apply() {
+                    delegate.apply();
+                }
+            };
+        }
+    }
+
 }
