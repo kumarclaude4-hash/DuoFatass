@@ -135,3 +135,71 @@ PR #225 adds a code-level closeout for the previously partial S06-L4 finding:
 - Same-UID refresh and compare-and-clear guards prevent cross-account retargeting and late workers deleting newer recovery state.
 
 The new Firestore emulator/JVM/wiring regression suites and GitHub Actions results are the merge gates for this PR. **Remaining after code merge:** staging the lost-response/admin-unfreeze race, physical-device testing of wipe/reboot/sign-in/recovery, and production Firestore TTL/service-account/rules verification. A device that never regains connectivity and never authenticates again cannot be remotely locked; the local durable intent stays explicit and no success is fabricated.
+
+
+---
+
+## Consolidated implementation and acceptance update — 2026-11-06
+
+This addendum supersedes earlier **code-work** status statements where later merged PRs provide stronger evidence. Historical sections above are retained as an audit trail; production and physical-device acceptance remain separate gates.
+
+### Predictive-back runtime coverage — PR #237
+
+PR #237 adds a focused Android 15 (API 35) instrumentation test for the security-critical back guard:
+
+- `DevicePinGateActivity` registers `BackPressGuard.block(this)`.
+- `DevicePinGateInstrumentedTest.devicePinGate_consumesPlatformBackDispatch` sends `KEYCODE_BACK` through Android's input dispatcher and asserts that the gate remains visible, keeps window focus, and is not finishing.
+- The broad existing Espresso suite remains on API 30. A separate API 35 emulator job runs exactly the focused regression method, verifies exactly one test executed, and retains the Android test report for 14 days.
+- The API 30 AVD cache is intentionally isolated from the API 35 job. The cache key remains scoped to the API 30 emulator, and the workflow documents when that key must be rotated. The API 35 job now explicitly asserts that the booted emulator reports SDK level 35 before executing the test.
+
+**Verification recorded on the reviewed PR head `6f586bf72298155619d26345a52ad5b58d9e933e`:** 13 GitHub Actions/security checks passed, including API 30 Espresso, the focused API 35 instrumentation job, Android unit tests, lint, debug APK, minified release R8, Server + Worker tests, CodeQL, Gitleaks, SBOM, Gradle wrapper validation, libsignal JAR integrity and the Cloudflare Worker build. The separate Vercel preview status failed because the provider reported its free-tier deployment quota (>100 deployments in 24 hours); this is not a test failure. Cloudflare reported a successful production Worker deployment for this commit. The workflow hardening/report reconciliation commit is a separate head and must pass its own CI before merge.
+
+**Acceptance boundary:** `KEYCODE_BACK` instrumentation exercises platform key dispatch, not a physical predictive-back edge gesture. It targets `DevicePinGateActivity`; it does not establish identical runtime behavior on all seven guarded activities or on OEM gesture implementations. Keep S11-H1 Partial until physical/API-level acceptance covers an edge gesture on `LockScreenActivity` and the supported device matrix.
+
+### Code-level changes merged since the earlier report
+
+The following PRs are merged to `main` and should no longer be listed as unimplemented code tasks:
+
+| PR | Merged implementation |
+|---|---|
+| #225 | Duress-lock worker failure semantics, bounded retry, transactionally coupled nonce-consumption/idempotency and recovery-state protection |
+| #226 | Invite list/create/revoke/validate HTTP routes exercised through the production-shared router and Firestore transactions |
+| #227 | Production `POST /mintToken` HTTP handler with proof-of-possession, replay/forgery rejection and Firestore identity/invite claim coverage |
+| #228 | Exact value-and-type read-back for legacy preference migration before plaintext cleanup |
+| #230 | Opaque lock-screen transition cover that prevents underlying authenticated content flashing during lock handoff |
+| #231 | Dedicated minified release R8 build and mapping-output verification in CI |
+| #233 | Security tracker reconciliation for verified Android security gates |
+| #236 | App-wide screenshot/screen-recording policy via Activity lifecycle callbacks, including direct `AppCompatActivity` screens |
+| #238 | Sensitive clipboard marking for every app-owned user-data clipboard export, with regression coverage |
+
+PRs #234 and #235 are closed predecessors of #237; PR #239 is closed as superseded by the already-merged #227 work. At the review snapshot, #237 was the only open PR in this repository.
+
+### Current remaining work — not satisfied by repository CI alone
+
+#### P0 — Production Firebase / Firestore and credential operations (operator)
+
+1. Verify production Firestore rules match the reviewed repository revision; the emulator suites do not deploy production rules.
+2. Verify and deploy the required Firestore indexes and TTL policies for admin sessions and duress-lock nonce/receipt collections. Application-side expiry checks must remain authoritative because TTL deletion is asynchronous.
+3. Verify production Admin SDK service-account permissions and required environment-variable names/scopes without exposing values in Git, logs or client bundles.
+4. Rotate and revoke any previously exposed Firebase, storage, Worker or deployment credentials identified by the security runbooks; record operator evidence, never secret values.
+5. Run staging acceptance for admin-session creation/validation/revocation/global revocation and duress-lock lost-response/admin-unfreeze replay.
+
+#### P1 — Android and end-to-end product acceptance (QA / developer)
+
+1. **S11-H1:** physically perform predictive-back edge gestures on `LockScreenActivity` on supported Android/OEM devices; cover the other no-skip gates in the device matrix. PR #237's API 35 key-dispatch regression is useful runtime evidence but is not gesture-level sign-off.
+2. **S08-H2:** verify screenshot, screen recording and recents-thumbnail behavior on fresh install and after explicitly opting in, across supported Android versions. PR #236 closes the app-wide lifecycle wiring gap; physical acceptance remains.
+3. **S08-H5 / S07-M1:** test upgrade/recovery with real Android Keystore and EncryptedSharedPreferences, including an install whose legacy plaintext cannot be migrated. Retained source data must not be manually deleted.
+4. **S06-L4:** test duress wipe, reboot, sign-in and recovery on physical devices, including network loss and the server lost-response/admin-unfreeze race.
+5. **S05-H2:** confirm invite-only onboarding is the intended product contract and exercise the complete Android onboarding flow against staging; the invite and `/mintToken` HTTP/emulator code-coverage gaps are addressed by #226/#227.
+6. **S02-I3 / S02-I2:** execute staging Firebase revoked-token acceptance (old token rejected, fresh token accepted) and verify the Render-to-Worker Durable Object limiter credentials/configuration across instances.
+7. **S10-N1 / S10-N2:** complete App Check monitoring-to-enforcement rollout/operational verification and the broader logging privacy review; the existing source and targeted regression coverage do not constitute a full production telemetry audit.
+
+#### P2 — Governance and deployment operations
+
+- The active repository ruleset `Hello` (ID `26629873`) now requires PRs and blocks deletion/non-fast-forward updates on the default branch, but currently requires **zero approvals** and has **no required status checks**. An authorized administrator must configure required CI/security checks, approval/CODEOWNERS policy, immutable release-tag rules and a protected `production-release` environment, then verify the effective settings.
+- The classic branch-protection endpoint returned 403 to the connected integration; a protected production release environment was not independently verified.
+- Vercel preview deployments may remain blocked until the provider quota window resets or the account limit changes. Avoid retry loops while the quota is exhausted. The Cloudflare Worker deployment for the reviewed PR head succeeded.
+
+### Release decision
+
+**Code-level work in PR #237 is a merge candidate after the final updated branch checks pass. This report is not a production security sign-off.** Production Firebase/Firestore configuration, secret rotation, staging tests, physical-device acceptance and governance enforcement remain explicit release gates. Do not infer that CI green means the product is production-secure.

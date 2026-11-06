@@ -951,6 +951,11 @@ test('S10-N3: a client DELETE that removes R2 during the migration PUT fires a c
   const env = makeEnv({ HOT_BUCKET: bucket });
 
   const b2Calls = [];
+  // Cloudflare keeps waitUntil() work alive after the scheduled handler returns.
+  // The test must explicitly drain those promises before restoring the mocked
+  // global fetch, or the compensating B2 DELETE can run against the real fetch.
+  const waitUntilTasks = [];
+  const testCtx = { waitUntil: (promise) => { waitUntilTasks.push(Promise.resolve(promise)); } };
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const req = input instanceof Request ? input : new Request(input, init);
@@ -970,7 +975,10 @@ test('S10-N3: a client DELETE that removes R2 during the migration PUT fires a c
   };
 
   try {
-    await worker.scheduled({}, env, ctx);
+    await worker.scheduled({}, env, testCtx);
+    // Match the Workers runtime contract: waitUntil tasks remain alive after
+    // scheduled() resolves. Drain them while the B2 fetch mock is still active.
+    await Promise.all(waitUntilTasks);
   } finally {
     globalThis.fetch = realFetch;
   }
