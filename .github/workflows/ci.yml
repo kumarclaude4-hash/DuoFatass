@@ -432,7 +432,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-api35-aosp_atd-x86_64-v1
+          key: android-avd-api35
 
       # Create the AVD once and snapshot it, WITHOUT running any test. This
       # separates "provision the device" from "run the tests", so a
