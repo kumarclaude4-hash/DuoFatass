@@ -2,6 +2,8 @@ package com.duoshield.app;
 
 import com.duoshield.app.crypto.SeedPhraseHelper;
 
+import java.util.Locale;
+
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -240,6 +242,26 @@ public class SeedPhraseHelperTest {
         assertNull("clearDerivationCache() must null out the cached derivation so no "
                         + "identity private key material stays reachable after a wipe",
                 cache.get());
+    }
+
+    @Test
+    public void mnemonicCanonicalization_isLocaleIndependentOnTurkishDevices() throws Exception {
+        // Official BIP39 English vector containing the letter 'i'. Default-locale
+        // lower-casing on a Turkish device can turn uppercase I into dotless ı.
+        final String vector =
+                "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        byte[] expectedSeed = SeedPhraseHelper.mnemonicToSeed(vector);
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            String upper = vector.toUpperCase(Locale.ROOT);
+            assertTrue("valid English BIP39 words must validate under a Turkish default locale",
+                    SeedPhraseHelper.validateMnemonic(upper));
+            assertArrayEquals("the same mnemonic must derive identical bytes under Turkish locale",
+                    expectedSeed, SeedPhraseHelper.mnemonicToSeed(upper));
+        } finally {
+            Locale.setDefault(previous);
+        }
     }
 
     // ── deriveUserId ─────────────────────────────────────────────────────────
