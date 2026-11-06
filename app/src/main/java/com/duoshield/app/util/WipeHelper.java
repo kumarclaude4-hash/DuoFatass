@@ -126,10 +126,10 @@ public class WipeHelper {
             try {
                 java.io.File f = new java.io.File(appCtx.getFilesDir(), avatarFile);
                 if (f.exists() && !f.delete()) {
-                    Log.w(TAG, "Could not delete avatar file " + com.duoshield.app.util.LogRedact.metadata(avatarFile.getAbsolutePath()) + " during wipe");
+                    Log.w(TAG, "Could not delete avatar file " + com.duoshield.app.util.LogRedact.metadata(avatarFile) + " during wipe");
                 }
             } catch (Exception e) {
-                Log.w(TAG, "Avatar delete failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.metadata(avatarFile.getAbsolutePath()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                Log.w(TAG, "Avatar delete failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.metadata(avatarFile) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }
 
