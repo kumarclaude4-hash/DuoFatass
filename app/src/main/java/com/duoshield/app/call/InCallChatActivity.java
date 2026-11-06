@@ -218,7 +218,7 @@ public class InCallChatActivity extends AppCompatActivity {
         try {
             setPictureInPictureParams(buildPipParams());
         } catch (IllegalStateException | IllegalArgumentException e) {
-            Log.w(TAG, "setPictureInPictureParams failed", e);
+            Log.w(TAG, "setPictureInPictureParams failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 
@@ -234,7 +234,7 @@ public class InCallChatActivity extends AppCompatActivity {
             try {
                 enterPictureInPictureMode(buildPipParams());
             } catch (IllegalStateException | IllegalArgumentException e) {
-                Log.w(TAG, "enterPictureInPictureMode failed", e);
+                Log.w(TAG, "enterPictureInPictureMode failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }
     }
@@ -522,7 +522,7 @@ public class InCallChatActivity extends AppCompatActivity {
                 current.removeSink(view);
             } catch (Exception e) {
                 // The track may already be disposed if the call ended first — nothing to undo.
-                Log.w(TAG, "PiP removeSink failed", e);
+                Log.w(TAG, "PiP removeSink failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }
         if (main) pipMainTrack = null; else pipSelfTrack = null;
@@ -533,7 +533,7 @@ public class InCallChatActivity extends AppCompatActivity {
             if (main) pipMainTrack = target; else pipSelfTrack = target;
             return true;
         } catch (Exception e) {
-            Log.w(TAG, "PiP addSink failed", e);
+            Log.w(TAG, "PiP addSink failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             if (main) pipContainer.setVisibility(View.GONE);
             return false;
         }
@@ -563,7 +563,7 @@ public class InCallChatActivity extends AppCompatActivity {
                 .collection("calls").document(callId)
                 .collection("chat")
                 .add(doc)
-                .addOnFailureListener(e -> Log.w(TAG, "send failed", e));
+                .addOnFailureListener(e -> Log.w(TAG, "send failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")"));
     }
 
     private void listenForMessages() {
@@ -580,7 +580,7 @@ public class InCallChatActivity extends AppCompatActivity {
                         // which used to leave the thread permanently empty on that device.
                         // Drop the dead registration and re-attach with backoff.
                         Log.w(TAG, "listener error — re-attaching (attempt "
-                                + listenAttempts + ")", e);
+                                + listenAttempts + ")" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         if (chatListener != null) { chatListener.remove(); chatListener = null; }
                         if (isFinishing() || isDestroyed()) return;
                         if (listenAttempts >= MAX_LISTEN_ATTEMPTS) {
