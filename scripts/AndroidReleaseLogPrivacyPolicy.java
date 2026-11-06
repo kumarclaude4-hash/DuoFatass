@@ -175,7 +175,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 3) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 4) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
