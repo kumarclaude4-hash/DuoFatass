@@ -118,7 +118,7 @@ async function fixture(t, overrides = {}) {
         headers: { "content-type": "application/json" },
         body: typeof payload === "string" ? payload : JSON.stringify(payload),
       });
-      return { status: response.status, text: await response.text() };
+      return { status: response.status, cacheControl: response.headers.get("cache-control"), text: await response.text() };
     },
   };
 }
@@ -187,6 +187,7 @@ test("mintToken HTTP mints only after a valid signature and successful identity 
   const response = await f.request(payload);
   assert.equal(response.status, 200);
   assert.deepEqual(JSON.parse(response.text), { token: "custom-token-for-" + USER_ID });
+  assert.equal(response.cacheControl, "no-store");
   assert.equal(f.calls.claim.length, 1);
   assert.equal(f.calls.claim[0].userId, USER_ID);
   assert.equal(f.calls.claim[0].inviteToken, "opaque-invite-token");
