@@ -169,13 +169,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"request failed: \" + LogRedact.error(failure));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(peerId));\n"
                   + "    Log.wtf(\"TAG\", \"static invariant failure\");\n"
+                  + "    Log.w(\"TAG\", \"exception class=\" + failure.getClass().getSimpleName());\n"
                   + "    long checksumFailures = 2;\n"
                   + "    Log.w(\"TAG\", \"integrity failures=\" + checksumFailures);\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 4) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 5) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -350,7 +351,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (parent == null || !(parent.getLeaf() instanceof MemberSelectTree)) return false;
                 MemberSelectTree select = (MemberSelectTree) parent.getLeaf();
                 if (!"getClass".equals(select.getIdentifier())
-                        || select.getExpression() != identifierPath.getLeaf()) return false;
+                        || !select.getExpression().toString().equals(identifierPath.getLeaf().toString())) return false;
                 // getClass().getSimpleName() yields only a class label; it does
                 // not serialize the Throwable, message, stack or cause chain.
                 return parent.getParentPath() != null
