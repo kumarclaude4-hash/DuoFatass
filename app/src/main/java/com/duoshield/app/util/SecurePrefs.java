@@ -231,10 +231,10 @@ public class SecurePrefs {
             Log.d(TAG, "ESP ready (tier 1 — hardware key) for " + fileName + ".");
             return finish(appCtx, fileName, sp, SecurityTier.HARDWARE);
         } catch (Exception e1) {
-            Log.w(TAG, "ESP tier 1 failed for " + fileName + " ("
+            Log.w(TAG, "ESP tier 1 failed for " + com.duoshield.app.util.LogRedact.metadata(fileName) + " ("
                     + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
                     + " API=" + android.os.Build.VERSION.SDK_INT + "): "
-                    + e1.getClass().getSimpleName() + ": " + e1.getMessage());
+                    + e1.getClass().getSimpleName() + ": " + com.duoshield.app.util.LogRedact.error(e1));
         }
 
         // ── Tier 1b: explicit spec REQUESTING StrongBox (API 28+) ────────────
@@ -265,8 +265,8 @@ public class SecurePrefs {
             Log.i(TAG, "ESP ready (tier 2 — explicit software spec) for " + fileName + ".");
             return finish(appCtx, fileName, sp, SecurityTier.SOFTWARE);
         } catch (Exception e2) {
-            Log.w(TAG, "ESP tier 2 failed for " + fileName + ": "
-                    + e2.getClass().getSimpleName() + ": " + e2.getMessage());
+            Log.w(TAG, "ESP tier 2 failed for " + com.duoshield.app.util.LogRedact.metadata(fileName) + ": "
+                    + e2.getClass().getSimpleName() + ": " + com.duoshield.app.util.LogRedact.error(e2));
         }
 
         // ── Tier 3: delete corrupted alias + retry ────────────────────────────
@@ -276,13 +276,13 @@ public class SecurePrefs {
             Log.i(TAG, "ESP ready (tier 3 — alias cleared + software spec) for " + fileName + ".");
             return finish(appCtx, fileName, sp, SecurityTier.SOFTWARE);
         } catch (Exception e3) {
-            Log.e(TAG, "ESP tier 3 (alias-clear + retry) failed for " + fileName + ": "
-                    + e3.getClass().getSimpleName() + ": " + e3.getMessage()
+            Log.e(TAG, "ESP tier 3 (alias-clear + retry) failed for " + com.duoshield.app.util.LogRedact.metadata(fileName) + ": "
+                    + e3.getClass().getSimpleName() + ": " + com.duoshield.app.util.LogRedact.error(e3)
                     + " — FAILING CLOSED to an in-memory store; nothing will be"
                     + " persisted for this file."
                     + " Device: " + android.os.Build.MANUFACTURER
                     + " " + android.os.Build.MODEL
-                    + " API=" + android.os.Build.VERSION.SDK_INT, e3);
+                    + " API=" + android.os.Build.VERSION.SDK_INT + " (" + com.duoshield.app.util.LogRedact.error(e3) + ")");
         }
 
         // ── Fail closed: in-memory only, never plaintext on disk ─────────────
@@ -305,8 +305,8 @@ public class SecurePrefs {
             r = LegacyPlaintextMigrator.migrate(appCtx, fileName, store, resolvedTier.isDurable());
         } catch (Exception e) {
             // Migration must never prevent the app from opening its store.
-            Log.e(TAG, "Legacy plaintext migration threw for " + fileName + ": "
-                    + e.getClass().getSimpleName(), e);
+            Log.e(TAG, "Legacy plaintext migration threw for " + com.duoshield.app.util.LogRedact.metadata(fileName) + ": "
+                    + e.getClass().getSimpleName() + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             // An exception means the raw source could not be proven empty or
             // fully migrated. Preserve the fail-closed onboarding/restore gate.
             r = new LegacyPlaintextMigrator.Result(0, 0, true);
