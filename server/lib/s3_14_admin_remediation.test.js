@@ -20,6 +20,7 @@ const path = require("node:path");
 
 const SERVER_SOURCE = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
 const INVITE_STORE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteStore.js"), "utf8");
+const INVITE_ROUTE_SOURCE = fs.readFileSync(path.join(__dirname, "inviteRoutes.js"), "utf8");
 
 // ── S05-L1 ─────────────────────────────────────────────────────────────────
 // /admin/api/account/lookup used to be the one uid-taking admin route that
@@ -75,11 +76,24 @@ test("S05-L2: requireAdminAuthThenBody runs auth before reading the body", () =>
 
 test("S05-L2: every admin POST route is gated via requireAdminAuthThenBody, not a bare collectBody", () => {
   for (const route of ADMIN_POST_ROUTES) {
-    const routeStart = SERVER_SOURCE.indexOf(`req.url === "${route}"`);
-    assert.ok(routeStart > 0, `POST ${route} route not found`);
-    const slice = SERVER_SOURCE.slice(routeStart, routeStart + 400);
+    let slice;
+    if (route === "/admin/api/invites/create") {
+      const routeStart = INVITE_ROUTE_SOURCE.indexOf("function createInvite(req, res)");
+      const routeEnd = INVITE_ROUTE_SOURCE.indexOf("function revokeInvite(req, res)", routeStart);
+      assert.ok(routeStart >= 0 && routeEnd > routeStart, "shared invite create handler missing");
+      slice = INVITE_ROUTE_SOURCE.slice(routeStart, routeEnd);
+    } else if (route === "/admin/api/invites/revoke") {
+      const routeStart = INVITE_ROUTE_SOURCE.indexOf("function revokeInvite(req, res)");
+      const routeEnd = INVITE_ROUTE_SOURCE.indexOf("async function validateInvite(req, res)", routeStart);
+      assert.ok(routeStart >= 0 && routeEnd > routeStart, "shared invite revoke handler missing");
+      slice = INVITE_ROUTE_SOURCE.slice(routeStart, routeEnd);
+    } else {
+      const routeStart = SERVER_SOURCE.indexOf(`req.url === "${route}"`);
+      assert.ok(routeStart > 0, `POST ${route} route not found`);
+      slice = SERVER_SOURCE.slice(routeStart, routeStart + 400);
+    }
     assert.ok(
-      /requireAdminAuthThenBody\(req, res/.test(slice),
+      /requireAdminAuthThenBody\\(req, res/.test(slice),
       `POST ${route} must be wired through requireAdminAuthThenBody(), not a bare collectBody() ` +
       `call that runs requireAdminAuth only after the body has been read`
     );
@@ -130,19 +144,18 @@ test("S05-L3: setBaselineSecurityHeaders sets Cache-Control: no-store and Vary: 
 // GET /admin/api/locked + GET /admin/api/duress/enrolled had no limit().
 
 test("S05-L4: invite revoke handler delegates to transactional store implementation", () => {
-  const routeStart = SERVER_SOURCE.indexOf('req.url === "/admin/api/invites/revoke"');
-  assert.ok(routeStart > 0, "POST /admin/api/invites/revoke route not found");
-  const nextRouteStart = SERVER_SOURCE.indexOf('req.method === "GET" && req.url === "/admin/api/locked"', routeStart);
-  assert.ok(nextRouteStart > routeStart, "could not bound the invite revoke handler");
-  const handler = SERVER_SOURCE.slice(routeStart, nextRouteStart);
+  const routeStart = INVITE_ROUTE_SOURCE.indexOf("function revokeInvite(req, res)");
+  const routeEnd = INVITE_ROUTE_SOURCE.indexOf("async function validateInvite(req, res)", routeStart);
+  assert.ok(routeStart >= 0 && routeEnd > routeStart, "shared POST /admin/api/invites/revoke handler not found");
+  const handler = INVITE_ROUTE_SOURCE.slice(routeStart, routeEnd);
   assert.ok(handler.includes("requireAdminAuthThenBody(req, res"), "invite revoke must authenticate before reading its body");
   assert.ok(handler.includes("inviteStore.revoke("), "handler must delegate state transition to inviteStore");
   assert.ok(
-    /firestore\.runTransaction\(async \(tx\) => \{/.test(INVITE_STORE_SOURCE),
+    /firestore\\.runTransaction\\(async \\(tx\\) => \\{/.test(INVITE_STORE_SOURCE),
     "invite store must wrap its read-check-write in a Firestore transaction"
   );
-  assert.ok(/tx\.get\(ref\)/.test(INVITE_STORE_SOURCE), "invite transaction must read using tx.get()");
-  assert.ok(/tx\.update\(ref/.test(INVITE_STORE_SOURCE), "invite transaction must write using tx.update()");
+  assert.ok(/tx\\.get\\(ref\\)/.test(INVITE_STORE_SOURCE), "invite transaction must read using tx.get()");
+  assert.ok(/tx\\.update\\(ref/.test(INVITE_STORE_SOURCE), "invite transaction must write using tx.update()");
   assert.ok(/current !== "active"/.test(INVITE_STORE_SOURCE), "only active invites may be revoked");
 });
 
