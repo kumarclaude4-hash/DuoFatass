@@ -348,7 +348,7 @@ public final class CallSession {
         }
 
         @Override public void onError(String message) {
-            Log.e(TAG, "Call error: " + message);
+            Log.e(TAG, "Call error received (message withheld)");
             UiHooks u = ui;
             if (u != null) u.onError(message);
         }
