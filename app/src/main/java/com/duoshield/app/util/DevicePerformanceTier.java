@@ -126,7 +126,7 @@ public enum DevicePerformanceTier {
                 totalMem = info.totalMem;
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to read memory info", t);
+            Log.w(TAG, "Unable to read memory info (" + com.duoshield.app.util.LogRedact.error(t) + ")");
         }
 
         DevicePerformanceTier tier;
@@ -195,7 +195,7 @@ public enum DevicePerformanceTier {
                 return pm.getCurrentThermalStatus();
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to read thermal status", t);
+            Log.w(TAG, "Unable to read thermal status (" + com.duoshield.app.util.LogRedact.error(t) + ")");
         }
         return PowerManager.THERMAL_STATUS_NONE;
     }
