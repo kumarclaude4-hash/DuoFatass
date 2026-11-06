@@ -7,11 +7,11 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import androidx.test.core.app.ApplicationProvider;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -29,7 +29,7 @@ public class LegacyPlaintextMigratorTest {
 
     @Test
     public void mismatchedExistingEncryptedValueRetainsPlaintextForRecovery() {
-        Context context = ApplicationProvider.getApplicationContext();
+        Context context = RuntimeEnvironment.getApplication();
         String fileName = uniqueFileName();
         SharedPreferences raw = context.getSharedPreferences(fileName, Context.MODE_PRIVATE);
         raw.edit().putString("identity_key", "legacy-secret").commit();
