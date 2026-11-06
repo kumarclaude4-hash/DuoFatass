@@ -432,7 +432,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-api30-aosp_atd-x86_64-v2
+          key: avd-api35-aosp_atd-x86_64-v1
 
       # Create the AVD once and snapshot it, WITHOUT running any test. This
       # separates "provision the device" from "run the tests", so a
@@ -442,7 +442,7 @@ jobs:
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: 30
+          api-level: 35
           target: aosp_atd
           arch: x86_64
           profile: pixel_2
@@ -456,7 +456,7 @@ jobs:
         with:
           # api-level/target/arch/profile MUST match the snapshot step above,
           # or the cached AVD does not apply to this run.
-          api-level: 30
+          api-level: 35
           target: aosp_atd
           arch: x86_64
           profile: pixel_2
