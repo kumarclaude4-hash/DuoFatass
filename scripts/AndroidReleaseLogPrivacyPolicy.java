@@ -194,11 +194,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", tracker.getSummary());\n"
                   + "    String safeOperation = redactOperationName(alias);\n"
                   + "    Log.w(\"TAG\", safeOperation);\n"
+                  + "    int lockStatus = postDuressLock(alias);\n"
+                  + "    Log.w(\"TAG\", \"lock HTTP status=\" + lockStatus);\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 16) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 17) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -481,7 +483,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     || "code".equals(method)
                     || "getResponseCode".equals(method)
                     || "getSummary".equals(method)
-                    || "copyInto".equals(method);
+                    || "copyInto".equals(method)
+                    // DuressManager.postDuressLock consumes a nonce but returns only HTTP status.
+                    || "postDuressLock".equals(method);
         }
 
         private boolean isContainerConstruction(ExpressionTree expression) {
