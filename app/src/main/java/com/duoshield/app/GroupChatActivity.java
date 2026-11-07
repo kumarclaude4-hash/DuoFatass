@@ -1545,8 +1545,7 @@ public class GroupChatActivity extends BaseActivity {
                     if (guard.reserveWrite(1)) {
                         db.collection("groups").document(groupId)
                           .collection("keys").document(uid)
-                          .set(kd)
-                          .addOnSuccessListener(v -> guard.recordWrites(1));
+                          .set(kd);
                     }
                 } catch (Exception e) {
                     Log.w(TAG, "Key dist failed for " + LogRedact.uid(uid) + ": " + com.duoshield.app.util.LogRedact.error(e));
