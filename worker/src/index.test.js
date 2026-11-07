@@ -186,7 +186,7 @@ function makeEnv(overrides = {}) {
     MAX_DAILY_MEDIA_DELETES: '80',
     MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER: '20',
     MAX_DAILY_MEDIA_DELETES_PER_HOLDER: '20',
-    MAX_FILE_SIZE: '524288000',
+    MAX_FILE_SIZE: '95000000',
     // getB2Client() constructs an AwsClient unconditionally on every DELETE
     // that finds the object still in R2 (the migration race-guard fires a
     // best-effort alongside B2 delete — see index.js). aws4fetch's AwsClient
@@ -1388,3 +1388,45 @@ test('free-tier guard: per-holder upload budget prevents one account consuming t
     'a holder over its sub-limit must be stopped before the second R2 PutObject');
 });
 
+
+
+test('free-tier guard: reject media uploads above the 95 MB request-body safety limit before storage', async () => {
+  const key = `media/${CHAT_ID}/oversized-free-tier.jpg`;
+  const token = await mintToken('write', key, 'user-size-test');
+  const env = makeEnv();
+  const response = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Length': '95000001' },
+    body: new Uint8Array([1]),
+  }), env, ctx);
+  assert.equal(response.status, 413, await response.clone().text());
+  assert.equal(env.HOT_BUCKET.objects.has(key), false,
+    'oversized request must be rejected before R2 storage or monthly Class A reservation');
+});
+
+test('free-tier guard: fail closed when B2 inventory cannot be fully scanned within its page budget', async () => {
+  const key = `media/${CHAT_ID}/r2-must-stay.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const realFetch = globalThis.fetch;
+  let b2ListCalls = 0;
+  globalThis.fetch = async () => {
+    b2ListCalls++;
+    return new Response(
+      `<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>page-${b2ListCalls}</NextContinuationToken></ListBucketResult>`,
+      { status: 200 },
+    );
+  };
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(b2ListCalls, 10,
+    'B2 preflight must stop after the configured 10-page external-request budget');
+  assert.ok(await bucket.head(key), 'R2 source must remain intact when B2 inventory is incomplete');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), undefined,
+    'partial inventory must not overwrite authoritative storage counters');
+});
