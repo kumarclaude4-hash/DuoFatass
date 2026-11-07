@@ -48,7 +48,7 @@
     "B2_REGION":   "eu-central-003",
 
     // Maximum file size in bytes (500 MB default).
-    "MAX_FILE_SIZE": "524288000",
+    "MAX_FILE_SIZE": "95000000",
 
     // Objects move from R2 → B2 after this many days.
     "HOT_TIER_DAYS": "30",
