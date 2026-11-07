@@ -200,14 +200,14 @@ public class CallManager {
     /** Interval between WebRTC stats polls while connected. */
     private static final long STATS_POLL_INTERVAL_MS = 10_000L;
     /** Cumulative transport bytes (sent + received) accumulated this call. */
-    private long sessionBytesTotal = 0L;
+    private long sessionEgressBytesTotal = 0L;
     /** Last snapshot of transport bytes from the stats report (to compute deltas). */
     private long lastTransportBytesSent     = -1L;
     private long lastTransportBytesReceived = -1L;
     /**
      * True once WebRTC stats confirm the selected candidate pair is a relay
      * (i.e. traffic is actually going through Cloudflare TURN).  We only
-     * accumulate bytes into {@link #sessionBytesTotal} — and thus charge against
+     * accumulate received relay bytes into {@link #sessionEgressBytesTotal} — and thus estimate
      * the monthly Cloudflare quota — when this flag is set.  P2P calls (srflx
      * or host candidate pairs) are free and must not erode the quota counter.
      */
@@ -564,13 +564,13 @@ public class CallManager {
             return list;
         }
 
-        // Bandwidth cap check — skip TURN if 900 GB monthly limit is reached.
+        // Bandwidth cap check — skip TURN if this installation reaches its 80 GB egress budget.
         TurnBandwidthTracker tracker = TurnBandwidthTracker.get(context);
         if (tracker.isLimitReached()) {
             Log.e(TAG, "TURN monthly cap reached (" + tracker.getSummary()
                     + ") — TURN disabled for this call. Call may fail on CGNAT.");
             if (listener != null) {
-                listener.onError("Monthly TURN data cap reached (100 GB). "
+                listener.onError("This device reached its 80 GB monthly TURN egress budget. "
                         + "Calls over restricted networks may not connect until next month.");
             }
             return list;
@@ -1710,14 +1710,14 @@ public class CallManager {
         if (peerConnection != null) {
             collectStats();
         }
-        if (sessionBytesTotal > 0) {
-            TurnBandwidthTracker.get(context).recordCallBytes(sessionBytesTotal);
+        if (sessionEgressBytesTotal > 0) {
+            TurnBandwidthTracker.get(context).recordCallBytes(sessionEgressBytesTotal);
             Log.i(TAG, String.format(Locale.US,
-                    "Call ended — reported %.2f MB to TURN tracker. Monthly: %s",
-                    sessionBytesTotal / (1024.0 * 1024.0),
+                    "Call ended — reported %.2f MB estimated TURN egress to tracker. Monthly: %s",
+                    sessionEgressBytesTotal / (1024.0 * 1024.0),
                     TurnBandwidthTracker.get(context).getSummary()));
         }
-        sessionBytesTotal          = 0L;
+        sessionEgressBytesTotal          = 0L;
         lastTransportBytesSent     = -1L;
         lastTransportBytesReceived = -1L;
         lastFramesEncoded          = -1L;
@@ -1733,7 +1733,7 @@ public class CallManager {
      *
      * <ol>
      *   <li><b>Bandwidth accounting</b> — transport-level bytes delta is accumulated
-     *       into {@link #sessionBytesTotal} and later flushed to {@link TurnBandwidthTracker}.</li>
+     *       into {@link #sessionEgressBytesTotal} and later flushed to {@link TurnBandwidthTracker}.</li>
      *   <li><b>Thermal watchdog (32-bit only)</b> — the outbound-rtp {@code framesEncoded}
      *       counter is compared with the previous snapshot to derive actual encoder FPS.
      *       If it falls below {@link #THERMAL_FPS_THRESHOLD} (12 fps), the camera
@@ -1809,7 +1809,9 @@ public class CallManager {
                 }
 
                 // ── Transport bytes (bandwidth accounting) ──────────────────
-                // Only charge against the Cloudflare quota when actually relayed.
+                // Only estimate billable Cloudflare TURN egress when actually relayed.
+                // Cloudflare bills bytes sent from its edge to this TURN client; from
+                // this device that is transport bytesReceived, not bytesSent.
                 if (transportSent >= 0 && transportRecv >= 0) {
                     long deltaSent = (lastTransportBytesSent >= 0 && transportSent >= lastTransportBytesSent)
                             ? transportSent - lastTransportBytesSent : 0L;
@@ -1818,12 +1820,12 @@ public class CallManager {
                     lastTransportBytesSent     = transportSent;
                     lastTransportBytesReceived = transportRecv;
                     if (isRelayCall) {
-                        sessionBytesTotal += deltaSent + deltaRecv;
+                        sessionEgressBytesTotal += deltaRecv;
                     }
                     Log.d(TAG, String.format(Locale.US,
-                            "Stats poll: +%.1f KB tx, +%.1f KB rx — session TURN: %.2f MB [%s]",
+                            "Stats poll: +%.1f KB tx, +%.1f KB rx — estimated TURN egress: %.2f MB [%s]",
                             deltaSent / 1024.0, deltaRecv / 1024.0,
-                            sessionBytesTotal / (1024.0 * 1024.0),
+                            sessionEgressBytesTotal / (1024.0 * 1024.0),
                             isRelayCall ? "relay" : "direct"));
                 }
 
