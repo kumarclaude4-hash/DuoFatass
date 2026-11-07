@@ -175,11 +175,12 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 explicitly deletes them (disappearing-message sweep, manual delete, etc.).
 The nightly cron reconciles B2 storage bytes with a bounded preflight `ListObjectsV2` scan,
 then adds only successful B2 writes to a conservative in-run projection. It caps the
-inventory scan at 10 pages and tiering at 15 objects per run to keep the preflight,
-B2 uploads, and worst-case compensating deletes below Workers Free's 50 external
-subrequests per invocation. If the inventory cannot be completed within that page
-budget or any page fails, tiering fails closed and leaves media in R2. The next night's
-preflight corrects projected-counter drift. B2 objects are never auto-deleted.
+B2 inventory at 10 pages and tiering at 15 objects/run, keeping the preflight, B2 uploads,
+and worst-case compensating deletes below Workers Free's 50 external subrequests. The
+R2 inventory is separately capped at 400 pages (each R2 page and DO reservation consume
+internal subrequests). If either inventory cannot be completed within its budget or a
+listing fails, the cron aborts without overwriting storage counters. B2 objects are never
+auto-deleted; the next night's preflight reconciles projected-counter drift.
 
 ---
 
