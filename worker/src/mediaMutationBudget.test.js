@@ -17,11 +17,11 @@ function makeBudget({ now = 1_800_000_000_000, limit = 3 } = {}) {
   return { storage, instance, limit };
 }
 
-function reserve(limit = 3, operation = 'upload') {
+function reserve(limit = 3, operation = 'upload', holderKey = '0123456789abcdef', holderLimit = limit) {
   return new Request('https://media-quota.internal/reserve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'reserve', operation, limit }),
+    body: JSON.stringify({ action: 'reserve', operation, limit, holderKey, holderLimit }),
   });
 }
 
@@ -97,5 +97,27 @@ test('upload and deletion budgets are independent so uploads cannot exhaust clea
     dayKey: new Date(1_800_000_000_000).toISOString().slice(0, 10),
     uploads: 2,
     deletes: 1,
+    holders: {
+      'upload:0123456789abcdef': 2,
+      'delete:0123456789abcdef': 1,
+    },
   });
+});
+
+
+test('per-holder daily cap prevents one account from consuming the shared global allowance', async () => {
+  const { instance } = makeBudget({ limit: 10 });
+  const holderA = 'aaaaaaaaaaaaaaaa';
+  const holderB = 'bbbbbbbbbbbbbbbb';
+  assert.equal((await instance.fetch(reserve(10, 'upload', holderA, 2))).status, 200);
+  assert.equal((await instance.fetch(reserve(10, 'upload', holderA, 2))).status, 200);
+  const denied = await instance.fetch(reserve(10, 'upload', holderA, 2));
+  assert.equal(denied.status, 429);
+  const deniedBody = await bodyOf(denied);
+  assert.equal(deniedBody.scope, 'holder');
+  assert.equal(deniedBody.count, 2);
+  const otherHolder = await instance.fetch(reserve(10, 'upload', holderB, 2));
+  assert.equal(otherHolder.status, 200);
+  assert.equal((await bodyOf(otherHolder)).count, 3,
+    'another account can still use the shared allowance after holder A reaches its sub-limit');
 });
