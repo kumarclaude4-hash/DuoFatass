@@ -51,7 +51,7 @@ A merge and green CI do **not** prove: production deployment, live Firebase/Rend
 |---|---|---|
 | S03-M3 | Partial | Owner risk decision or versioned protocol |
 | S05-M3 | Partial | Multi-instance staging + Firestore rules/index/TTL read-back |
-| S05-H2 | Partial | Confirm invite-only product contract + full staging onboarding |
+| S05-H2 | Partial | Product-contract confirmation; authorized legacy UID cleanup; full staging onboarding |
 | S06-L4 | Partial | Staging retry/recovery race + Firestore config + deferred device matrix |
 | S07-L2 | Partial | Supported deterministic native-key destruction or approved residual |
 | S08-H2 | Partial | Screenshot/recording/recents device acceptance |
@@ -131,6 +131,14 @@ Implemented: 256-bit opaque invites; only SHA-256 hashes/short fingerprints pers
 
 **Acceptance:** dated product decision plus redacted full lifecycle staging evidence. Keep Partial.
 
+### S05-H2 — 2026-11-07 privacy correction and merged evidence
+
+PR #255 (https://github.com/kumarclaude4-hash/DuoFatass/pull/255) merged at `89ac44cf85df1c90530196fdbb01bf93ff2e8994`. The previous source state contradicted the stated pseudonymization policy: invite documents stored raw `usedByUserId` and the admin list/UI exposed it. New redemptions now persist only a short `usedByUserIdTag`; list projections mask legacy raw UID fields; the admin UI displays only the tag. A dry-run-first, batched cleanup script is available at `server/scripts/pseudonymizeInviteRedemptionUids.js`.
+
+Exact PR head `af8f676c6bdbeb125eb46c01e4aa2b56af30c4f0` passed CI [42385827187](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827187) **10/10 jobs** and Security [42385827198](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827198) **3/3 jobs**. The release-log AST scanned 204 Java files / 414 log sinks with zero violations; Firestore invite/mintToken integration, Server/Worker, Android unit/lint/debug/R8, Espresso (4) and API 35 predictive-back (1) passed.
+
+**Not complete:** historical Firestore rows may still contain raw UID fields. No live migration was run. The operator must execute a staging dry-run, review aggregate counts, explicitly approve `--apply`, then repeat dry-run and confirm zero candidates. The product owner must confirm invite-only onboarding and complete synthetic staging/Android onboarding acceptance. Keep S05-H2 Partial.
+ 
 ## 3.4 S06-L4 — Account-lock worker retry/recovery
 
 **Status:** Partial; implementation and emulator/JVM regressions merged, live acceptance pending.  
