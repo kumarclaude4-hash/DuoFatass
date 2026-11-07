@@ -27,7 +27,7 @@ Add invite creation, one-time token reveal/copy, status summaries and filters, l
 Stop creating legacy waitlist documents immediately. Keep a narrowly scoped `/mintToken` compatibility branch for existing `approved` 32-hex request IDs; pending and denied records remain unusable. Remove this branch after the migration window.
 
 ## Verification
-Add pure invite-domain tests and source/contract tests proving hash-only storage, generic invalid responses, auth-before-body admin mutations, transactional single-use redemption, expiry/revocation enforcement, audit coverage, retired public waitlist routes, Android non-persistence, and legacy-approved-only migration. Run server tests and available Gradle checks, then manually exercise creation, filtering, pagination, revocation, expiration, concurrent redemption, new-account enrollment, and existing-account restore.
+Add pure invite-domain tests and source/contract tests proving hash-only storage, generic invalid responses, auth-before-body admin mutations, transactional single-use redemption, expiry/revocation enforcement, audit coverage, retired public waitlist routes, Android non-persistence, and legacy-approved-only migration. Run server tests, Firestore emulator integration and available Gradle checks. Defer physical-device onboarding/manual app-flow acceptance until the owner declares the app feature-complete; before that, use isolated staging HTTP/Firestore checks with synthetic identities and invite tokens only.
 
 ## Security closeout update — 2026-11-07
 
@@ -38,6 +38,12 @@ The merge corrected a source/data discrepancy: new redemptions persist only used
 Historical documents may still have the legacy raw field. The migration script is server/scripts/pseudonymizeInviteRedemptionUids.js. Run node scripts/pseudonymizeInviteRedemptionUids.js --dry-run from server/ in the intended staging project first. Review only the aggregate candidate/scanned counts. Use --apply only after explicit operator approval; it tags and deletes the legacy raw UID field in batches, prints counts only, and preserves any already-valid tag. Re-run dry-run and require zero candidates. No live Firestore migration has been performed by this PR.
 
 S05-H2 remains **Partial** until the owner confirms the invite-only product contract and authorized staging/Android onboarding acceptance is recorded. Never use real user seeds, identities or invite tokens in test evidence.
+
+### Follow-up lifecycle/utility PRs — current status 2026-11-07
+
+- [PR #253](https://github.com/kumarclaude4-hash/DuoFatass/pull/253) adds explicit `status === "active"` and finite future-expiry checks; unknown, missing or malformed stored states are invalid. It also adds an admin invalid-state filter/count and audited revoke support. Its original CI (10/10), Security (3/3) and Firestore Rules/server transaction checks passed, but the branch is based on an older main and GitHub reports it dirty/non-mergeable. Rebase/resolve onto current main and rerun before merging.
+- [PR #258](https://github.com/kumarclaude4-hash/DuoFatass/pull/258) normalizes escaped PEM newlines in the standalone UID migration utility to match the server bootstrap behavior. Its regular CI passed, but Gitleaks flagged a synthetic PEM-shaped test fixture and the Firestore integration workflow failed one invite-expiry test because the one-hour minimum elapsed during the scenario. Replace the synthetic fixture with clearly non-PEM placeholder data and use a deterministic injected clock or safe expiry margin, then rerun Gitleaks and the complete Firestore integration suite.
+- Neither PR has been merged at this documentation snapshot. No migration has been run against staging or production.
 
 ## Completion criteria
 S05-H2 is closed when anonymous queue flooding is impossible; admins can issue, identify, search, page, expire, revoke, and audit invitations; public responses expose no lifecycle oracle; tokens are hash-only at rest and single-use under concurrency; Android does not persist bearer tokens; and all automated/manual checks pass.
