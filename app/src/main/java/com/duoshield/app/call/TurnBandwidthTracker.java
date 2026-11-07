@@ -16,15 +16,19 @@ import java.util.TimeZone;
  *
  * <p><b>How it works:</b>
  * <ul>
- *   <li>Each call reports its total transport bytes (sent + received) via
- *       {@link #recordCallBytes(long)} when the call ends. Only bytes received
- *       by this client are counted, matching Cloudflare TURN egress billing direction.</li>
+ *   <li>While connected, WebRTC stats deltas are persisted via
+ *       {@link #recordEgressBytes(long)}. Only bytes received by this client
+ *       are counted, matching Cloudflare TURN egress billing direction. Callers
+ *       that only have a final total may use {@link #recordCallBytes(long)}.</li>
  *   <li>On the first call of a new calendar month the counter automatically resets.</li>
  *   <li>{@link #isLimitReached()} returns {@code true} when local usage ≥ 80 GB decimal.
  *       {@link com.duoshield.app.call.CallManager} checks this before adding any TURN
  *       ICE server entry, falling back to STUN-only mode so the user gets a clear
  *       "TURN quota exhausted" warning instead of a silent call failure.</li>
  * </ul>
+ *
+ * <p><b>Scope:</b> device-local advisory budget, not an account-wide or project-wide
+ * billing control. A reinstall or another device has an independent counter.
  *
  * <p><b>Storage:</b> {@code duoshield_turn_tracker} SharedPreferences (plaintext — bytes
  * transferred are not sensitive data).
