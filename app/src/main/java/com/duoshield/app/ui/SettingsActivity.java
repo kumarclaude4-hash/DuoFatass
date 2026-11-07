@@ -542,7 +542,7 @@ public class SettingsActivity extends BaseActivity {
                     }
                 });
             } catch (Exception e) {
-                android.util.Log.e(TAG, "Photo upload failed", e);
+                android.util.Log.e(TAG, "Photo upload failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 runOnUiThread(() -> {
                     if (generation == photoGeneration.get()) {
                         Toast.makeText(this, "Upload failed: " + safeMessage(e),
@@ -578,7 +578,7 @@ public class SettingsActivity extends BaseActivity {
                     if (tvProfileDisplayName != null) tvProfileDisplayName.setText(remoteName);
                 })
                 .addOnFailureListener(e ->
-                        android.util.Log.w(TAG, "Could not reconcile display name", e));
+                        android.util.Log.w(TAG, "Could not reconcile display name (" + com.duoshield.app.util.LogRedact.error(e) + ")"));
     }
 
     private void loadProfilePhoto() {
@@ -608,7 +608,7 @@ public class SettingsActivity extends BaseActivity {
                     restoreAvatarFromB2(remotePath, user.getUid(), generation);
                 })
                 .addOnFailureListener(e ->
-                        android.util.Log.w(TAG, "Could not reconcile profile photo", e));
+                        android.util.Log.w(TAG, "Could not reconcile profile photo (" + com.duoshield.app.util.LogRedact.error(e) + ")"));
     }
 
     private void restoreAvatarFromB2(String b2Path, String uid, int generation) {
@@ -633,12 +633,12 @@ public class SettingsActivity extends BaseActivity {
                             }
                         });
                     } catch (Exception e) {
-                        android.util.Log.w(TAG, "Failed to cache restored avatar", e);
+                        android.util.Log.w(TAG, "Failed to cache restored avatar (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     }
                 });
             }
             @Override public void onError(Exception e) {
-                android.util.Log.w(TAG, "Remote avatar restore failed", e);
+                android.util.Log.w(TAG, "Remote avatar restore failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         });
     }
@@ -661,24 +661,24 @@ public class SettingsActivity extends BaseActivity {
                                 && !previousPath.equals(b2Path)) {
                             try { B2StorageHelper.deleteFile(previousPath); }
                             catch (Exception e) {
-                                android.util.Log.w(TAG, "Old avatar cleanup failed", e);
+                                android.util.Log.w(TAG, "Old avatar cleanup failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                             }
                         }
                         runOnUiThread(() -> {
                             if (generation == photoGeneration.get()) finishPhotoPublication(jpeg);
                         });
                     } catch (Exception e) {
-                        android.util.Log.e(TAG, "Local avatar commit failed", e);
+                        android.util.Log.e(TAG, "Local avatar commit failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                         runOnUiThread(() -> Toast.makeText(this,
                                 "Photo published, but local cache failed.", Toast.LENGTH_LONG).show());
                     }
                 }))
                 .addOnFailureListener(e -> {
-                    android.util.Log.e(TAG, "Photo publication failed", e);
+                    android.util.Log.e(TAG, "Photo publication failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     bgExecutor.execute(() -> {
                         try { B2StorageHelper.deleteFile(b2Path); }
                         catch (Exception cleanupError) {
-                            android.util.Log.w(TAG, "Orphan avatar cleanup failed", cleanupError);
+                            android.util.Log.w(TAG, "Orphan avatar cleanup failed (" + com.duoshield.app.util.LogRedact.error(cleanupError) + ")");
                         }
                     });
                     Toast.makeText(this, "Photo update failed: " + safeMessage(e),
@@ -873,7 +873,7 @@ public class SettingsActivity extends BaseActivity {
             while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
             return out.toByteArray();
         } catch (Exception e) {
-            android.util.Log.e("Settings", "readUriBytes failed", e);
+            android.util.Log.e("Settings", "readUriBytes failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return null;
         }
     }

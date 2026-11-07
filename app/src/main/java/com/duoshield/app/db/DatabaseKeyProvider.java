@@ -182,8 +182,7 @@ public final class DatabaseKeyProvider {
             Log.i(TAG, "Database key migrated into the PIN gate; unwrapped copy removed.");
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Could not migrate the database key into the PIN gate —"
-                    + " leaving the existing key in place so the user keeps access.", e);
+            Log.e(TAG, "Could not migrate the database key into the PIN gate — leaving the existing key in place so the user keeps access (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         } finally {
             Arrays.fill(existing, (byte) 0);

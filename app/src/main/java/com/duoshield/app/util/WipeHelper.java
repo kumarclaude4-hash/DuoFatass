@@ -91,7 +91,7 @@ public class WipeHelper {
                     ContactBackupHelper.backup(appCtx, myUid, contacts);
                 }
             } catch (Exception e) {
-                Log.w(TAG, "Contact backup failed (non-fatal) — proceeding with wipe", e);
+                Log.w(TAG, "Contact backup failed (non-fatal) — proceeding with wipe (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }
 
@@ -101,7 +101,7 @@ public class WipeHelper {
         try {
             MediaStoreWipeHelper.wipeAll(appCtx);
         } catch (Exception e) {
-            Log.w(TAG, "MediaStoreWipeHelper.wipeAll() failed during wipe (non-fatal)", e);
+            Log.w(TAG, "MediaStoreWipeHelper.wipeAll() failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // Step 3: Wipe the persistent decrypted-media disk cache.
@@ -112,7 +112,7 @@ public class WipeHelper {
         try {
             B2StorageHelper.clearDiskCache(appCtx);
         } catch (Exception e) {
-            Log.w(TAG, "clearDiskCache() failed during wipe (non-fatal)", e);
+            Log.w(TAG, "clearDiskCache() failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // Step 3a: Delete the durable local profile photo. Like the b2_cache above, this
@@ -126,10 +126,10 @@ public class WipeHelper {
             try {
                 java.io.File f = new java.io.File(appCtx.getFilesDir(), avatarFile);
                 if (f.exists() && !f.delete()) {
-                    Log.w(TAG, "Could not delete " + avatarFile + " during wipe");
+                    Log.w(TAG, "Could not delete avatar file " + com.duoshield.app.util.LogRedact.metadata(avatarFile) + " during wipe");
                 }
             } catch (Exception e) {
-                Log.w(TAG, "Avatar delete failed during wipe (non-fatal): " + avatarFile, e);
+                Log.w(TAG, "Avatar delete failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.metadata(avatarFile) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
         }
 
@@ -144,7 +144,7 @@ public class WipeHelper {
             SecurePrefs.get(appCtx).edit().clear().commit();
             SecurePrefs.reset(); // invalidate the cached instance so nothing reuses it
         } catch (Exception e) {
-            Log.e(TAG, "Failed to clear SecurePrefs during wipe", e);
+            Log.e(TAG, "Failed to clear SecurePrefs during wipe (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
         // S07-L2: SecurePrefs is the on-disk copy of the Signal identity key pair —
         // but SeedPhraseHelper.deriveIdentityKeyPair() also caches the derived
@@ -156,7 +156,7 @@ public class WipeHelper {
         try {
             com.duoshield.app.crypto.SeedPhraseHelper.clearDerivationCache();
         } catch (Exception e) {
-            Log.e(TAG, "Failed to clear SeedPhraseHelper derivation cache during wipe", e);
+            Log.e(TAG, "Failed to clear SeedPhraseHelper derivation cache during wipe (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
 
         // Step 5: Close the Room singleton BEFORE deleting the file, so the cached
@@ -165,22 +165,22 @@ public class WipeHelper {
             AppDatabase.clearInstance();
             appCtx.deleteDatabase("duoshield_db");
         } catch (Exception e) {
-            Log.e(TAG, "Failed to delete Room DB file during wipe", e);
+            Log.e(TAG, "Failed to delete Room DB file during wipe (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
 
         // Step 6: Cancel scheduled background work — there is no session left to serve.
         try { BackupScheduler.cancel(appCtx); } catch (Exception e) {
-            Log.w(TAG, "BackupScheduler.cancel() failed during wipe (non-fatal)", e);
+            Log.w(TAG, "BackupScheduler.cancel() failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
         try { com.duoshield.app.util.SelfDestructScheduler.cancel(appCtx); } catch (Exception e) {
-            Log.w(TAG, "SelfDestructScheduler.cancel() failed during wipe (non-fatal)", e);
+            Log.w(TAG, "SelfDestructScheduler.cancel() failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // DURESS only: destroy the contact backup so "Restore Contacts" cannot rebuild
         // the social graph after a coerced wipe.
         if (mode == WipeMode.DURESS) {
             try { ContactBackupHelper.clearBackup(appCtx); } catch (Exception e) {
-                Log.w(TAG, "clearBackup() failed during duress wipe (non-fatal)", e);
+                Log.w(TAG, "clearBackup() failed during duress wipe (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
             }
         }
 
@@ -201,7 +201,7 @@ public class WipeHelper {
         try {
             com.google.firebase.auth.FirebaseAuth.getInstance().signOut();
         } catch (Exception e) {
-            Log.e(TAG, "Firebase signOut failed during wipe (non-fatal)", e);
+            Log.e(TAG, "Firebase signOut failed during wipe (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // Step 9: Delete the temp/export cache directory (thumbnails, chat-export ZIPs,

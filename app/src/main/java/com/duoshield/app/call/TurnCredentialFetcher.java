@@ -137,13 +137,13 @@ public class TurnCredentialFetcher {
                 .post(RequestBody.create("{}", JSON_TYPE))
                 .build();
 
-        try (Response response = CLIENT.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                Log.w(TAG, "TURN credential fetch HTTP " + response.code());
+        try (Response httpResult = CLIENT.newCall(request).execute()) {
+            if (!httpResult.isSuccessful()) {
+                Log.w(TAG, "TURN credential fetch failed with HTTP status " + httpResult.code());
                 return false;
             }
 
-            String body = response.body() != null ? response.body().string() : "{}";
+            String body = httpResult.body() != null ? httpResult.body().string() : "{}";
             JSONObject json = new JSONObject(body);
 
             JSONArray urlsArr = json.getJSONArray("urls");

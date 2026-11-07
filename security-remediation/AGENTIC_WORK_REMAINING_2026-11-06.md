@@ -2,9 +2,9 @@
 
 Repository: kumarclaude4-hash/DuoFatass
 Base branch: main
-Main HEAD before PR #242 merge: a0c40f4f55faa1babeaaefaee036e4f9d4e44069
-Current work branch: security/agentic-followups-r2b2-logging-limiter-2026-11-06 (PR #242; branch CI verified)
-Status: source-level security closeout in progress; production sign-off is not approved.
+Latest merged mainline: PR #245 at 738a8e118b84f6e4c1c9bb1f0a9b05e49c472b4a (CI, Firestore emulator tests and security scan passed).
+Current work branch: security/release-log-privacy-ast-guard-2026-11-06 (PR #244; latest follow-up head pending workflow completion).
+Status: Previous PR #244 head passed CI 10/10 (run 42316536143) and Security Scan 3/3 (run 42316536352). The 2026-11-07 S10-N2 follow-up additionally removes exception-message alias logging in ChatMediaActivity, redacts B2StorageHelper retry operation parameters and adds regression coverage; fresh CI/Security workflows are running on the newest head. Source-level security sign-off remains pending their results and residual audit.
 
 This is the current execution handoff for the next coding agent. It supersedes the task ordering in older agent handoff notes. Finish the source-level, JVM, backend and isolated-emulator work while the app is being completed. Physical-device acceptance must happen only after the owner declares the app feature-complete.
 
@@ -41,11 +41,15 @@ The row-level tracker recount before this branch's CI is 116 findings: 83 Fixed,
 
 ## 3. Agentic work to do now — no manual device testing
 
-### A. S10-N2 — finish release-log privacy policy and static guard
+### A. S10-N2 — compiler-AST release-log guard implemented; residual review remains
 
-The current branch adds a process-salted LogRedact.metadata() helper for non-UID metadata and LogRedact.error() for exception-class-only diagnostics. It updates multiple Android call sites across FCM, call signaling, TURN, media playback/export/storage, backup/restore, outbox, PIN/duress, notifications, Signal key/session storage and startup paths. It also adds helper and selected source-wiring regression tests.
+PR #244 adds `scripts/AndroidReleaseLogPrivacyPolicy.java`, a JDK compiler-AST policy guard wired into CI. It scans the complete production Java source tree and checks multiline/concatenated warning/error log expressions without requiring Android app dependencies. It rejects Throwable overloads, exception message/stack-trace extraction, sensitive getters, raw sensitive identifiers and direct sensitive member fields/constants; redaction boundaries through `LogRedact.uid()`, `metadata()` and `error()` are accepted. The self-test fixtures include both unsafe direct fields/constants and a safe redacted member-field case.
 
-Do not mark the audit complete yet. Finish a compiler/AST-aware scan of every release-surviving Android Log.w/Log.e overload, including multi-line calls, concatenated messages and Throwable overloads. Flag raw UID/account/caller/sender/address/group/conversation/message IDs, URLs, signed URLs, storage paths, user-controlled content, exception messages and Throwable stack traces. Explicitly classify numeric protocol IDs and static operational counters where safe. Add a deterministic CI guard that prevents new sensitive interpolation rather than depending only on exact-string source checks. Report the number of inspected call sites, false-positive handling, remaining exceptions and tests. Keep Partial until all findings and scanner output reconcile.
+**Executed evidence:** PR #244 head `b0308437613ecc449dea7aa3e523f65651ac0848` passed CI run `42315880847` (10/10 jobs) and Security scan `42315880789` (3/3 jobs). The AST job passed its positive/negative self-tests and scanned **204 production Java files and 407 `Log.w` / `Log.e` / `Log.wtf` calls**, with zero policy violations. The same CI run passed Server + Worker tests, Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, vendored libsignal integrity and Gradle wrapper validation.
+
+**Follow-up implementation (2026-11-07):** the manual review found two source leaks not caught by the original syntactic scanner. ChatMediaActivity logged an aliased exception message from B2 media loading; B2StorageHelper.withRetry logged an operation parameter populated with raw object keys. Both paths are now fixed: UI detail remains UI-only, error logs show exception class only, and storage retry diagnostics retain the operation prefix while pseudonymising the full suffix (including compound range labels). Regression tests cover both source paths and actual metadata-redaction behavior. New workflow results must be green before promoting the tracker row.
+
+**Remaining:** inspect builder/map/reflection/opaque-helper-return and external-library exception paths beyond the confirmed fixes; the AST scanner is still a syntactic tripwire, not whole-program taint analysis. Review direct/indirect data sources for any remaining user, conversation, content, path, capability or credential values. Physical-device release-logcat acceptance is deferred until the owner declares the app feature-complete. Keep S10-N2 Partial until the manual audit and release QA residuals are accepted; do not treat CI success as production sign-off.
 
 ### B. S03-M3 — decide the media capability-token residual
 
@@ -61,7 +65,7 @@ Remaining: live isolated Cloudflare Worker + R2 + B2 acceptance, including cron 
 
 ### D. S07-L2 — document and prove the key destruction boundary
 
-WipeHelper now calls SeedPhraseHelper.clearDerivationCache(), and JVM tests prove the AtomicReference is nulled. This does not prove private bytes inside libsignal's object graph are overwritten. Research whether libsignal exposes a documented safe destroy/zeroize primitive; do not reflectively mutate native internals or invent a guarantee. Add a deterministic test only if it proves an actual guarantee. Otherwise document process-lifetime/GC limitations and preserve Partial.
+WipeHelper calls SeedPhraseHelper.clearDerivationCache(), and JVM tests prove the AtomicReference is nulled. The exact pinned libsignal 0.54.1 source was checked: Java ECPrivateKey.finalize() releases the native handle, while its Rust PrivateKey owns x25519-dalek 2.0.0 StaticSecret; the default zeroize feature applies Zeroize on drop. However, the Java wrapper exposes no deterministic close/destroy API, finalization is GC-timed, and PrivateKey is Clone. The native key buffer is therefore zeroized on actual drop, not synchronously when the DuoFat wipe clears the cache. See `security-remediation/sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md`. Keep Partial; do not reflectively mutate native internals or invent a synchronous-erasure guarantee.
 
 ### E. S05-M3 — durable admin-session emulator coverage
 
@@ -77,7 +81,7 @@ All protected verifyIdToken call sites pass checkRevoked=true and the static rou
 
 ### H. S08-H5 / S07-M1 — legacy preference recovery source work
 
-Review every migration caller, rollback path and recovery route for an install where legacy plaintext cannot be migrated. Add JVM tests for unverified schema types, partial write/read-back failures, conflict handling, retry and preservation of original data. Do not delete retained legacy data before encrypted destination read-back is proven. Real Android Keystore and EncryptedSharedPreferences migration acceptance is deferred until app completion.
+Review of migration callers, rollback paths and recovery routes is source-complete for the current code. Existing regressions cover unverified schema types, conflicting destination values, retry and preservation of original data. PR #243 added deterministic one-shot fault injection for failed encrypted destination commit, post-write read-back exception, and failed plaintext cleanup commit; retry behavior is covered. The merged PR #243 head `a98d79e46919fa4c472b36a9ec33075d09479a2a` passed CI run `42185303041` (9/9 jobs, including Android unit tests, Espresso, predictive-back and minified R8) plus security run `42185303045`. Do not delete retained legacy data before exact encrypted destination read-back is proven. S08-H5/S07-M1 remain Partial until the real Android Keystore/EncryptedSharedPreferences upgrade/recovery flow and a verified support/recovery path for un-migratable installs are accepted on physical devices after app feature completion.
 
 ### I. S05-H2 — invite-only backend contract
 

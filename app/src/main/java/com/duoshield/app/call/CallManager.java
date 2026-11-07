@@ -266,13 +266,13 @@ public class CallManager {
                             }
                             @Override public void onCreateFailure(String s) {}
                             @Override public void onSetFailure(String s) {
-                                Log.w(TAG, "ICE restart setLocal failed: " + s);
+                                Log.w(TAG, "ICE restart setLocal failed");
                             }
                         }, sdp);
                     }
                     @Override public void onSetSuccess() {}
                     @Override public void onCreateFailure(String s) {
-                        Log.w(TAG, "ICE restart createOffer failed: " + s);
+                        Log.w(TAG, "ICE restart createOffer failed");
                     }
                     @Override public void onSetFailure(String s) {}
                 }, restartConstraints);
@@ -903,13 +903,13 @@ public class CallManager {
                     }
                     @Override public void onCreateFailure(String s) {}
                     @Override public void onSetFailure(String s) {
-                        Log.e(TAG, "setLocalDescription failed: " + s);
+                        Log.e(TAG, "setLocalDescription failed");
                     }
                 }, sdp);
             }
             @Override public void onSetSuccess() {}
             @Override public void onCreateFailure(String s) {
-                Log.e(TAG, "createOffer failed: " + s);
+                Log.e(TAG, "createOffer failed");
                 setState(CallState.FAILED);
                 if (listener != null) listener.onError("Failed to create offer");
             }
@@ -958,7 +958,7 @@ public class CallManager {
                         @Override public void onSetSuccess() { createAnswer(); }
                         @Override public void onCreateFailure(String s) {}
                         @Override public void onSetFailure(String s) {
-                            Log.w(TAG, "ICE restart setRemoteDesc (caller→callee) failed: " + s);
+                            Log.w(TAG, "ICE restart setRemoteDesc (caller→callee) failed");
                         }
                     }, restartDesc);
                 }
@@ -982,7 +982,7 @@ public class CallManager {
                 }
                 @Override public void onCreateFailure(String s) {}
                 @Override public void onSetFailure(String s) {
-                    Log.e(TAG, "setRemoteDescription (answer) failed: " + s);
+                    Log.e(TAG, "setRemoteDescription (answer) failed");
                 }
             }, remoteSdp);
         });
@@ -1028,7 +1028,7 @@ public class CallManager {
                 }
                 @Override public void onCreateFailure(String s) {}
                 @Override public void onSetFailure(String s) {
-                    Log.e(TAG, "setRemoteDescription (offer) failed: " + s);
+                    Log.e(TAG, "setRemoteDescription (offer) failed");
                 }
             }, remoteSdp);
         });
@@ -1182,13 +1182,13 @@ public class CallManager {
                     }
                     @Override public void onCreateFailure(String s) {}
                     @Override public void onSetFailure(String s) {
-                        Log.e(TAG, "setLocalDescription (answer) failed: " + s);
+                        Log.e(TAG, "setLocalDescription (answer) failed");
                     }
                 }, sdp);
             }
             @Override public void onSetSuccess() {}
             @Override public void onCreateFailure(String s) {
-                Log.e(TAG, "createAnswer failed: " + s);
+                Log.e(TAG, "createAnswer failed");
             }
             @Override public void onSetFailure(String s) {}
         }, constraints);
@@ -1366,7 +1366,7 @@ public class CallManager {
 
                     @Override
                     public void onCameraSwitchError(String error) {
-                        Log.w(TAG, "Camera switch failed: " + error);
+                        Log.w(TAG, "Camera switch failed");
                     }
                 });
     }
@@ -1937,7 +1937,7 @@ public class CallManager {
         lastQualityChangeMs = android.os.SystemClock.elapsedRealtime();
         Log.w(TAG, "Thermal downgrade → rung " + qualityStep + " ("
                 + captureWidth() + "×" + captureHeight() + " @ " + captureFps()
-                + " fps): " + reason);
+                + " fps)");
         applyCurrentQualityStep();
     }
 

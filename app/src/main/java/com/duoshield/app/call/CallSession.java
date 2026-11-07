@@ -348,7 +348,7 @@ public final class CallSession {
         }
 
         @Override public void onError(String message) {
-            Log.e(TAG, "Call error: " + message);
+            Log.e(TAG, "Call error received (message withheld)");
             UiHooks u = ui;
             if (u != null) u.onError(message);
         }
@@ -400,7 +400,7 @@ public final class CallSession {
             historyExecutor.execute(() ->
                     AppDatabase.getInstance(appCtx).callHistoryDao().insert(record));
         } catch (RuntimeException e) {
-            Log.w(TAG, "Could not queue call history row", e);
+            Log.w(TAG, "Could not queue call history row (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 

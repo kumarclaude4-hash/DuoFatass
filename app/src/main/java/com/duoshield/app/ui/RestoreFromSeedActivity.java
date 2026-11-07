@@ -486,7 +486,7 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
                         android.widget.Toast.LENGTH_SHORT).show());
             }
         } catch (Exception e) {
-            android.util.Log.w("RestoreFromSeed", "backup restore failed (non-fatal)", e);
+            android.util.Log.w("RestoreFromSeed", "backup restore failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // ── Step H2 — Restore contacts (chat list) ─────────────────────────────
@@ -495,7 +495,7 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
             int contactsRestored = BackupManager.restoreContactsSync(this, currentUid);
             android.util.Log.d("RestoreFromSeed", "contacts restored: " + contactsRestored);
         } catch (Exception e) {
-            android.util.Log.w("RestoreFromSeed", "contact restore failed (non-fatal)", e);
+            android.util.Log.w("RestoreFromSeed", "contact restore failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // ── Step H2 — Pre-cache B2 media for restored messages ───────────────
@@ -537,7 +537,7 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
                     if (tvMediaProgress != null) tvMediaProgress.setVisibility(View.GONE);
                 });
             } catch (Exception e) {
-                android.util.Log.w("RestoreFromSeed", "media pre-cache failed (non-fatal)", e);
+                android.util.Log.w("RestoreFromSeed", "media pre-cache failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
             }
         }
 
@@ -566,7 +566,7 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
                 }
             }
         } catch (Exception e) {
-            android.util.Log.w("RestoreFromSeed", "chat state restore failed (non-fatal)", e);
+            android.util.Log.w("RestoreFromSeed", "chat state restore failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
 
         // ── Step J — Schedule daily backup sync and navigate ─────────────────
@@ -735,7 +735,7 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
                 throw new java.io.IOException("Account migration failed (HTTP " + code + "): " + response);
             }
         } catch (Exception e) {
-            android.util.Log.w("RestoreFromSeed", "migrateOldUid failed", e);
+            android.util.Log.w("RestoreFromSeed", "migrateOldUid failed: " + com.duoshield.app.util.LogRedact.error(e));
             throw e;
         }
     }
@@ -788,13 +788,12 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
             AppDatabase.clearInstance();
             deleteDatabase("duoshield_db");
         } catch (Exception e) {
-            android.util.Log.e("RestoreFromSeed",
-                    "Failed to clear previous account's local database", e);
+            android.util.Log.e("RestoreFromSeed", "Failed to clear previous account's local database: " + com.duoshield.app.util.LogRedact.error(e));
         }
         try {
             B2StorageHelper.clearDiskCache(this);
         } catch (Exception e) {
-            android.util.Log.w("RestoreFromSeed", "clearDiskCache() failed (non-fatal)", e);
+            android.util.Log.w("RestoreFromSeed", "clearDiskCache() failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
     }
 
@@ -837,7 +836,7 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
                     .commit();
             FirebaseAuth.getInstance().signOut();
         } catch (Exception rollbackError) {
-            android.util.Log.e("RestoreFromSeed", "Failed to fully roll back restore state", rollbackError);
+            android.util.Log.e("RestoreFromSeed", "Failed to fully roll back restore state: " + com.duoshield.app.util.LogRedact.error(rollbackError));
         } finally {
             restoreSessionEstablished = false;
         }

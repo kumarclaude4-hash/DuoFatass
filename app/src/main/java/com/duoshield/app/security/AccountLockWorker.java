@@ -186,11 +186,11 @@ public class AccountLockWorker extends Worker {
     private Result retryOrGiveUp(String reason) {
         int attempt = getRunAttemptCount();
         if (attempt + 1 >= MAX_ATTEMPTS) {
-            Log.e(TAG, reason + " — giving up after " + (attempt + 1)
+            Log.e(TAG, com.duoshield.app.util.LogRedact.metadata(reason) + " — giving up after " + (attempt + 1)
                     + " attempts (S06-L4 bounded retry cap). Account lock push NOT confirmed.");
             return Result.failure();
         }
-        Log.w(TAG, reason + " — will retry (attempt " + (attempt + 1) + "/" + MAX_ATTEMPTS + ").");
+        Log.w(TAG, com.duoshield.app.util.LogRedact.metadata(reason) + " — will retry (attempt " + (attempt + 1) + "/" + MAX_ATTEMPTS + ").");
         return Result.retry();
     }
 }

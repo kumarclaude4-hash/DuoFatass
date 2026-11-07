@@ -331,13 +331,13 @@ public class ForcedDuressRotationActivity extends AppCompatActivity {
                     // said the account is locked right now. Exit instead of
                     // looping the retry button forever; see exitRotationDenied().
                     android.util.Log.w("ForcedDuressRotation",
-                            "acknowledgeRotation: account re-locked mid-flow — exiting to sign-in",
-                            finalFailure);
+                            "acknowledgeRotation: account re-locked mid-flow — exiting to sign-in ("
+                                    + com.duoshield.app.util.LogRedact.error(finalFailure) + ")");
                     exitRotationDenied();
                     return;
                 }
                 if (finalFailure != null) {
-                    android.util.Log.w("ForcedDuressRotation", "acknowledgeRotation failed", finalFailure);
+                    android.util.Log.w("ForcedDuressRotation", "acknowledgeRotation failed (" + com.duoshield.app.util.LogRedact.error(finalFailure) + ")");
                     showError("Couldn't confirm with the server. Check your connection and try again.");
                     return;
                 }

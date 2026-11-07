@@ -163,6 +163,45 @@ public class ReleaseLogPrivacyTest {
         assertTrue(builder.contains("LogRedact.metadata(msgId)"));
     }
 
+    @Test
+    public void voicePlaybackLogsNeverIncludeAliasedExceptionMessages() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ChatMediaActivity.java");
+        assertTrue(source.contains("String detail = e != null && e.getMessage() != null"));
+        assertTrue(source.contains("Log.e(TAG, \"Voice note B2 load failed (\""));
+        assertTrue(source.contains("LogRedact.error(e) + \")\""));
+        assertFalse(source.contains("Log.e(TAG, \"Voice note B2 load failed: \" + detail"));
+    }
+
+    @Test
+    public void storageRetryLogsRedactHelperParameterDerivedFromObjectKeys() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/B2StorageHelper.java");
+        assertTrue(source.contains("String safeOperation = redactOperationName(opName);"));
+        assertTrue(source.contains("Log.w(TAG, safeOperation +"));
+        assertTrue(source.contains("Log.e(TAG, safeOperation +"));
+        assertFalse(source.contains("Log.w(TAG, opName +"));
+        assertFalse(source.contains("Log.e(TAG, opName +"));
+        assertTrue(source.contains(
+                "return prefix + com.duoshield.app.util.LogRedact.metadata(sensitiveSuffix);"));
+        assertTrue(source.contains("withRetry(\"download:\" + objectKey"));
+    }
+
+    @Test
+    public void storageOperationLabelsPreserveOnlyTheNonSensitivePrefix() {
+        String download = com.duoshield.app.util.B2StorageHelper.redactOperationName(
+                "download:media/private/message-123");
+        assertTrue(download.matches("download:m:[0-9a-f]{8}"));
+        assertFalse(download.contains("media/private/message-123"));
+        assertEquals("storage operation",
+                com.duoshield.app.util.B2StorageHelper.redactOperationName(null));
+        String compound = com.duoshield.app.util.B2StorageHelper.redactOperationName(
+                "worker-range:media/private/message-123:bytes=0-65535");
+        assertTrue(compound.matches("worker-range:m:[0-9a-f]{8}"));
+        assertFalse(compound.contains("media/private/message-123"));
+        assertFalse(compound.contains("bytes=0-65535"));
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 7 && dir != null; i++) {

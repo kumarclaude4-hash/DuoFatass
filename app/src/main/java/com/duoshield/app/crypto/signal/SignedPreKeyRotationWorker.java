@@ -79,7 +79,7 @@ public final class SignedPreKeyRotationWorker extends Worker {
 
             return Result.success();
         } catch (Exception e) {
-            Log.e(TAG, "SPK / Kyber rotation failed — will retry", e);
+            Log.e(TAG, "SPK / Kyber rotation failed — will retry (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return Result.retry();
         }
     }

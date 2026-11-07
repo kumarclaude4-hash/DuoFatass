@@ -1314,7 +1314,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                 });
             }
         } catch (org.json.JSONException e) {
-            android.util.Log.w("MessageAdapter", "bindMediaGrid: bad JSON — " + e.getMessage());
+            android.util.Log.w("MessageAdapter", "bindMediaGrid: bad JSON (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
     }
 

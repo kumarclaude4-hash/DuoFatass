@@ -45,7 +45,7 @@ public class MediaStoreWipeHelper {
                 arr.put(uri.toString());
                 prefs.edit().putString(KEY_URIS, arr.toString()).commit(); // commit() for atomicity
             } catch (JSONException e) {
-                Log.w(TAG, "Failed to record media URI — resetting list", e);
+                Log.w(TAG, "Failed to record media URI — resetting list (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 JSONArray arr = new JSONArray();
                 arr.put(uri.toString());
                 prefs.edit().putString(KEY_URIS, arr.toString()).commit();
@@ -73,12 +73,12 @@ public class MediaStoreWipeHelper {
                     int rows = ctx.getContentResolver().delete(uri, null, null);
                     if (rows > 0) deleted++;
                 } catch (Exception e) {
-                    Log.w(TAG, "Failed to delete gallery URI: " + uriStr, e);
+                    Log.w(TAG, "Failed to delete gallery URI " + com.duoshield.app.util.LogRedact.metadata(uriStr) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 }
             }
             Log.d(TAG, "wipeAll: deleted " + deleted + "/" + arr.length() + " gallery items");
         } catch (JSONException e) {
-            Log.w(TAG, "Failed to parse saved_media_uris — nothing deleted", e);
+            Log.w(TAG, "Failed to parse saved_media_uris — nothing deleted (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
         // Clear the list now; the outer prefs.clear() will also cover it, but being
         // explicit here means the list is gone even if the caller forgets to clear prefs.

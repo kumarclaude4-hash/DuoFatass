@@ -145,7 +145,7 @@ public class SplashActivity extends AppCompatActivity {
                 com.duoshield.app.security.DuressManager.drainPendingLockIntent(
                         SplashActivity.this);
             } catch (Exception e) {
-                Log.w(TAG, "Startup resume/drain failed (non-fatal): " + e.getMessage());
+                Log.w(TAG, "Startup resume/drain failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
             }
         }, "splash-resume-drain").start();
 

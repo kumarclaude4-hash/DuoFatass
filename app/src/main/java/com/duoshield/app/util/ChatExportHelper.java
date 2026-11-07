@@ -385,7 +385,7 @@ public final class ChatExportHelper {
             ctx.startActivity(Intent.createChooser(intent, "Export Chat")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (Exception e) {
-            Log.e(TAG, "Share intent failed for " + zipFile, e);
+            Log.e(TAG, "Share intent failed for " + com.duoshield.app.util.LogRedact.metadata(zipFile.getAbsolutePath()) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             Toast.makeText(ctx, "Export saved but couldn't open the share sheet.", Toast.LENGTH_LONG).show();
         }
     }

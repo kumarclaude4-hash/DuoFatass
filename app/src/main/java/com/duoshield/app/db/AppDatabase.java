@@ -74,13 +74,11 @@ public abstract class AppDatabase extends RoomDatabase {
                 // must propagate — deleting on those turned recoverable faults
                 // into permanent, silent loss of every message (SEC-D02).
                 if (!isNotADatabaseError(e)) {
-                    Log.e(TAG, "Database open failed and is NOT a legacy-plaintext"
-                            + " upgrade — preserving the existing file.", e);
+                    Log.e(TAG, "Database open failed and is NOT a legacy-plaintext upgrade — preserving the existing file (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     throw new IllegalStateException("Unable to open encrypted database", e);
                 }
 
-                Log.w(TAG, "SQLCipher could not open existing DB — deleting and recreating "
-                        + "encrypted (BUG-D01 first-run upgrade)", e);
+                Log.w(TAG, "SQLCipher could not open existing DB — deleting and recreating encrypted (BUG-D01 first-run upgrade): " + com.duoshield.app.util.LogRedact.error(e));
                 context.deleteDatabase("duoshield_db");
                 // Re-derive passphrase (was zeroed above)
                 byte[] p2 = DatabaseKeyProvider.getOrCreate(context);

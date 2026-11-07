@@ -375,9 +375,9 @@ public class SeedPhraseDisplayActivity extends AppCompatActivity {
                     .set(idDoc, SetOptions.merge())
                     .addOnFailureListener(e ->
                             android.util.Log.w("SeedPhraseDisplay",
-                                    "identities write failed (non-fatal)", e));
+                                    "identities write failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e)));
         } catch (Exception e) {
-            android.util.Log.w("SeedPhraseDisplay", "registerIdentity failed (non-fatal)", e);
+            android.util.Log.w("SeedPhraseDisplay", "registerIdentity failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
     }
 
@@ -392,7 +392,7 @@ public class SeedPhraseDisplayActivity extends AppCompatActivity {
                     .collection("users").document(user.getUid())
                     .set(data, SetOptions.merge());
         } catch (Exception e) {
-            android.util.Log.w("SeedPhraseDisplay", "saveDisplayNameToFirebase failed (non-fatal)", e);
+            android.util.Log.w("SeedPhraseDisplay", "saveDisplayNameToFirebase failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e));
         }
     }
 
