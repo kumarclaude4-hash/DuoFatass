@@ -1,4 +1,5 @@
 import com.sun.source.tree.CatchTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
@@ -21,7 +22,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -340,16 +343,19 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final CompilationUnitTree unit;
         private final SourcePositions positions;
         private final List<String> violations;
+        private final String ownerClass;
+        private final Map<String, String> localTypes = new HashMap<>();
         private final Set<String> taintedLocals = new HashSet<>();
         private final Set<String> taintedContainers = new HashSet<>();
         private final Set<String> containerLocals = new HashSet<>();
         private final Set<String> throwableLocals = new HashSet<>();
 
         MethodLocalTaintScanner(CompilationUnitTree unit, SourcePositions positions,
-                                List<String> violations) {
+                                List<String> violations, String ownerClass) {
             this.unit = unit;
             this.positions = positions;
             this.violations = violations;
+            this.ownerClass = ownerClass == null ? "" : ownerClass;
         }
 
         @Override
@@ -359,6 +365,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             for (VariableTree parameter : node.getParameters()) {
                 String name = parameter.getName().toString();
                 String type = parameter.getType() == null ? "" : parameter.getType().toString();
+                localTypes.put(name, type);
+                if (CONTAINER_TYPE.matcher(type).matches()) containerLocals.add(name);
                 if (SENSITIVE_IDENTIFIER.matcher(name).matches()
                         && !SAFE_OPERATIONAL_COUNTERS.contains(name)) taintedLocals.add(name);
                 if (isThrowableType(type)) {
@@ -381,6 +389,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
         public Void visitVariable(VariableTree node, Void unused) {
             String name = node.getName().toString();
             String type = node.getType() == null ? "" : node.getType().toString();
+            localTypes.put(name, type);
             ExpressionTree initializer = node.getInitializer();
             if (CONTAINER_TYPE.matcher(type).matches()
                     || isContainerConstruction(initializer)) {
@@ -468,7 +477,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
             MethodInvocationTree invocation = (MethodInvocationTree) expression;
             String method = methodName(invocation);
             String receiver = receiverName(invocation);
-            if ("redactOperationName".equals(method)) return true;
+            if ("redactOperationName".equals(method)
+                    && "B2StorageHelper".equals(ownerClass)
+                    && (receiver.isEmpty() || receiver.endsWith(".B2StorageHelper"))) return true;
             return ("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
                     && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"));
         }
@@ -478,20 +489,39 @@ public final class AndroidReleaseLogPrivacyPolicy {
          * These are narrowly enumerated so a numeric status/count/aggregate may be
          * logged without blessing the object from which it was derived.
          */
+        private boolean isRedactedOperationName(MethodInvocationTree node) {
+            return "redactOperationName".equals(methodName(node))
+                    && "B2StorageHelper".equals(ownerClass)
+                    && (receiverName(node).isEmpty()
+                    || receiverName(node).endsWith(".B2StorageHelper"));
+        }
+
         private boolean isSafeOperationalProjection(MethodInvocationTree node) {
             String method = methodName(node);
+            ExpressionTree receiver = receiverExpression(node);
+            String root = rootIdentifier(receiver);
+            String receiverType = root == null ? "" : localTypes.getOrDefault(root, "");
             if ("size".equals(method)) {
                 // Only collection/map sizes are treated as aggregate counts. A String
                 // or byte-array length may expose content length and is not exempt.
-                String root = rootIdentifier(receiverExpression(node));
                 return root != null && containerLocals.contains(root);
             }
-            return "code".equals(method)
-                    || "getResponseCode".equals(method)
-                    || "getSummary".equals(method)
-                    || "copyInto".equals(method)
-                    // DuressManager.postDuressLock consumes a nonce but returns only HTTP status.
-                    || "postDuressLock".equals(method);
+            if ("code".equals(method)) {
+                return receiverType.endsWith("Response");
+            }
+            if ("getResponseCode".equals(method)) {
+                return receiverType.endsWith("HttpURLConnection");
+            }
+            if ("getSummary".equals(method)) {
+                return receiverType.endsWith("TurnBandwidthTracker");
+            }
+            if ("copyInto".equals(method)) {
+                return "LegacyPlaintextMigrator".equals(ownerClass) && receiver == null;
+            }
+            if ("postDuressLock".equals(method)) {
+                return "DuressManager".equals(ownerClass) && receiver == null;
+            }
+            return false;
         }
 
         private boolean isContainerConstruction(ExpressionTree expression) {
@@ -512,7 +542,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     String receiver = receiverName(node);
                     if ((("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
                             && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")))
-                            || "redactOperationName".equals(method)
+                            || (isRedactedOperationName(node))
                             || isSafeOperationalProjection(node)) {
                         return null; // Exact redaction/projection boundary; do not inspect its receiver/arguments.
                     }
@@ -663,7 +693,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
         @Override
         public Void visitMethod(MethodTree node, Void unused) {
             if (node.getBody() != null) {
-                new MethodLocalTaintScanner(unit, positions, violations).scan(node, null);
+                String ownerClass = "";
+                com.sun.source.util.TreePath parent = getCurrentPath().getParentPath();
+                if (parent != null && parent.getLeaf() instanceof ClassTree) {
+                    ownerClass = ((ClassTree) parent.getLeaf()).getSimpleName().toString();
+                }
+                new MethodLocalTaintScanner(unit, positions, violations, ownerClass)
+                        .scan(node, null);
             }
             return super.visitMethod(node, unused);
         }
