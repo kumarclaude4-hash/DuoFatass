@@ -84,8 +84,10 @@ async function runMigration({ apply = false, db, deleteField, tagUserId = create
 }
 
 async function main() {
-  const apply = process.argv.includes("--apply");
-  if (process.argv.some((arg) => arg !== "--apply" && arg !== "--dry-run")) {
+  const args = process.argv.slice(2);
+  const apply = args.includes("--apply");
+  if (args.some((arg) => arg !== "--apply" && arg !== "--dry-run") ||
+      (args.includes("--apply") && args.includes("--dry-run"))) {
     throw new Error("Usage: node scripts/pseudonymizeInviteRedemptionUids.js [--dry-run|--apply]");
   }
 
