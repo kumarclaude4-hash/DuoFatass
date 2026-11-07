@@ -18,8 +18,8 @@ public class MarkReadReceiver extends BroadcastReceiver {
         String convId = intent.getStringExtra(EXTRA_CONV_ID);
         String myUid  = intent.getStringExtra(EXTRA_MY_UID);
         if (convId != null && myUid != null) {
-            ReadReceiptHelper.markAllRead(convId, myUid);
-            UnreadCountHelper.reset(convId, myUid);
+            ReadReceiptHelper.markAllRead(context, convId, myUid);
+            UnreadCountHelper.reset(context, convId, myUid);
         }
         NotificationManagerCompat.from(context).cancelAll();
         context.getSharedPreferences("duoshield_prefs", Context.MODE_PRIVATE)
