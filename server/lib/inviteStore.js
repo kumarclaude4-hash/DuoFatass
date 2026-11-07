@@ -90,13 +90,14 @@ function createInviteStore({
     const doc = snapshot.docs[0];
     if (invite.inviteStatus(doc.data(), now()) !== "active") throw invalidInvite();
 
+    const userIdTag = tagUserId(userId);
     tx.update(doc.ref, {
       status: "used",
-      usedByUserId: userId,
+      usedByUserIdTag: userIdTag,
       usedAt: FieldValue.serverTimestamp(),
     });
     stageAudit(tx, "invite_redeemed", requestContext, {
-      userIdTag: tagUserId(userId),
+      userIdTag,
     });
     return { id: doc.id };
   }
@@ -167,7 +168,13 @@ function createInviteStore({
         createdAtMs,
         expiresAt: expiresAtMs ? new Date(expiresAtMs).toISOString() : null,
         usedAt: usedAtMs ? new Date(usedAtMs).toISOString() : null,
-        usedByUserId: data.usedByUserId || null,
+        // Older invite records may still contain the legacy raw UID field.
+        // Never expose it through the admin API; derive a short process-local
+        // tag until the legacy record is scrubbed by the operator migration.
+        usedByUserIdTag: data.usedByUserIdTag ||
+          (typeof data.usedByUserId === "string" && data.usedByUserId
+            ? tagUserId(data.usedByUserId)
+            : null),
         revokedAt: revokedAtMs ? new Date(revokedAtMs).toISOString() : null,
       };
     });
