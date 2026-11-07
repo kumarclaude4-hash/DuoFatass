@@ -165,9 +165,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
             Path safe = Files.createDirectories(root.resolve("safe"));
             Files.writeString(safe.resolve("SafeFixture.java"),
                     "class SafeFixture {\n"
-                  + "  void log(Throwable failure, String peerId) {\n"
+                  + "  void log(Throwable failure, String peerId, Profile profile) {\n"
                   + "    Log.w(\"TAG\", \"request failed: \" + LogRedact.error(failure));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(peerId));\n"
+                  + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(profile.userId));\n"
                   + "    Log.wtf(\"TAG\", \"static invariant failure\");\n"
                   + "    Log.w(\"TAG\", \"exception class=\" + failure.getClass().getSimpleName());\n"
                   + "    long checksumFailures = 2;\n"
@@ -176,7 +177,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 5) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 6) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -188,13 +189,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void fatal(Exception problem) { Log.wtf(\"TAG\", problem); }\n"
                   + "  void stack(Throwable cause) { Log.e(\"TAG\", Log.getStackTraceString(cause)); }\n"
                   + "  void getter(Profile profile) { Log.e(\"TAG\", \"uid=\" + profile.getUserId()); }\n"
+                  + "  void field(Profile profile) { Log.e(\"TAG\", \"uid=\" + profile.userId); }\n"
+                  + "  void constant() { Log.e(\"TAG\", \"uid=\" + Config.ACCOUNT_ID); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
             requireViolation(unsafeResult.violations, "Throwable variable");
             requireViolation(unsafeResult.violations, "stack-trace");
             requireViolation(unsafeResult.violations, "sensitive accessor");
-            if (unsafeResult.violations.size() < 4) {
+            requireViolation(unsafeResult.violations, "raw sensitive member");
+            if (unsafeResult.violations.size() < 7) {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
             }
@@ -382,6 +386,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
             @Override
             public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                 String identifier = node.getIdentifier().toString();
+                // MemberSelectTree identifiers (for example profile.userId or
+                // Config.ACCOUNT_ID) are not visited as IdentifierTree nodes.
+                // Inspect the selected field explicitly; method-shaped accessors
+                // are handled by visitMethodInvocation to avoid duplicate reports.
+                if (!SENSITIVE_ACCESSOR.matcher(identifier).matches()
+                        && SENSITIVE_IDENTIFIER.matcher(identifier).matches()
+                        && !SAFE_OPERATIONAL_COUNTERS.contains(identifier)) {
+                    addViolation(logCall, "raw sensitive member '" + identifier + "' is interpolated");
+                }
                 if ("getMessage".equals(identifier) || "getLocalizedMessage".equals(identifier)
                         || "printStackTrace".equals(identifier) || "getStackTraceString".equals(identifier)
                         || "getPath".equals(identifier) || "getAbsolutePath".equals(identifier)
