@@ -53,7 +53,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             "(?i).*(uid|account|caller|sender|recipient|peer|address|conversation|convId|"
           + "chatId|callId|messageId|msgId|mediaPath|storagePath|b2Path|filePath|uriStr|"
           + "uri|url|token|seed|pin|displayName|phone|email|contact|groupId|groupName|"
-          + "zipFile|fileName|file|objectKey|objectName|opName|body|message|text|avatar|userId|secret|password|reason|"
+          + "zipFile|fileName|file|objectKey|objectName|opName|detail|body|message|text|avatar|userId|secret|password|reason|"
           + "error|payload|content|input|output|query|request|response|session|cookie|"
           + "authorization|header|subject|title|username|profile|deviceId|passphrase|"
           + "throwable|exception|cause|failure|stacktrace).*");
