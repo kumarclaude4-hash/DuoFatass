@@ -3254,15 +3254,7 @@ public class ChatMediaActivity extends BaseActivity {
         for (String[] item : items) {
             if (item == null || item.length == 0 || item[0] == null
                     || !B2StorageHelper.isB2Path(item[0])) continue;
-            String orphanedPath = item[0];
-            dbExecutor.execute(() -> {
-                try {
-                    B2StorageHelper.deleteFile(orphanedPath);
-                } catch (Exception e) {
-                    Log.w(TAG, "Could not clean unpublished album object ("
-                            + com.duoshield.app.util.LogRedact.error(e) + ")");
-                }
-            });
+            B2StorageHelper.deleteFileAsync(item[0]);
         }
     }
 
