@@ -134,7 +134,7 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 
 | Resource              | Free limit        | Guard                              |
 |-----------------------|-------------------|------------------------------------|
-| R2 storage            | 10 GB             | Hard cap at 9.5 GB (95%)          |
+| R2 storage            | 10 GB-month        | Hard cap at 9.0 decimal GB (90%)   |
 | R2 Class A ops         | 1 M/month         | Atomic monthly cap at 850K, including uploads and list pages |
 | R2 Class B ops         | 10 M/month        | 80K Worker requests/day; up to 2 Class B calls/request (~4.8M/30 days) |
 | B2 storage            | 10 GB             | Hard migration stop at 9 GB; preflight and postflight reconciliation |
