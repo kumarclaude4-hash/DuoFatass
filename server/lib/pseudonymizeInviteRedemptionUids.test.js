@@ -6,8 +6,27 @@ const {
   TAG_PATTERN,
   createRunTagger,
   buildLegacyInviteUpdate,
+  normalizeServiceAccountPrivateKey,
   runMigration,
 } = require("../scripts/pseudonymizeInviteRedemptionUids");
+
+test("service-account private-key escaped newlines normalize without mutating input", () => {
+  const input = {
+    project_id: "synthetic-project",
+    private_key: "-----BEGIN PRIVATE KEY-----\\nsynthetic-line\\n-----END PRIVATE KEY-----\\n",
+  };
+  const normalized = normalizeServiceAccountPrivateKey(input);
+  assert.notEqual(normalized, input);
+  assert.equal(normalized.project_id, input.project_id);
+  assert.equal(normalized.private_key, "-----BEGIN PRIVATE KEY-----\nsynthetic-line\n-----END PRIVATE KEY-----\n");
+  assert.equal(input.private_key.includes("\n"), false, "normalization must not mutate caller-owned input");
+});
+
+test("service-account private-key already-normalized newlines remain unchanged", () => {
+  const value = "-----BEGIN PRIVATE KEY-----\nsynthetic-line\n-----END PRIVATE KEY-----\n";
+  const normalized = normalizeServiceAccountPrivateKey({ private_key: value });
+  assert.equal(normalized.private_key, value);
+});
 
 test("migration replaces legacy raw UID with a short non-reversible display tag", () => {
   const tagUserId = createRunTagger(Buffer.alloc(32, 7));
