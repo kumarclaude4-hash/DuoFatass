@@ -347,7 +347,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             for (VariableTree parameter : node.getParameters()) {
                 String name = parameter.getName().toString();
                 String type = parameter.getType() == null ? "" : parameter.getType().toString();
-                if (SENSITIVE_IDENTIFIER.matcher(name).matches()) taintedLocals.add(name);
+                if (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                        && !SAFE_OPERATIONAL_COUNTERS.contains(name)) taintedLocals.add(name);
                 if (isThrowableType(type)) {
                     throwableLocals.add(name);
                     taintedLocals.add(name);
@@ -374,6 +375,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 containerLocals.add(name);
             }
             if ((SENSITIVE_IDENTIFIER.matcher(name).matches()
+                    && !SAFE_OPERATIONAL_COUNTERS.contains(name)
                     && (initializer == null || !isRedactedExpression(initializer)))
                     || (initializer != null && (hasSensitiveSource(initializer)
                     || containsTrackedAlias(initializer)))) {
@@ -437,6 +439,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
             return false;
         }
 
+        private boolean isSafeThrowableClassNameCall(MethodInvocationTree node) {
+            if (!"getSimpleName".equals(methodName(node))) return false;
+            String receiver = receiverName(node);
+            String suffix = ".getClass()";
+            if (!receiver.endsWith(suffix)) return false;
+            String variable = receiver.substring(0, receiver.length() - suffix.length());
+            return variable.matches("[A-Za-z_$][A-Za-z0-9_$]*")
+                    && throwableLocals.contains(variable);
+        }
+
         private boolean isRedactedExpression(ExpressionTree expression) {
             if (!(expression instanceof MethodInvocationTree)) return false;
             MethodInvocationTree invocation = (MethodInvocationTree) expression;
@@ -465,6 +477,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     if (("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
                             && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"))) {
                         return null; // A sanitizer protects only its returned subtree.
+                    }
+                    if (isSafeThrowableClassNameCall(node)) {
+                        return null;
                     }
                     if (SENSITIVE_ACCESSOR.matcher(method).matches()
                             || "getMessage".equals(method) || "getLocalizedMessage".equals(method)
@@ -519,6 +534,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"))) {
                         return null;
                     }
+                    if (isSafeThrowableClassNameCall(node)) return null;
                     return super.visitMethodInvocation(node, unused);
                 }
 
