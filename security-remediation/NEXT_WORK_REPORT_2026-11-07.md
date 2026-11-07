@@ -25,7 +25,7 @@ Identified and fixed a real eligibility defect: prior status mapping treated any
 - Tested head: `62da24d98705a91d11d7a9b926c71fe02b2eeb9a`.
 - CI [42364462022](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364462022): **10/10 jobs**.
 - Security [42364461937](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364461937): **3/3 jobs**.
-- Firestore Rules/server transactions [42364461918](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364461918): **201 Firestore/App Check tests + 6 server transaction tests passed**.
+- Firestore Rules/server transactions [42364461918](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364461918): **3 Firestore/App Check emulator suites / 201 tests passed + 6 server transaction tests passed**.
 - Server/Worker suite: **365 passed, 0 failed; Worker suite 72/72**.
 - AST: **204 Java files / 414 sinks / zero violations**.
 - Android unit/lint/debug/R8, Espresso 4 tests, API 35 predictive-back 1 test, CodeQL/Gitleaks/SBOM, Cloudflare Worker build and integrity jobs all passed.
