@@ -176,11 +176,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"integrity failures=\" + checksumFailures);\n"
                   + "    Log.w(\"TAG\", \"alias=\" + LogRedact.metadata(alias));\n"
                   + "    Log.w(\"TAG\", \"device=\" + LogRedact.metadata(Build.MODEL) + \"/\" + LogRedact.metadata(Build.MANUFACTURER));\n"
+                  + "    Log.w(LogRedact.uid(peerId), \"redacted tag is safe\");\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 8) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 9) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -198,6 +199,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void helperParameter(String opName) { Log.w(\"TAG\", opName); }\n"
                   + "  void rawAlias(String alias) { Log.w(\"TAG\", \"alias=\" + alias); }\n"
                   + "  void rawDeviceModel() { Log.w(\"TAG\", \"device=\" + Build.MODEL + \"/\" + Build.MANUFACTURER); }\n"
+                  + "  void rawTag(String uid) { Log.w(uid, \"static message\"); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
@@ -210,7 +212,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(unsafeResult.violations, "raw sensitive identifier 'alias'");
             requireViolation(unsafeResult.violations, "raw sensitive member 'MODEL'");
             requireViolation(unsafeResult.violations, "raw sensitive member 'MANUFACTURER'");
-            if (unsafeResult.violations.size() < 12) {
+            requireViolation(unsafeResult.violations, "raw sensitive identifier 'uid'");
+            if (unsafeResult.violations.size() < 13) {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
             }
@@ -313,6 +316,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     addViolation(node, "Throwable/third-argument overload is forbidden");
                 }
                 if (args.size() >= 2) {
+                    // The tag is emitted to logcat alongside the message. Treat both
+                    // arguments as disclosure sinks; a dynamic tag can leak the same
+                    // UID/path/credential metadata as the message itself.
+                    new MessageScanner(node, throwableVariables).scan(args.get(0), null);
                     new MessageScanner(node, throwableVariables).scan(args.get(1), null);
                 }
             }
