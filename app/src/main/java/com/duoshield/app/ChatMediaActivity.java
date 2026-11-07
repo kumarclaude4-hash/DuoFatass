@@ -3214,6 +3214,10 @@ public class ChatMediaActivity extends BaseActivity {
             m.setStatus("failed");
             adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
             saveToRoom(m);
+            cleanupUnpublishedAlbumMedia(items);
+            Toast.makeText(this,
+                    "Daily write budget reached — album not sent. Try again after the quota reset.",
+                    Toast.LENGTH_LONG).show();
             return;
         }
         db.collection("chats").document(conversationId)
@@ -3234,8 +3238,32 @@ public class ChatMediaActivity extends BaseActivity {
               adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
               m.setStatus("failed");
               saveToRoom(m);
-              Toast.makeText(this, "Failed to send album. Please try again.", Toast.LENGTH_LONG).show();
+              cleanupUnpublishedAlbumMedia(items);
+              Toast.makeText(this, "Failed to send album. Uploaded media was cleaned up; please try again.", Toast.LENGTH_LONG).show();
           });
+    }
+
+    /**
+     * Removes newly uploaded album objects when their Firestore envelope cannot
+     * be published. Albums do not have an OutboxMessage retry record, so keeping
+     * those objects would create unreachable B2 storage that no expiry worker
+     * can associate with a message document.
+     */
+    private void cleanupUnpublishedAlbumMedia(java.util.List<String[]> items) {
+        if (items == null) return;
+        for (String[] item : items) {
+            if (item == null || item.length == 0 || item[0] == null
+                    || !B2StorageHelper.isB2Path(item[0])) continue;
+            String orphanedPath = item[0];
+            dbExecutor.execute(() -> {
+                try {
+                    B2StorageHelper.deleteFile(orphanedPath);
+                } catch (Exception e) {
+                    Log.w(TAG, "Could not clean unpublished album object ("
+                            + com.duoshield.app.util.LogRedact.error(e) + ")");
+                }
+            });
+        }
     }
 
     private void uploadMedia(Uri fileUri, String mediaType) {
