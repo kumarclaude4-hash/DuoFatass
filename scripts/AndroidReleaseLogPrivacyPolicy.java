@@ -187,11 +187,18 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Map<String, Object> safeFields = new HashMap<>();\n"
                   + "    safeFields.put(\"peer\", LogRedact.uid(peerId));\n"
                   + "    Log.w(\"TAG\", safeFields.toString());\n"
+                  + "    int safeCount = safeFields.size();\n"
+                  + "    Log.w(\"TAG\", \"record count=\" + safeCount);\n"
+                  + "    int statusCode = connection.getResponseCode();\n"
+                  + "    Log.w(\"TAG\", \"HTTP status=\" + statusCode);\n"
+                  + "    Log.w(\"TAG\", tracker.getSummary());\n"
+                  + "    String safeOperation = redactOperationName(alias);\n"
+                  + "    Log.w(\"TAG\", safeOperation);\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 12) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 16) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
