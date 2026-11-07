@@ -705,7 +705,7 @@ test('S03-M1: the cold (B2) tier also serves the key-derived Content-Type with n
 
 // ─── S03-M3: delete tokens are single-use and reject a legacy 5-part shape ─
 
-test('S03-M3: DELETE fails closed when the replay KV namespace is absent', async () => {
+test('data plane fails closed before storage when the daily request-counter KV is absent', async () => {
   const env = makeEnv({ RATE_KV: undefined });
   const key = `media/${'z'.repeat(20)}/kv-unavailable.jpg`;
   const holder = 'user-alice';
@@ -715,17 +715,13 @@ test('S03-M3: DELETE fails closed when the replay KV namespace is absent', async
     headers: { Authorization: `Bearer ${putToken}`, 'Content-Length': '3' },
     body: 'abc',
   }), env, ctx);
-  assert.equal(put.status, 200);
-  assert.ok(await env.HOT_BUCKET.head(key));
 
-  const deleteToken = await mintToken('delete', key, holder);
-  const deletion = await worker.fetch(new Request(`https://worker.example/${key}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${deleteToken}` },
-  }), env, ctx);
-  assert.equal(deletion.status, 503);
-  assert.match((await deletion.json()).error, /replay protection unavailable/i);
-  assert.ok(await env.HOT_BUCKET.head(key), 'object must remain untouched when replay protection is unavailable');
+  assert.equal(put.status, 503);
+  assert.match((await put.json()).error, /daily usage counter unavailable/i);
+  assert.equal(await env.HOT_BUCKET.head(key), null,
+    'a missing request counter must fail closed before any object is written');
+  assert.equal(env.MEDIA_QUOTA_DO.counts.upload, 0,
+    'the request-counter gate must reject before reserving a media mutation');
 });
 
 test('S03-M3: DELETE fails closed when replay KV lookup throws', async () => {
