@@ -573,15 +573,24 @@ async function holderBucketKey(holder) {
     .join('');
 }
 
-async function checkPerUserRateLimit(env, cors, holder) {
-  const limit     = rateLimit(env);
-  const bucketId  = await holderBucketKey(holder);
+async function checkPerUserRateLimit(env, cors, holder, isValidRangeGet = false) {
+  const limit = rateLimit(env);
+  // Keep one combined bucket so a caller cannot add a second range-only
+  // allowance on top of the normal allowance. A valid single-range GET costs
+  // half a request unit because chunked playback uses one request per 1 MiB;
+  // PUT, DELETE, full GET and malformed/multipart ranges cost one full unit.
+  // The daily 80K request gate still counts every actual Worker invocation.
+  const requestCostUnits = isValidRangeGet ? 1 : 2;
+  const limitUnits = limit * 2;
+  const bucketId = await holderBucketKey(holder);
   const minuteKey = `${bucketId}:${Math.floor(Date.now() / 60_000)}`;
-  const count     = perUserCounts.get(minuteKey) ?? 0;
-  if (count >= limit) {
-    return json({ error: `Rate limit exceeded (${limit} req/min)` }, 429, cors);
+  const usedUnits = perUserCounts.get(minuteKey) ?? 0;
+  if (usedUnits + requestCostUnits > limitUnits) {
+    return json({
+      error: `Rate limit exceeded (${limit} request units/min; valid single-range GETs count as 0.5)`,
+    }, 429, cors);
   }
-  perUserCounts.set(minuteKey, count + 1);
+  perUserCounts.set(minuteKey, usedUnits + requestCostUnits);
   // Prune stale minute buckets to prevent unbounded memory growth within the isolate.
   const nowMinute = Math.floor(Date.now() / 60_000);
   for (const [k] of perUserCounts) {
@@ -844,7 +853,10 @@ export default {
     if (dailyLimited) return dailyLimited;
 
     // ── Per-isolate rate limit ────────────────────────────────────────────────
-    const rateLimited = await checkPerUserRateLimit(env, cors, cap.holder);
+    const rangeHeaderForRateLimit = request.headers.get('Range') || '';
+    const isValidRangeGet = request.method === 'GET'
+      && /^bytes=\d+-\d*$/.test(rangeHeaderForRateLimit.trim());
+    const rateLimited = await checkPerUserRateLimit(env, cors, cap.holder, isValidRangeGet);
     if (rateLimited) return rateLimited;
 
     // ── UPLOAD ────────────────────────────────────────────────────────────────
