@@ -98,11 +98,39 @@ function makeHotBucket() {
   };
 }
 
+function makeR2BudgetNamespace(initial = {}) {
+  const state = { monthKey: initial.monthKey || '', classA: initial.classA || 0 };
+  const stub = {
+    async fetch(request) {
+      const body = await request.json();
+      if (body.action !== 'reserveR2ClassA'
+          || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(body.monthKey || '')
+          || !Number.isSafeInteger(body.amount) || body.amount < 1 || body.amount > 100) {
+        return Response.json({ error: 'Invalid R2 budget reservation' }, { status: 400 });
+      }
+      const used = state.monthKey === body.monthKey ? state.classA : 0;
+      const limit = 850_000;
+      if (used + body.amount > limit) {
+        return Response.json({ allowed: false, used, requested: body.amount, limit, monthKey: body.monthKey });
+      }
+      state.monthKey = body.monthKey;
+      state.classA = used + body.amount;
+      return Response.json({ allowed: true, used: state.classA, limit, monthKey: state.monthKey });
+    },
+  };
+  return {
+    state,
+    idFromName(name) { return name; },
+    get() { return stub; },
+  };
+}
+
 function makeEnv(overrides = {}) {
   return {
     MEDIA_TOKEN_SECRET,
     RATE_KV: makeKv(),
     HOT_BUCKET: makeHotBucket(),
+    ADMIN_LOCKOUT_DO: makeR2BudgetNamespace(),
     MAX_FILE_SIZE: '524288000',
     // getB2Client() constructs an AwsClient unconditionally on every DELETE
     // that finds the object still in R2 (the migration race-guard fires a
