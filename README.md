@@ -60,7 +60,7 @@ No servers read your messages. No metadata sold. No backdoors.
 - **1-to-1 and group chats** — real-time via Firestore + FCM
 - **Voice messages** — AES-256-GCM encrypted with waveform scrubbing and inline WhatsApp-style upload progress
 - **Durable decryption recovery** — raw ciphertext is persisted immediately; failed messages retry automatically with backoff or by tapping the message
-- **Media sharing** — up to 500 MB; 50 MB+ videos stream-encrypt to disk
+- **Media sharing** — up to 94 MB per file; large videos use streaming chunked encryption
 - **Reactions, reply, forward, edit, star, pin** — full action sheet
 - **Smart notifications** — notifications are suppressed only inside the exact active conversation; the conversation list and other screens still notify
 - **Disappearing messages** — per-conversation timer
