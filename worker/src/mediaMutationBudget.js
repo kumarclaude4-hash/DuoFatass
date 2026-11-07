@@ -12,8 +12,8 @@
 
 const STORAGE_KEY = "daily-media-mutations";
 const DEFAULT_DAILY_UPLOAD_LIMIT = 120;
-const DEFAULT_DAILY_DELETE_LIMIT = 80;
-const DEFAULT_PER_HOLDER_DAILY_LIMIT = 20;
+const DEFAULT_DAILY_DELETE_LIMIT = 150;
+const DEFAULT_PER_HOLDER_DAILY_LIMIT = 60;
 const MAX_HOLDER_ENTRIES_PER_DAY = 500;
 
 function json(data, status = 200) {
