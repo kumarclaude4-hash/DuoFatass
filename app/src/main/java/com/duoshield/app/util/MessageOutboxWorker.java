@@ -118,7 +118,7 @@ public final class MessageOutboxWorker extends Worker {
                     if (item.replyPreview != null) doc.put("replyPreview", item.replyPreview);
                     doc.put("timestamp", FieldValue.serverTimestamp());
 
-                    if (!FirebaseCostGuard.getInstance(context).reserveWrite(1)) {
+                    if (!FirebaseCostGuard.getInstance(getApplicationContext()).reserveWrite(1)) {
                         retry = true;
                         continue;
                     }
