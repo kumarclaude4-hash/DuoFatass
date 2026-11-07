@@ -974,6 +974,23 @@ public final class B2StorageHelper {
      * Retries on transient network errors. 404 is treated as success (already gone).
      * Call from a background thread.
      */
+    /**
+     * Schedules deletion of an unpublished B2 object on the process-wide media
+     * pool. Unlike an Activity-owned executor, this remains available when the
+     * screen that initiated an upload is destroyed before its Firestore callback.
+     */
+    public static void deleteFileAsync(String b2Path) {
+        if (!isB2Path(b2Path)) return;
+        MEDIA_POOL.execute(() -> {
+            try {
+                deleteFile(b2Path);
+            } catch (Exception e) {
+                Log.w(TAG, "Asynchronous media cleanup failed ("
+                        + com.duoshield.app.util.LogRedact.error(e) + ")");
+            }
+        });
+    }
+
     public static void deleteFile(String b2Path) throws Exception {
         if (b2Path == null || b2Path.isEmpty()) return;
         // Tiered-storage Worker path (highest priority)
