@@ -157,6 +157,15 @@ function contentTypeForKey(key) {
 //   null                — no Range header; serve the whole object as before.
 //   'invalid'           — header present but unusable, or start beyond EOF.
 //   { start, end, length } — inclusive byte offsets, clamped to `size`.
+function isSyntacticallyValidSingleByteRange(header) {
+  const match = /^bytes=(\d+)-(\d*)$/.exec(String(header || '').trim());
+  if (!match) return false;
+  const start = Number(match[1]);
+  const end = match[2] === '' ? null : Number(match[2]);
+  return Number.isSafeInteger(start) && start >= 0
+    && (end === null || (Number.isSafeInteger(end) && end >= start));
+}
+
 function parseByteRange(header, size) {
   if (!header) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
@@ -855,7 +864,7 @@ export default {
     // ── Per-isolate rate limit ────────────────────────────────────────────────
     const rangeHeaderForRateLimit = request.headers.get('Range') || '';
     const isValidRangeGet = request.method === 'GET'
-      && /^bytes=\d+-\d*$/.test(rangeHeaderForRateLimit.trim());
+      && isSyntacticallyValidSingleByteRange(rangeHeaderForRateLimit);
     const rateLimited = await checkPerUserRateLimit(env, cors, cap.holder, isValidRangeGet);
     if (rateLimited) return rateLimited;
 
