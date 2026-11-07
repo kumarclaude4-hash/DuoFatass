@@ -2,7 +2,7 @@
 
 ## Status
 
-**Partial — source review and two follow-up fixes committed; branch CI/security verification pending.** This is not a production security sign-off. Physical-device logcat acceptance remains deferred until the owner declares the application feature-complete.
+**Partial — source review and follow-up fixes merged; CI/security verified.** This is not a production security sign-off. Physical-device logcat acceptance remains deferred until the owner declares the application feature-complete.
 
 - Base: `main` after PR #244 merge, commit `4fb33fd9978249761ba25f1c3d64f68c534978a4`.
 - Work branch: `security/s10-n2-indirect-release-log-review-2026-11-07`.
