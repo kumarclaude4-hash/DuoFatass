@@ -1,10 +1,11 @@
 import { AwsClient } from 'aws4fetch';
 import { AdminLockoutCounter } from './adminLockoutDurableObject.js';
+import { MediaMutationBudget } from './mediaMutationBudget.js';
 
 // Durable Object classes must be exported from this entry module for the
 // `durable_objects` binding in wrangler.jsonc to resolve them — see
 // adminLockoutDurableObject.js for what this class does and why it exists.
-export { AdminLockoutCounter };
+export { AdminLockoutCounter, MediaMutationBudget };
 
 // ─── Hard limits ──────────────────────────────────────────────────────────────
 // R2 free tier: 10 GB storage, 1 M Class A ops/month, 10 M Class B ops/month.
@@ -430,9 +431,49 @@ async function kvSet(env, key, value, opts = {}) {
 // ─── Daily request gate ───────────────────────────────────────────────────────
 // Free tier: 100K requests/day. Enforce at 90K (90%).
 //
-// KV write cost is amortised via 1-in-10 sampling: each write adds 10 to the
-// counter instead of 1. This keeps accuracy within ±9 while consuming only
-// ~0.1 KV writes per request instead of 1, reducing write pressure ~10×.
+// KV writes are amortised via 1-in-500 sampling: each sample adds 500 to the
+// estimate. At the 90K/day ceiling this uses ~180 writes/day, leaving room for
+// per-object accounting and replay protection under the 1K/day KV free limit.
+// The estimate is intentionally approximate (up to 499 requests of sampling error).
+async function reserveDailyMediaMutation(env, cors) {
+  // A global SQLite-backed Durable Object serializes mutation reservations
+  // across all Worker locations. KV cannot safely do this: it is eventually
+  // consistent and its free tier permits only 1K writes/day.
+  if (!env.MEDIA_QUOTA_DO) {
+    console.error('MEDIA_QUOTA_DO is not configured — denying media mutation (fail closed)');
+    return json({ error: 'Media quota service unavailable' }, 503, cors);
+  }
+  const configuredLimit = safeInt(env.MAX_DAILY_MEDIA_MUTATIONS || '160', 160);
+  const limit = configuredLimit >= 1 && configuredLimit <= 10_000 ? configuredLimit : 160;
+  try {
+    const id = env.MEDIA_QUOTA_DO.idFromName('duoshield-global-daily-media-mutations');
+    const stub = env.MEDIA_QUOTA_DO.get(id);
+    const response = await stub.fetch('https://media-quota.internal/reserve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reserve', limit }),
+    });
+    let result;
+    try { result = await response.json(); } catch { result = null; }
+    if (response.status === 429 && result?.allowed === false) {
+      return json({
+        error: 'Daily media operation budget reached. Try again after the UTC reset.',
+        count: result.count,
+        limit: result.limit,
+        reset_at: result.resetAt,
+      }, 429, cors);
+    }
+    if (!response.ok || result?.allowed !== true) {
+      console.error('Media quota service returned an invalid reservation response');
+      return json({ error: 'Media quota service unavailable' }, 503, cors);
+    }
+    return null;
+  } catch (err) {
+    console.error(`Media quota reservation failed (${err?.name || 'Error'})`);
+    return json({ error: 'Media quota service unavailable' }, 503, cors);
+  }
+}
+
 async function checkDailyRequestLimit(env, cors) {
   if (!env.RATE_KV) return null;
   const key   = dayKey();
@@ -444,9 +485,9 @@ async function checkDailyRequestLimit(env, cors) {
       limit: MAX_DAILY_REQUESTS,
     }, 429, cors);
   }
-  // Sampled write: fires ~10% of the time, adds 10 to preserve the expected value.
-  if (Math.random() < 0.1) {
-    await kvSet(env, key, count + 10, { expirationTtl: 2 * 86_400 }); // 48h TTL
+  // Sampled write: fires ~0.2% of the time, adds 500 to preserve the expected value.
+  if (Math.random() < 1 / 500) {
+    await kvSet(env, key, count + 500, { expirationTtl: 2 * 86_400 }); // 48h TTL
   }
   return null;
 }
@@ -470,9 +511,12 @@ async function checkDailyRequestLimit(env, cors) {
 // WORKER_SECRET) and stable within a session.
 const perUserCounts = new Map();
 
-async function credentialBucketKey(request) {
-  const auth = request.headers.get('Authorization') ?? 'anon';
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(auth));
+async function holderBucketKey(holder) {
+  // Capability tokens are unique per object/operation. Hash the verified UID
+  // from the signed token instead, otherwise a caller can evade the limiter by
+  // requesting fresh tokens for every operation.
+  const identity = typeof holder === 'string' && holder.length > 0 ? holder : 'unknown';
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
   // Take the first 8 bytes (64 bits) as a hex string — enough entropy for
   // bucket identity, short enough to avoid memory blowup in the Map.
   return Array.from(new Uint8Array(hash).slice(0, 8))
@@ -480,9 +524,9 @@ async function credentialBucketKey(request) {
     .join('');
 }
 
-async function checkPerUserRateLimit(request, env, cors) {
+async function checkPerUserRateLimit(request, env, cors, holder) {
   const limit     = rateLimit(env);
-  const bucketId  = await credentialBucketKey(request);
+  const bucketId  = await holderBucketKey(holder);
   const minuteKey = `${bucketId}:${Math.floor(Date.now() / 60_000)}`;
   const count     = perUserCounts.get(minuteKey) ?? 0;
   if (count >= limit) {
@@ -747,7 +791,7 @@ export default {
     if (dailyLimited) return dailyLimited;
 
     // ── Per-isolate rate limit ────────────────────────────────────────────────
-    const rateLimited = await checkPerUserRateLimit(request, env, cors);
+    const rateLimited = await checkPerUserRateLimit(request, env, cors, cap.holder);
     if (rateLimited) return rateLimited;
 
     // ── UPLOAD ────────────────────────────────────────────────────────────────
@@ -828,6 +872,11 @@ export default {
       // rationale. The client's Content-Type header is intentionally never
       // read here.
       const contentType = contentTypeForKey(key);
+
+      // Bound KV-backed storage-accounting writes globally. Failed attempts
+      // consume a slot deliberately so retries cannot bypass the daily budget.
+      const mutationLimited = await reserveDailyMediaMutation(env, cors);
+      if (mutationLimited) return mutationLimited;
 
       await env.HOT_BUCKET.put(key, request.body, {
         httpMetadata:   { contentType },
@@ -1045,6 +1094,11 @@ export default {
       if (alreadyUsed) {
         return respond({ error: 'Capability token already used' }, 403);
       }
+      // Reserve before consuming the one-shot token: quota exhaustion must
+      // leave the caller's capability retryable after the daily reset.
+      const mutationLimited = await reserveDailyMediaMutation(env, cors);
+      if (mutationLimited) return mutationLimited;
+
       const remainingTtlSeconds = Math.ceil(Math.max(0, cap.expiresAt - Date.now()) / 1000);
       // Persist the single-use marker BEFORE mutating storage. A failed KV write
       // must not allow deletion without replay protection.
