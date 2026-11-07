@@ -1147,6 +1147,18 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     if (isSafeThrowableClassNameCall(node)) {
                         return null;
                     }
+                    // Source-backed sensitive accessors are an unconditional taint
+                    // source. Never let an app-defined stub/helper summary override
+                    // this established boundary (e.g. a test double whose getUserId()
+                    // body returns a literal must not make the accessor safe).
+                    if (SENSITIVE_ACCESSOR.matcher(method).matches()
+                            || "getMessage".equals(method) || "getLocalizedMessage".equals(method)
+                            || "getCause".equals(method) || "getException".equals(method)
+                            || "getThrowable".equals(method) || "getFailure".equals(method)
+                            || "getStackTraceString".equals(method)) {
+                        found[0] = true;
+                        return null;
+                    }
                     MethodReturnSummaryIndex.MethodSummary helperSummary =
                             returnSummaries.resolve(ownerClass, node, localTypes);
                     if (helperSummary != null) {
@@ -1167,14 +1179,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         // leak merely because its input was sensitive.
                         return null;
                     }
-                    if (SENSITIVE_ACCESSOR.matcher(method).matches()
-                            || "getMessage".equals(method) || "getLocalizedMessage".equals(method)
-                            || "getCause".equals(method) || "getException".equals(method)
-                            || "getThrowable".equals(method) || "getFailure".equals(method)
-                            || "getStackTraceString".equals(method)) {
-                        found[0] = true;
-                    }
-                    return found[0] ? null : super.visitMethodInvocation(node, unused);
+                    return super.visitMethodInvocation(node, unused);
                 }
 
                 @Override
