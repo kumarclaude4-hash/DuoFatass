@@ -166,7 +166,7 @@ public class CreateGroupActivity extends BaseActivity {
         groupDoc.put("members",   memberUids);
 
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (guard.canWrite(1)) {
+        if (guard.reserveWrite(1)) {
             db.collection("groups").document(groupId)
               .set(groupDoc, SetOptions.merge())
               .addOnSuccessListener(v -> guard.recordWrites(1));
@@ -181,7 +181,7 @@ public class CreateGroupActivity extends BaseActivity {
                 keyDoc.put("encryptedKey", r.ciphertextB64);
                 keyDoc.put("sigType",      r.sigType);
                 keyDoc.put("senderUid",    myUid);
-                if (guard.canWrite(1)) {
+                if (guard.reserveWrite(1)) {
                     db.collection("groups").document(groupId)
                       .collection("keys").document(c.uid)
                       .set(keyDoc)
@@ -202,7 +202,7 @@ public class CreateGroupActivity extends BaseActivity {
             myKeyDoc.put("encryptedKey", r.ciphertextB64);
             myKeyDoc.put("sigType",      r.sigType);
             myKeyDoc.put("senderUid",    myUid);
-            if (guard.canWrite(1)) {
+            if (guard.reserveWrite(1)) {
                 db.collection("groups").document(groupId)
                   .collection("keys").document(myUid)
                   .set(myKeyDoc)
