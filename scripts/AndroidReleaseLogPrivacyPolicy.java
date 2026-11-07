@@ -317,7 +317,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
      * <p>This is not symbol-resolved or interprocedural analysis. It does not
      * prove arbitrary helper return values, reflection or third-party internals.
      */
-    private static final class MethodLocalTaintScanner extends TreePathScanner<Void, Void> {
+    private static final class MethodLocalTaintScanner extends TreeScanner<Void, Void> {
         private static final Pattern CONTAINER_TYPE = Pattern.compile(
                 "(?i).*(stringbuilder|stringbuffer|stringjoiner|map|bundle|intent|"
               + "jsonobject|jsonarray|contentvalues|list|set|collection|builder|values).*");
