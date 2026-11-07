@@ -2765,8 +2765,7 @@ public class ChatMediaActivity extends BaseActivity {
         update.put("disappear_ms",     ms);
         update.put("disappear_set_by", myUid);
         db.collection("chats").document(conversationId)
-          .update(update)
-          .addOnSuccessListener(v -> guard.recordWrites(1));
+          .update(update);
     }
 
     private void updateDisappearBanner() {
