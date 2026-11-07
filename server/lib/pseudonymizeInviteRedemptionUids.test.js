@@ -62,7 +62,11 @@ test("migration is dry-run by default and applies bounded batches only when requ
       assert.equal(name, "invites");
       return {
         orderBy() {
-          return { limit: async () => snapshot };
+          return {
+            limit() { return this; },
+            startAfter() { return this; },
+            async get() { return snapshot; },
+          };
         },
       };
     },
