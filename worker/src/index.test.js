@@ -104,7 +104,7 @@ function makeR2BudgetNamespace(initial = {}) {
     async fetch(request) {
       const body = await request.json();
       if (body.action !== 'reserveR2ClassA'
-          || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(body.monthKey || '')
+          || !/^\d{4}-(0[1-9]|1[0-2])$/.test(body.monthKey || '')
           || !Number.isSafeInteger(body.amount) || body.amount < 1 || body.amount > 100) {
         return Response.json({ error: 'Invalid R2 budget reservation' }, { status: 400 });
       }
