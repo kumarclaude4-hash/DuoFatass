@@ -2,14 +2,15 @@
 
 Repository: kumarclaude4-hash/DuoFatass
 Base branch: main
-Latest merged mainline: PR #246 at 0584823d9d60181802816598c845a50158e86ad8 (CI 10/10; Security Scan 3/3).
-Current security work: PR #248 — https://github.com/kumarclaude4-hash/DuoFatass/pull/248
-Current branch: security/s10-n2-method-local-log-taint-2026-11-07
-Latest verified PR #248 head: d676fb0e028fb578cbb2d8aa83d2bb0f3afe8f4b.
-PR #248 evidence: CI run 42330785500 (10/10 jobs) and Security Scan 42330785396 (3/3 jobs). The method-local AST pass and full production scan passed: 204 Java files, 407 release-surviving Log.w/Log.e/Log.wtf calls, zero violations. This PR adds conservative tracking across local declarations, reassignment, concatenation, StringBuilder, Map/Bundle/JSON/builder patterns, and both Android log tag/message sinks. Owner/type-scoped sanitizers and operational projections are documented in the S10-N2 tracker/session report. The PR has not yet been merged at the time of this handoff update.
-S10-N2 remains Partial because the analyzer is syntax-only and method-local and physical-device release-logcat acceptance is still deferred until feature-complete. FINAL_SIGNOFF.md remains PENDING.
+Latest merged mainline: PR #251 at `fc3dcd948a2410887c23ff8c29913c6c5d92604a`.
+Current security work: S10-N2 bounded interprocedural release-log taint extension — code merged in PR #251; finding remains **Partial**.
+PR #251: https://github.com/kumarclaude4-hash/DuoFatass/pull/251
+Tested PR head: `d6041db2033b1950cdf006b900ef5cd8f2d95eba`.
+Post-merge evidence: CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588) 10/10 jobs; Security Scan [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447) 3/3 jobs. AST: 204 production Java files, 414 warning/error/fatal log calls, zero violations; Espresso 4 tests and API 35 predictive-back 1 test executed and passed.
+The interprocedural pass adds bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through and same-class field write/read flows. It preserves conservative behavior for ambiguous overloads and unresolved dispatch; recursive summaries are bounded and fail closed. See the updated S10-N2 tracker row and session addendum for exact scope and limitations.
+S10-N2 remains Partial: syntax-only analysis is not whole-program proof, and physical-device release-logcat acceptance is deferred until feature-complete. `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
 
-This is the current execution handoff for the next coding agent. It supersedes the task ordering in older agent handoff notes. Continue repository-side static analysis, source/JVM tests and authorized staging acceptance while the app is being completed. Physical-device acceptance must happen only after the owner declares the app feature-complete.
+This is the current execution handoff for the next coding agent. Start from the latest main on a fresh branch. Continue source-level and authorized staging work only; physical-device acceptance must wait until the owner declares the app feature-complete.
 
 ## 1. Binding instructions
 
@@ -25,48 +26,43 @@ This is the current execution handoff for the next coding agent. It supersedes t
 
 ## 2. Verified baseline
 
-PR #237 is merged to main at 745f1601448a2b35ffe4ff024b8cde0e9454ebcb.
+PR #251 is merged to main at `fc3dcd948a2410887c23ff8c29913c6c5d92604a`. Its exact tested head was `d6041db2033b1950cdf006b900ef5cd8f2d95eba`.
 
-Post-merge CI run 42162494191 completed successfully with 9/9 jobs:
+Post-merge CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588) completed successfully with **10/10 jobs**:
+- Android release-log AST scan and self-tests
 - Server + Worker tests
-- Android unit tests
-- Lint
-- Debug APK
-- Espresso instrumentation
-- Focused API 35 back-dispatch regression
-- Minified release R8 build
-- Vendored libsignal integrity
-- Gradle wrapper validation
+- Android unit tests and lint
+- Debug APK build
+- Emulator-backed Espresso (**4 tests executed**)
+- API 35 predictive-back (**1 focused test executed**)
+- Minified release R8 build and mapping verification
+- Gradle wrapper and vendored libsignal integrity
 
-Post-merge security scan 42162494131 completed successfully. These are mainline results before the follow-up work in the current branch; the branch's own PR CI must pass before any new test or tracker evidence is marked verified.
+Security Scan [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447) completed successfully with **3/3 jobs**: CodeQL, Gitleaks and SBOM. The AST scan inspected **204 production Java files and 414 Log.w/Log.e/Log.wtf calls with zero violations**. Cloudflare Worker build validation and the Vercel preview status also passed; these are build/preview checks, not a claim of production release.
 
-The row-level tracker recount before this branch's CI is 116 findings: 83 Fixed, 20 Partial, 1 Open and 12 Accepted. Do not copy the old 74/29/1/12 historical summary over the current rows.
+For additional source work, start from the current mainline and verify the current tracker row and evidence. Do not copy historical finding totals without recounting the row-level tracker.
 
-## 3. Agentic work to do now — no manual device testing
+## 3. Remaining agentic/operator work — no physical-device acceptance yet
 
-### A. S10-N2 — release-log policy guard plus method-local taint analysis
+### A. S10-N2 — release-log guard and bounded interprocedural taint analysis (code merged)
 
-PR #244 added `scripts/AndroidReleaseLogPrivacyPolicy.java`, a JDK compiler-AST policy guard over the full production Android Java tree. It rejects Throwable overloads, exception message/stack-trace extraction, sensitive accessors, raw sensitive identifiers and direct sensitive member fields/constants. PR #246 expanded the sensitive-name list for aliases/device fingerprint fields and treats both log tag and message arguments as disclosure sinks.
+PR #244 introduced the JDK compiler-AST release-log guard; PR #246 hardened identifier and tag/message coverage; PR #248 added method-local alias/container tracking; PR #251 added the bounded helper-summary extension and reduced `DeviceSecurityGate` log detail. PR #251 is merged to main at `fc3dcd948a2410887c23ff8c29913c6c5d92604a`.
 
-PR #248 adds a conservative method-local data-flow pass:
-- Taint propagates through method parameters and local declarations when initialized from sensitive identifiers, member/accessor reads or Throwable data.
-- Reassignment taint is sticky for the rest of the method. This intentionally prefers false positives over an unsafe branch-sensitive clear.
-- Concatenations and nested expressions retain taint.
-- StringBuilder/StringBuffer append and toString paths are tracked.
-- Common Map/Bundle/JSON/ContentValues/builder/list/set insertion patterns taint the container; later container reads or toString use remain tainted.
-- Opaque method calls do not automatically sanitize arguments; sensitive arguments inside a returned expression taint the assigned local.
-- Both `Log.w/e/wtf` tag and message expressions are checked.
-- Sanitization boundaries are explicit: `LogRedact.uid/metadata/error`, plus `B2StorageHelper.redactOperationName` only from its owning helper class.
-- Safe operational projections are narrow: collection sizes from known container locals; `Response.code()` only for Response receiver types; `HttpURLConnection.getResponseCode()` only for HttpURLConnection receiver types; `TurnBandwidthTracker.getSummary()` only for that receiver type; `LegacyPlaintextMigrator.copyInto()` only in that owning class; and `DuressManager.postDuressLock()` only in that owning class. String/byte-array `length()` is not exempt.
+The merged analyzer now:
+- Tracks local aliases, sticky reassignment, concatenation, StringBuilder/StringBuffer flows and common Map/Bundle/JSON/container insertion and retrieval.
+- Uses bounded fixed-point summaries for uniquely resolvable app-owned helper return values, parameter pass-through and same-class field writes/reads, including helper-mediated flows.
+- Accepts explicit redaction only when source analysis proves the return is redacted.
+- Treats ambiguous overloads and unresolved/external dispatch conservatively; recursive summaries are iterative and fail closed if not converged.
+- Checks both `Log.w/e/wtf` tag and message arguments.
 
-The temporary AST fixtures cover direct sensitive values, raw log tags, local aliases, reassignment, concatenation, builder append, Map put/toString/get, tainted values passed as opaque-call arguments, safe redaction, safe map/builder outputs, safe numeric/aggregate projections and a negative string-length projection. The scanner self-test is run before the full source scan in CI.
+**Executed evidence on exact PR #251 head `d6041db2033b1950cdf006b900ef5cd8f2d95eba`:**
+- CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588): **10/10 jobs passed**.
+- Security Scan [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447): **3/3 jobs passed**.
+- AST scan: **204 production Java files; 414 Log.w/Log.e/Log.wtf calls; zero violations**.
+- Espresso: **4 tests executed**; API 35 predictive-back: **1 focused test executed**.
+- Android unit tests, lint, debug APK, release R8/mapping, Server/Worker tests, CodeQL, Gitleaks, SBOM, dependency-integrity and Cloudflare Worker build validation passed.
 
-**Executed evidence — exact PR #248 head `d676fb0e028fb578cbb2d8aa83d2bb0f3afe8f4b`:**
-- CI [42330785500](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42330785500): **10/10 jobs passed** — release-log AST, Server + Worker, Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, libsignal integrity and Gradle wrapper integrity.
-- Security Scan [42330785396](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42330785396): **3/3 jobs passed** — CodeQL, Gitleaks and SBOM.
-- AST job: **204 production Java files; 407 Log.w/Log.e/Log.wtf calls; zero policy violations**.
-
-**Remaining limitations:** this remains syntax-only and method-local, not symbol-resolved whole-program taint analysis. It cannot prove arbitrary cross-method return/field/global flows, reflection, aliasing through unknown external libraries or third-party callback internals. Sticky taint can produce false positives by design. Keep S10-N2 **Partial** until residual source review and post-feature-complete release-logcat acceptance are complete. Do not treat green CI as production sign-off.
+**Remaining:** retain S10-N2 as **Partial**. The analyzer is syntax-only, not symbol-resolved whole-program taint analysis; inheritance/virtual dispatch, reflection, cross-class field aliasing, native methods, unresolved external calls and third-party callback internals remain outside proven coverage. Complete residual source review and physical-device release-logcat QA only after the owner declares the app feature-complete. Do not use real user seeds, tokens or credentials. Keep `security-remediation/FINAL_SIGNOFF.md` **PENDING**.
 
 ### B. S03-M3 — decide the media capability-token residual
 
