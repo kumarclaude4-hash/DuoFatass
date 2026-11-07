@@ -62,8 +62,9 @@
     // every other user. Enforced in addition to, not instead of, MAX_R2_BYTES.
     "MAX_USER_BYTES": "1073741824",
 
-    // Global atomic cap on PUT + DELETE attempts. Protects the KV write allowance.
-    "MAX_DAILY_MEDIA_MUTATIONS": "160",
+    // Independent global daily caps preserve the cleanup budget when upload traffic is high.
+    "MAX_DAILY_MEDIA_UPLOADS": "120",
+    "MAX_DAILY_MEDIA_DELETES": "120",
 
     // S08-I3: comma-separated allow list of browser Origins permitted to
     // call this Worker cross-origin. Empty by default — the Android app
