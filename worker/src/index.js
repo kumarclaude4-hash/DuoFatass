@@ -34,6 +34,24 @@ const MAX_R2_LIST_PAGES_PER_RUN = 400;
 function hotTierMs(env)  { return safeInt(env.HOT_TIER_DAYS || '30', 30) * 86_400_000; }
 function maxFileSize(env){ return safeInt(env.MAX_FILE_SIZE  || '95000000', 95_000_000); }
 function rateLimit(env)  { return safeInt(env.RATE_LIMIT_PER_MIN || '120', 120); }
+// Authenticated single byte-range GETs are more frequent than ordinary calls
+// because chunked AEAD playback fetches one independently authenticated 1 MiB
+// slice at a time. Keep their allowance higher without lifting the normal API
+// ceiling or creating an unlimited second bucket.
+function rangeRateLimit(env) {
+  const normalLimit = rateLimit(env);
+  const fallback = Math.max(normalLimit, normalLimit * 2);
+  const configured = safeInt(env.RANGE_RATE_LIMIT_PER_MIN || String(fallback), fallback);
+  // Bound the range-specific allowance while never making it lower than the
+  // existing configured normal ceiling.
+  return Math.max(normalLimit, Math.min(480, configured));
+}
+
+function isSingleByteRangeRequest(request) {
+  if (request?.method !== 'GET') return false;
+  const range = request.headers.get('Range');
+  return typeof range === 'string' && /^bytes=\d+-(?:\d+)?$/.test(range.trim());
+}
 
 // ─── Safe integer parsing ─────────────────────────────────────────────────────
 // Guards against KV returning null/undefined/'NaN', which would poison all
@@ -555,6 +573,12 @@ async function checkDailyRequestLimit(env, cors) {
 // Cross-location mutation volume is separately bounded by the atomic
 // MediaMutationBudget Durable Object on the Workers Free plan.
 //
+// Verified single byte-range GETs get a larger request class because chunked
+// AEAD playback performs one GET per 1 MiB chunk. The normal request class
+// remains at RATE_LIMIT_PER_MIN, and both classes share one aggregate per-user
+// minute ceiling equal to the range allowance. Thus range support does not
+// multiply the overall allowance by adding an independent unbounded bucket.
+//
 // The bucket key is derived from the verified capability holder's UID and
 // hashed before being kept in memory. Client-controlled IDs and per-operation
 // capability-token strings are never used as the rate-limit identity.
@@ -573,15 +597,30 @@ async function holderBucketKey(holder) {
     .join('');
 }
 
-async function checkPerUserRateLimit(env, cors, holder) {
-  const limit     = rateLimit(env);
-  const bucketId  = await holderBucketKey(holder);
+async function checkPerUserRateLimit(env, cors, holder, request) {
+  const normalLimit = rateLimit(env);
+  const rangeLimit = rangeRateLimit(env);
+  const isRangeRead = isSingleByteRangeRequest(request);
+  const classLimit = isRangeRead ? rangeLimit : normalLimit;
+  const className = isRangeRead ? 'range read' : 'request';
+  const bucketId = await holderBucketKey(holder);
   const minuteKey = `${bucketId}:${Math.floor(Date.now() / 60_000)}`;
-  const count     = perUserCounts.get(minuteKey) ?? 0;
-  if (count >= limit) {
-    return json({ error: `Rate limit exceeded (${limit} req/min)` }, 429, cors);
+  const bucket = perUserCounts.get(minuteKey) ?? { total: 0, normal: 0, range: 0 };
+  const classCount = isRangeRead ? bucket.range : bucket.normal;
+
+  if (classCount >= classLimit || bucket.total >= rangeLimit) {
+    return json({
+      error: `Rate limit exceeded (${classLimit} ${className}s/min; ${rangeLimit} combined req/min)`,
+      limit: classLimit,
+      combinedLimit: rangeLimit,
+    }, 429, cors);
   }
-  perUserCounts.set(minuteKey, count + 1);
+
+  bucket.total += 1;
+  if (isRangeRead) bucket.range += 1;
+  else bucket.normal += 1;
+  perUserCounts.set(minuteKey, bucket);
+
   // Prune stale minute buckets to prevent unbounded memory growth within the isolate.
   const nowMinute = Math.floor(Date.now() / 60_000);
   for (const [k] of perUserCounts) {
@@ -844,7 +883,7 @@ export default {
     if (dailyLimited) return dailyLimited;
 
     // ── Per-isolate rate limit ────────────────────────────────────────────────
-    const rateLimited = await checkPerUserRateLimit(env, cors, cap.holder);
+    const rateLimited = await checkPerUserRateLimit(env, cors, cap.holder, request);
     if (rateLimited) return rateLimited;
 
     // ── UPLOAD ────────────────────────────────────────────────────────────────
