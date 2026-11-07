@@ -1,14 +1,14 @@
-// Global daily media-mutation budget for the free-tier deployment.
+// Global daily media upload and deletion budgets for the free-tier deployment.
 //
 // This Durable Object is reached only through the Worker's private binding,
 // after a valid per-object media capability has been verified. It is not
 // exposed as a public route. A single named instance serializes reservations
 // across edge locations, unlike Workers KV's eventually-consistent counters.
 //
-// The budget covers PUT and DELETE attempts (not GETs) and is intentionally
-// conservative: rejected/failed attempts still consume a slot. This bounds
-// the KV writes used by the existing per-object storage accounting and delete
-// replay protection. The default is sized for the 10-user free-tier profile.
+// Upload and DELETE attempts have independent caps (GETs are not counted).
+// Rejected/failed attempts consume a slot deliberately. Separate budgets
+// ensure upload traffic cannot starve privacy/expiry cleanup. Each bucket is
+// global across all users and resets at 00:00 UTC.
 
 const STORAGE_KEY = "daily-media-mutations";
 const DEFAULT_DAILY_UPLOAD_LIMIT = 120;
