@@ -8,39 +8,60 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 ## What this program is
 
-All 20 scheduled Round 3 remediation sessions have been worked through at the
-source/documentation level; this is not equivalent to end-to-end sign-off. The Firestore Rules
-catch-up gate S3-15b passed **186/186 emulator tests**. The broader Android catch-up gate S3-19b
-remains outstanding. On 2026-11-04, security fixes #201–#205 and #207–#208, plus the separate
-Espresso SDK setup fix #200, were merged to `main`. See the root `../BUG_TRACKER.md` for
-finding-level dispositions and the current test evidence. `FINAL_SIGNOFF.md` remains **PENDING**
-until all residual test and operator gates have been verified.
+All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level.
+That is not equivalent to end-to-end sign-off. S3-15b Firestore Rules emulator coverage passed
+**186/186 tests**, and S3-19b Android catch-up is verified on main CI (Android unit tests, lint,
+debug APK, Espresso and minified R8).
+
+As of 2026-11-07, main is `98f76cdf374eeaf5c8144befad068ef05805a20b`. Main CI
+[42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and
+Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135)
+passed. PR #255 (invite UID pseudonymization), PR #256 (Worker range-read rate accounting) and
+documentation PR #257 are merged. Current code PRs #253, #254 and #258 remain open; their exact
+heads, stale merge bases and CI blockers are recorded in
+[`AGENTIC_WORK_REMAINING_2026-11-06.md`](AGENTIC_WORK_REMAINING_2026-11-06.md).
+
+The canonical `../BUG_TRACKER.md` now contains **116 findings: 86 Fixed, 17 Partial, 1 Open,
+12 Accepted**. The two restored Session 06 findings S06-H4 and S06-H5 are included in that
+count. `FINAL_SIGNOFF.md` remains **PENDING** until residual test, staging, operator, governance
+and deferred physical-device acceptance gates have been evidenced or formally approved.
 
 ---
 
-## Chain state — current next action
+## Current state — 2026-11-07
 
-<!-- Current state as of 2026-11-04. Historical session narratives below are retained. -->
+```
+MAIN: 98f76cdf374eeaf5c8144befad068ef05805a20b
+CI: 42387261365 — passed
+SECURITY: 42387261135 — passed
+MERGED: PR #255 (invite UID pseudonymization), #256 (range-read rate accounting), #257 (docs).
+OPEN: PR #253 (invite-state fail-closed; stale/dirty base), #254 (range-read allowance; stale/dirty base),
+      #258 (migration credential normalizer; Gitleaks fixture + Firestore expiry test failures).
+TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted.
+NEXT: Follow AGENTIC_WORK_REMAINING_2026-11-06.md for the active PRs and current acceptance gaps.
+SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
+PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
+FINAL SIGN-OFF: PENDING.
+```
+
+## Chain state — historical Round 3 schedule
+
+The block below records the scheduled-session closeout. It is not a claim that every
+operator, staging, governance or device acceptance gate is complete.
 
 ```
 NEXT ACTION: S3-20 is the final scheduled session and is complete. Do not invent S3-21.
-S3-15b (Firestore Rules catch-up) is DONE: 186/186 emulator tests passed. S3-19b is also now verified on main CI. S3-19b (full Android compile + unit-test catch-up for the Android changes in S3-15/16/17/18/19
-and the S07-C1 Android compile gate) is now **verified on main CI** (lint, unit tests, debug APK,
-Espresso 2/2, supply-chain gates all passed). PR #200's separate Espresso workflow passed 2 instrumentation
-tests, but does not satisfy this broader catch-up gate. Security PRs #201–#205/#207/#208 and
-Espresso PR #200 are merged. Current `origin/main` is `45363ae8f1be3b9bf2dbdfab861580d4f3b6038d`;
-current CI and Security scan both completed successfully (runs 41842025684 and 41842025761).
-Remaining gates: Firebase revoke-token integration test for S02-I3; Render/Worker credential
-verification for shared auth rate limiting; SC-12 main branch protection and tag/ruleset settings
-(live read-back on 2026-11-04 confirmed they are still absent); leaked GCP service-account key and
-remaining Worker/B2/admin credential rotations; App Check enforcement and Firebase/Firestore operator
-configuration; trust-boundary review; and coordinated production server + Android release. SC-03
-hashes/enforcement and the full S3-19b Android CI gate are now verified green on main. Keep
-FINAL_SIGNOFF.md PENDING until the remaining external items are evidenced.
+S3-15b Firestore Rules catch-up: 186/186 emulator tests passed.
+S3-19b Android catch-up: verified on main CI (lint, unit tests, debug APK, Espresso and release R8).
+The 2026-11-04 main commit/run references in the original session notes are historical.
+Remaining security, staging and operator actions are enumerated in
+security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md and BUG_TRACKER.md.
 ```
 
-If `NEXT SESSION` above is `S3-20 complete`, do **not** start coding — go to the sign-off gate at the
-bottom of the plan and verify operator items instead.
+If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
+session. Follow the current agentic handoff for bounded code PRs and acceptance preparation; do not
+treat the scheduled-session stop rule as a reason to ignore the active open PRs.
+
 
 ---
 
@@ -49,9 +70,9 @@ bottom of the plan and verify operator items instead.
 1. **Read the rules of engagement.** Open [`SESSION_PROTOCOL.md`](./SESSION_PROTOCOL.md) and read it
    in full. It is binding: source beats tracker, ≤4 tasks/session, never fabricate a PASS, never make
    `/mintToken` auth fields optional.
-2. **Open the plan.** In [`ROUND3_REMEDIATION_PLAN.md`](./ROUND3_REMEDIATION_PLAN.md), find the
-   session named in `NEXT SESSION` above. That session's finding IDs, code targets, verification lane,
-   and exit criteria are your entire scope. **Do not pull work forward from a later session.**
+2. **Open the current handoff.** Use [`AGENTIC_WORK_REMAINING_2026-11-06.md`](./AGENTIC_WORK_REMAINING_2026-11-06.md)
+   for current code PRs, source-only tasks, operator blockers and feature-complete device deferrals.
+   The numbered Round 3 plan is complete; do not invent another scheduled session.
 3. **Recover state (SESSION_PROTOCOL §3 + §7).** Run:
    - `git status --short` and `git log -3 --oneline --stat`
    - For each finding ID in this session, read its row in [`../BUG_TRACKER.md`](../BUG_TRACKER.md) and
@@ -75,8 +96,8 @@ bottom of the plan and verify operator items instead.
    - Write `sessions/SESSION-<n>.md` with the end-of-session record block (format in
      `SESSION_PROTOCOL.md §7`).
    - Commit; confirm `git status` is clean.
-   - **Update the Chain state block above**: set `NEXT SESSION` to the following session, set
-     `LAST DONE` to the one you just finished.
+   - Update the current dated handoff and finding-level tracker. Do not advance or invent a new
+     numbered Round 3 session after S3-20.
 7. **Stop.** One session = one scheduled batch. Do not start the next session because budget remains.
 
 ---

@@ -28,6 +28,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Tapping the ongoing-call notification now sets `FLAG_ACTIVITY_NEW_TASK` so the call reliably returns to the front from the background
 
 ### Changed
+- **Chunked encrypted-video playback now fits the Worker per-holder request budget more cleanly** (PR #256): valid syntactically safe single-range GETs cost half a request unit in the same shared minute bucket; ordinary requests still cost one full unit, and the global daily request/mutation guards continue to count/enforce actual requests and mutations.
 - `CallActivity` now runs in its own task (`taskAffinity`, launched with `FLAG_ACTIVITY_NEW_TASK`): back on a voice call returns to the screen you came from while the call keeps running, and the call has its own Recents card
 - `CallActivity` ends the call through a single `endCall()` path (End button, notification End, PiP End)
 - `CallActivity` back handling uses `OnBackPressedCallback` — the manifest opts in to predictive back (`enableOnBackInvokedCallback`), which bypasses `Activity.onBackPressed()` on Android 13+
