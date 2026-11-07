@@ -80,11 +80,11 @@ public final class DeviceSecurityGate {
             // Do not emit manufacturer/model: together they are device-fingerprinting
             // metadata and add no actionable diagnostic beyond the security tier/API.
             Log.e(TAG, "Blocking onboarding/restore: no durable secure store"
-                    + " (tier=" + tier + ", API=" + android.os.Build.VERSION.SDK_INT + ").");
+                    + " (API=" + android.os.Build.VERSION.SDK_INT + ").");
         } else if (decision == Decision.BLOCKED_LEGACY_PLAINTEXT_REMAINS) {
             Log.e(TAG, "Blocking onboarding/restore: legacy plaintext migration is incomplete.");
         } else {
-            Log.i(TAG, "Onboarding/restore permitted (tier=" + tier + ").");
+            Log.i(TAG, "Onboarding/restore permitted.");
         }
         return decision;
     }
