@@ -1783,7 +1783,7 @@ public class ChatMediaActivity extends BaseActivity {
                             }
                         }
                         if (!unread.isEmpty()) {
-                            DeliveryReceiptHelper.markRead(conversationId, unread, myUid);
+                            DeliveryReceiptHelper.markRead(ChatMediaActivity.this, conversationId, unread, myUid);
                         }
                     }
                     attachFirestoreListener();
@@ -2227,7 +2227,7 @@ public class ChatMediaActivity extends BaseActivity {
             // (teal double tick for the sender). Background delivery uses
             // DuoShieldMessagingService.acknowledgeDelivery() via FCM data payload.
             if (!newIncoming.isEmpty()) {
-                DeliveryReceiptHelper.markRead(conversationId, newIncoming, myUid);
+                DeliveryReceiptHelper.markRead(ChatMediaActivity.this, conversationId, newIncoming, myUid);
 
                 // Partner is actively in the chat (they just sent messages), which
                 // proves they received our previous messages. Locally advance any of
