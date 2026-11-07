@@ -215,7 +215,7 @@ public class ReleaseLogPrivacyTest {
                 "app/src/main/java/com/duoshield/app/security/PinKeyGate.java");
         assertTrue(pinGate.contains("Could not delete keystore alias "));
         assertTrue(pinGate.contains("LogRedact.metadata(alias)"));
-        assertFalse(pinGate.contains("Could not delete alias '\\" + " + alias"));
+        assertFalse(pinGate.contains("Could not delete alias '\" + alias"));
     }
 
     private static String readProjectFile(String relativePath) throws IOException {
