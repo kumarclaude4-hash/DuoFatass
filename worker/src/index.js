@@ -20,9 +20,12 @@ const MAX_DAILY_REQUESTS = 80_000;
 // drift and objects written outside this Worker. Tiering stops before 9 GB.
 const MAX_B2_BYTES = 9_000_000_000;
 
-// Maximum objects migrated per cron run. 3 subrequests per migration (get + put + delete)
-// plus list overhead keeps total well under the 1,000 subrequest-per-invocation limit.
-const MAX_MIGRATIONS_PER_RUN = 200;
+// Workers Free allows 50 external subrequests per invocation. The scheduled
+// path makes one B2 list request per inventory page, one B2 PUT per migration,
+// and may make one compensating B2 DELETE per raced migration. Bound both sides
+// so the worst-case external request count stays below 50.
+const MAX_MIGRATIONS_PER_RUN = 15;
+const MAX_B2_LIST_PAGES_PER_RUN = 10;
 
 // ─── Tier config ──────────────────────────────────────────────────────────────
 function hotTierMs(env)  { return safeInt(env.HOT_TIER_DAYS || '30', 30) * 86_400_000; }
@@ -629,7 +632,13 @@ async function adjustUserBytes(env, holder, deltaBytes) {
 async function getB2TotalBytes(b2, env) {
   let total             = 0;
   let continuationToken = '';
+  let pages             = 0;
   do {
+    pages++;
+    if (pages > MAX_B2_LIST_PAGES_PER_RUN) {
+      console.warn(`B2 inventory exceeds the ${MAX_B2_LIST_PAGES_PER_RUN}-page free-tier scan budget; skipping tiering until inventory can be scanned safely`);
+      return null;
+    }
     const url = new URL(`${env.B2_ENDPOINT}/${env.B2_BUCKET}`);
     url.searchParams.set('list-type', '2');
     url.searchParams.set('max-keys', '1000');
@@ -1242,13 +1251,14 @@ export default {
   // Runs at 02:00 UTC every day (configured in wrangler.jsonc).
   //
   // Steps:
-  //   1. Full R2 scan: migrate objects older than HOT_TIER_DAYS to B2.
-  //      Migration is capped at MAX_MIGRATIONS_PER_RUN (200) to stay under the
-  //      1,000-subrequest-per-invocation Worker limit. Objects that exceed the
-  //      cap remain in R2 and are retried the next day.
-  //   2. Write authoritative R2 byte count to KV.
-  //   3. Reconcile B2 byte count via B2 ListObjectsV2 and write to KV.
-  //      This corrects any drift from failed per-request counter updates.
+  //   1. Reconcile B2 before writes. The list is capped at 10 pages so preflight
+  //      plus 15 PUTs and up to 15 compensating DELETEs stays below the 50
+  //      external-subrequest limit on Workers Free.
+  //   2. Scan R2 and migrate at most 15 eligible objects. Remaining files stay
+  //      in R2 and are retried tomorrow.
+  //   3. Write authoritative R2 bytes and a conservative projected B2 total to
+  //      KV. The next night's B2 preflight reconciles any race/delete drift; a
+  //      second full B2 scan today would spend another 10 external subrequests.
   async scheduled(event, env, ctx) {
     const b2        = getB2Client(env);
     const now       = Date.now();
@@ -1445,23 +1455,20 @@ export default {
     // ── Step 2: Persist authoritative R2 byte count ────────────────────────────
     await kvSet(env, 'global:storage:r2', r2TotalBytes);
 
-    // ── Step 3: Reconcile B2 byte count via B2 ListObjectsV2 ─────────────────
-    // This is the authoritative B2 figure. Per-request counter writes can drift
-    // (KV quota exhaustion, failed deletes, etc.); the list always tells the truth.
-    const b2TotalBytes = await getB2TotalBytes(b2, env);
-    if (b2TotalBytes !== null) {
-      await kvSet(env, 'global:storage:b2', b2TotalBytes);
-      if (b2TotalBytes > MAX_B2_BYTES) {
-        console.error(`B2 usage exceeds safety cap: ${b2TotalBytes} B / ${MAX_B2_BYTES} B`);
-      }
-    } else {
-      console.warn('B2 post-run reconciliation failed — KV counter unchanged; next run will re-check before tiering');
+    // ── Step 3: Persist conservative projected B2 count ───────────────────────
+    // The preflight listing was authoritative before migration. Add only B2 PUTs
+    // that returned success while the cron ran. Concurrent deletes and a failed
+    // compensating delete can make this estimate high, never intentionally low;
+    // tomorrow's preflight scan reconciles it before accepting more tiering.
+    await kvSet(env, 'global:storage:b2', b2ProjectedBytes);
+    if (b2ProjectedBytes > MAX_B2_BYTES) {
+      console.error(`B2 usage exceeds safety cap: ${b2ProjectedBytes} B / ${MAX_B2_BYTES} B`);
     }
 
     console.log(
       `Tiering complete: migrated=${moved} (cap=${MAX_MIGRATIONS_PER_RUN}) | ` +
       `R2=${(r2TotalBytes / 1_048_576).toFixed(1)} MB / ${(MAX_R2_BYTES / 1_048_576).toFixed(0)} MB cap | ` +
-      `B2=${b2TotalBytes !== null ? (b2TotalBytes / 1_048_576).toFixed(1) + ' MB (reconciled)' : 'reconciliation failed'}`
+      `B2=${(b2ProjectedBytes / 1_048_576).toFixed(1)} MB (preflight + projected writes)`
     );
   },
 };
