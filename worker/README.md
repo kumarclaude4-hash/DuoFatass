@@ -149,11 +149,11 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 > Request counting samples 1 in 500 requests (~160 writes/day at the 80K request
 > ceiling). Daily media mutation caps leave substantial KV-write headroom even
 > when the scheduled tiering job runs. PUT and DELETE attempts have independent global caps of 120 uploads/day and
-> 80 deletes/day in the SQLite-backed `MediaMutationBudget` Durable Object.
-> Each account is additionally limited to 20 uploads and 20 deletes per UTC day,
+> 150 deletes/day in the SQLite-backed `MediaMutationBudget` Durable Object.
+> Each account is additionally limited to 20 uploads and 60 deletes per UTC day,
 > so one account cannot monopolise the shared pool. At those global operation
 > caps, storage accounting and DELETE replay markers can consume up to roughly
-> 480 KV writes/day; request sampling adds about 160 writes/day on average at
+> 690 KV writes/day; request sampling adds about 160 writes/day on average at
 > the 80K request target. Sampling is probabilistic, not a strict write ceiling. If the quota DO is unavailable or
 > unconfigured, media mutations fail closed. A separate atomic monthly counter
 > reserves R2 Class A operations before each upload and each R2 inventory-list page,
