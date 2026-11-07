@@ -206,9 +206,11 @@ auto-deleted; the next night's preflight reconciles projected-counter drift.
   (`/health`) is public.
 - **Encryption:** All file content is AES-256-GCM encrypted client-side before
   upload. The Worker and both storage tiers only ever see ciphertext.
-- **Rate limiting:** 120 req/min per verified capability-token holder, enforced
-  per edge isolate (advisory across edge locations); a separate global daily
-  media-mutation budget is enforced by SQLite-backed Durable Objects.
+- **Rate limiting:** 120 ordinary req/min per verified capability-token holder;
+  single byte-range GETs used by 1 MiB chunked-AEAD playback have a configurable
+  240 req/min class. Both share a 240 combined req/min per-holder ceiling in each
+  edge isolate (advisory across edge locations); the 80K/day global request
+  safety gate and separate SQLite-backed daily media-mutation budgets remain.
 - **Storage cap:** Uploads rejected when R2 reaches the 9 GB decimal safety
   ceiling. Actual stored size is verified via R2 HEAD after upload (client
   `Content-Length` is not trusted).
