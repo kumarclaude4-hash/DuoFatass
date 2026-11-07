@@ -4,7 +4,7 @@
 Replace the anonymous, floodable self-request waitlist with a complete admin-issued invite lifecycle. Preserve existing-account restore, keep invite redemption private and single-use, and retain a bounded migration path for previously approved requests.
 
 ## Data model
-Firestore `invites/{inviteId}` stores `tokenHash` (never the raw bearer token), `tokenFingerprint`, `status`, admin-provided `label` and optional `notes`, `createdAt`, `expiresAt`, and optional `usedAt`, `usedByUserId`, `revokedAt`, and `revocationReason`. Expiration is derived and enforced at validation and redemption time.
+Firestore `invites/{inviteId}` stores `tokenHash` (never the raw bearer token), `tokenFingerprint`, `status`, admin-provided `label` and optional `notes`, `createdAt`, `expiresAt`, and optional `usedAt`, a 12-character pseudonymous `usedByUserIdTag`, `revokedAt`, and `revocationReason`. The raw `usedByUserId` field is legacy-only and must not be written by current code. Expiration is derived and enforced at validation and redemption time.
 
 ## Server API
 - Retire anonymous `POST /requestAccess` and `GET /waitlistStatus`.
