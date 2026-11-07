@@ -7,7 +7,7 @@ const {
   createRunTagger,
   buildLegacyInviteUpdate,
   runMigration,
-} = require("./pseudonymizeInviteRedemptionUids");
+} = require("../scripts/pseudonymizeInviteRedemptionUids");
 
 test("migration replaces legacy raw UID with a short non-reversible display tag", () => {
   const tagUserId = createRunTagger(Buffer.alloc(32, 7));
