@@ -45,9 +45,9 @@ import javax.tools.ToolProvider;
  * needed. The policy deliberately rejects ambiguous exception diagnostics and
  * sensitive getters unless the value is passed through LogRedact.
  *
- * This is a source-policy tripwire, not whole-program taint analysis. Keep the
- * finding Partial until indirect data flow and runtime logcat are separately
- * reviewed and accepted.
+ * This includes a conservative method-local alias pass, but is not whole-program
+ * taint analysis. Keep the finding Partial until interprocedural data flow and
+ * runtime logcat are separately reviewed and accepted.
  */
 public final class AndroidReleaseLogPrivacyPolicy {
     private static final Pattern SENSITIVE_IDENTIFIER = Pattern.compile(
@@ -178,7 +178,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"alias=\" + LogRedact.metadata(alias));\n"
                   + "    Log.w(\"TAG\", \"device=\" + LogRedact.metadata(Build.MODEL) + \"/\" + LogRedact.metadata(Build.MANUFACTURER));\n"
                   + "    Log.w(LogRedact.uid(peerId), \"redacted tag is safe\");\n"
-                  + "    String safeAlias = LogRedact.metadata(alias);\n"
+                  + "    String safeValue = LogRedact.metadata(alias);\n"
                   + "    Log.w(\"TAG\", safeAlias);\n"
                   + "    StringBuilder safeBuilder = new StringBuilder();\n"
                   + "    safeBuilder.append(LogRedact.uid(peerId));\n"
@@ -367,7 +367,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     || isContainerConstruction(initializer)) {
                 containerLocals.add(name);
             }
-            if (SENSITIVE_IDENTIFIER.matcher(name).matches()
+            if ((SENSITIVE_IDENTIFIER.matcher(name).matches()
+                    && (initializer == null || !isRedactedExpression(initializer)))
                     || (initializer != null && (hasSensitiveSource(initializer)
                     || containsTrackedAlias(initializer)))) {
                 taintedLocals.add(name);
@@ -436,6 +437,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (hasSensitiveSource(argument) || containsTrackedAlias(argument)) return true;
             }
             return false;
+        }
+
+        private boolean isRedactedExpression(ExpressionTree expression) {
+            if (!(expression instanceof MethodInvocationTree)) return false;
+            MethodInvocationTree invocation = (MethodInvocationTree) expression;
+            String method = methodName(invocation);
+            String receiver = receiverName(invocation);
+            return ("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                    && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"));
         }
 
         private boolean isContainerConstruction(ExpressionTree expression) {
