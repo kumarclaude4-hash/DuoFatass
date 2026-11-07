@@ -28,7 +28,8 @@
   // plan — no paid plan upgrade required for this one Durable Object class.
   "durable_objects": {
     "bindings": [
-      { "name": "ADMIN_LOCKOUT_DO", "class_name": "AdminLockoutCounter" }
+      { "name": "ADMIN_LOCKOUT_DO", "class_name": "AdminLockoutCounter" },
+      { "name": "MEDIA_QUOTA_DO", "class_name": "MediaMutationBudget" }
     ]
   },
 
@@ -36,7 +37,8 @@
   // `new_sqlite_classes` (rather than `new_classes`) selects the free-plan
   // SQLite storage backend for this class.
   "migrations": [
-    { "tag": "v1-admin-lockout-do", "new_sqlite_classes": ["AdminLockoutCounter"] }
+    { "tag": "v1-admin-lockout-do", "new_sqlite_classes": ["AdminLockoutCounter"] },
+    { "tag": "v2-media-mutation-budget", "new_sqlite_classes": ["MediaMutationBudget"] }
   ],
 
   "vars": {
@@ -59,6 +61,9 @@
     // uploader from exhausting the shared 9.5 GB R2 free-tier budget for
     // every other user. Enforced in addition to, not instead of, MAX_R2_BYTES.
     "MAX_USER_BYTES": "1073741824",
+
+    // Global atomic cap on PUT + DELETE attempts. Protects the KV write allowance.
+    "MAX_DAILY_MEDIA_MUTATIONS": "160",
 
     // S08-I3: comma-separated allow list of browser Origins permitted to
     // call this Worker cross-origin. Empty by default — the Android app
