@@ -141,16 +141,24 @@ public class SelfDestructWorker extends Worker {
      * indefinitely (BUG-T05).
      */
     private int deleteExpiredFromFirestore(String conversationId, long now) throws Exception {
+        FirebaseCostGuard guard = FirebaseCostGuard.getInstance(getApplicationContext());
+        if (!guard.reserveRead(1)) {
+            throw new IllegalStateException("Local Firestore read budget exhausted; expiry sweep deferred");
+        }
         FirebaseFirestore fs = FirebaseFirestore.getInstance();
         QuerySnapshot snap = Tasks.await(
                 fs.collection("chats").document(conversationId)
                   .collection("messages")
                   .whereGreaterThan("expiresAt", 0L)
                   .whereLessThan("expiresAt", now)
+                  .limit(BATCH_LIMIT)
                   .get(),
                 30, java.util.concurrent.TimeUnit.SECONDS
         );
-        FirebaseCostGuard.getInstance(getApplicationContext()).recordReads(snap.size());
+        // The query returns at most one bounded batch. The first read was
+        // reserved before the request; count the additional documents actually
+        // returned so the device estimate reflects document reads, not query count.
+        if (snap.size() > 1) guard.recordReads(snap.size() - 1);
         return commitBatchDelete(fs, snap, "expiresAt-expired");
     }
 
@@ -161,6 +169,14 @@ public class SelfDestructWorker extends Worker {
         if (docs.isEmpty()) {
             Log.d(TAG, "Firestore [" + label + "]: no messages to delete.");
             return 0;
+        }
+
+        // Reserve the complete bounded deletion batch before deleting any media
+        // blob or Firestore document. If the local quota is exhausted, leave all
+        // references intact and let WorkManager retry on a later pass.
+        FirebaseCostGuard guard = FirebaseCostGuard.getInstance(getApplicationContext());
+        if (!guard.reserveDelete(docs.size())) {
+            throw new IllegalStateException("Local Firestore delete budget exhausted; expiry sweep deferred");
         }
 
         int total = 0, batchCount = 0;
@@ -178,7 +194,11 @@ public class SelfDestructWorker extends Worker {
                     B2StorageHelper.deleteFile(mediaPath);
                 } catch (Exception e) {
                     Log.w(TAG, "B2 delete failed for path=" + com.duoshield.app.util.LogRedact.metadata(mediaPath)
-                            + " — Firestore doc will still be deleted." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                            + " — retaining the Firestore reference so the next sweep can retry." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                    // Do not delete the only reference to a blob that still
+                    // exists. The document remains expired and is picked up
+                    // by the next scheduled pass.
+                    continue;
                 }
             } else if (mediaPath != null && !mediaPath.isEmpty()) {
                 Log.w(TAG, "F10: refusing to delete B2 path '" + com.duoshield.app.util.LogRedact.metadata(mediaPath)
@@ -196,7 +216,6 @@ public class SelfDestructWorker extends Worker {
             }
         }
         if (batchCount > 0) Tasks.await(batch.commit(), 30, java.util.concurrent.TimeUnit.SECONDS);
-        FirebaseCostGuard.getInstance(getApplicationContext()).recordDeletes(total);
         Log.d(TAG, "Firestore [" + label + "]: deleted " + total + " message(s).");
         return total;
     }
