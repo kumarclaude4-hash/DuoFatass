@@ -755,6 +755,12 @@ public class GroupChatActivity extends BaseActivity {
     }
 
     private void retryMessage(Message msg) {
+        if (msg != null && ("album".equals(msg.getMediaType())
+                || (msg.getMediaUrl() != null && !msg.getMediaUrl().isEmpty()))) {
+            Toast.makeText(this, "Please re-select the media to retry this message.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         adapter.removeMessage(msg.getId());
         knownIds.remove(msg.getId());
         etMessage.setText(msg.getText());
@@ -1226,9 +1232,8 @@ public class GroupChatActivity extends BaseActivity {
             runOnUiThread(() -> {
                 optimistic.setStatus("failed");
                 adapter.updateMessage(msgId, m -> m.setStatus("failed"));
-                executor.execute(() -> localDb.messageDao().insert(optimistic));
                 Toast.makeText(this,
-                        "Daily write budget reached — media is saved locally. Try again after the quota reset.",
+                        "Daily write budget reached — media was not sent. Re-select it after the quota reset.",
                         Toast.LENGTH_LONG).show();
             });
             B2StorageHelper.deleteFileAsync(storagePath);
@@ -1311,16 +1316,9 @@ public class GroupChatActivity extends BaseActivity {
         if (!guard.reserveWrite(1)) {
             optimistic.setStatus("failed");
             adapter.updateMessage(msgId, m -> m.setStatus("failed"));
-            executor.execute(() -> localDb.messageDao().insert(optimistic));
-            // These media objects were uploaded before the album metadata write.
-            // Remove them when the local Firestore budget prevents publishing the album.
-            for (String[] item : items) {
-                if (item != null && item.length > 0 && B2StorageHelper.isB2Path(item[0])) {
-                    B2StorageHelper.deleteFileAsync(item[0]);
-                }
-            }
+            cleanupUnpublishedGroupAlbumMedia(items);
             Toast.makeText(this,
-                    "Daily write budget reached — album not sent. Try again after the quota reset.",
+                    "Daily write budget reached — album was not sent. Re-select it after the quota reset.",
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -1347,8 +1345,23 @@ public class GroupChatActivity extends BaseActivity {
                 })
                 .addOnFailureListener(ex -> {
                     adapter.updateMessage(msgId, m -> m.setStatus("failed"));
-                    Toast.makeText(this, "Failed to send album.", Toast.LENGTH_SHORT).show();
+                    cleanupUnpublishedGroupAlbumMedia(items);
+                    Toast.makeText(this,
+                            "Album was not sent. Re-select the media to try again.",
+                            Toast.LENGTH_LONG).show();
                 });
+    }
+
+    /**
+     * Removes B2 objects uploaded for a group album whose Firestore envelope
+     * could not be published. Such albums have no outbox record to retry from.
+     */
+    private void cleanupUnpublishedGroupAlbumMedia(java.util.List<String[]> items) {
+        if (items == null) return;
+        for (String[] item : items) {
+            if (item == null || item.length == 0 || item[0] == null) continue;
+            B2StorageHelper.deleteFileAsync(item[0]);
+        }
     }
 
     /** Returns the file size in bytes from ContentResolver, or 0 if unavailable. */
