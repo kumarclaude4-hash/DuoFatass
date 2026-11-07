@@ -1,6 +1,9 @@
 package com.duoshield.app.call;
 
+import android.content.Context;
 import android.util.Log;
+
+import com.duoshield.app.util.FirebaseCostGuard;
 
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.EventListener;
@@ -21,9 +24,17 @@ public class CallSignalRepository {
     private static final String COLLECTION = "calls";
 
     private final FirebaseFirestore db;
+    private final FirebaseCostGuard quota;
 
-    public CallSignalRepository() {
+    public CallSignalRepository(Context context) {
         this.db = FirebaseFirestore.getInstance();
+        this.quota = FirebaseCostGuard.getInstance(context.getApplicationContext());
+    }
+
+    private boolean reserveWrite() {
+        if (quota.reserveWrite(1)) return true;
+        Log.w(TAG, "Call signaling write deferred by this device's local Firebase budget");
+        return false;
     }
 
     public DocumentReference callRef(String callId) {
@@ -57,6 +68,10 @@ public class CallSignalRepository {
         offer.put("type", "offer");
         data.put("offer", offer);
 
+        if (!reserveWrite()) {
+            if (cb != null) cb.onFailure(new IllegalStateException("Local Firestore write budget exhausted"));
+            return;
+        }
         callRef(callId).set(data)
                 .addOnSuccessListener(v -> { if (cb != null) cb.onSuccess(); })
                 .addOnFailureListener(e -> {
@@ -73,6 +88,10 @@ public class CallSignalRepository {
         update.put("answer", answer);
         update.put("status", "accepted");
 
+        if (!reserveWrite()) {
+            if (cb != null) cb.onFailure(new IllegalStateException("Local Firestore write budget exhausted"));
+            return;
+        }
         callRef(callId).update(update)
                 .addOnSuccessListener(v -> { if (cb != null) cb.onSuccess(); })
                 .addOnFailureListener(e -> {
@@ -88,6 +107,7 @@ public class CallSignalRepository {
             update.put("endReason", endReason);
             update.put("endedAt", FieldValue.serverTimestamp());
         }
+        if (!reserveWrite()) return;
         callRef(callId).update(update)
                 .addOnFailureListener(e -> Log.w(TAG, "writeStatus failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e)));
     }
@@ -98,6 +118,7 @@ public class CallSignalRepository {
         data.put("candidate", candidateJson);
         data.put("sdpMid", sdpMid);
         data.put("sdpMLineIndex", sdpMLineIndex);
+        if (!reserveWrite()) return;
         callerCandidatesRef(callId).set(data)
                 .addOnFailureListener(e -> Log.w(TAG, "addCallerCandidate failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
@@ -108,6 +129,7 @@ public class CallSignalRepository {
         data.put("candidate", candidateJson);
         data.put("sdpMid", sdpMid);
         data.put("sdpMLineIndex", sdpMLineIndex);
+        if (!reserveWrite()) return;
         calleeCandidatesRef(callId).set(data)
                 .addOnFailureListener(e -> Log.w(TAG, "addCalleeCandidate failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
@@ -141,6 +163,7 @@ public class CallSignalRepository {
      * timer back to zero.
      */
     public void markConnected(String callId) {
+        if (!quota.reserveRead(1) || !reserveWrite()) return;
         final DocumentReference ref = callRef(callId);
         db.runTransaction(tx -> {
             com.google.firebase.firestore.DocumentSnapshot snap = tx.get(ref);
@@ -160,6 +183,10 @@ public class CallSignalRepository {
      * the caller brackets that ack to estimate when the server evaluated the stamp.
      */
     public void writeClockProbe(String callId, String uid, OnCompleteCallback cb) {
+        if (!reserveWrite()) {
+            if (cb != null) cb.onFailure(new IllegalStateException("Local Firestore write budget exhausted"));
+            return;
+        }
         callRef(callId).update("clock." + uid, FieldValue.serverTimestamp())
                 .addOnSuccessListener(v -> { if (cb != null) cb.onSuccess(); })
                 .addOnFailureListener(e -> {
@@ -185,6 +212,7 @@ public class CallSignalRepository {
         update.put("restartOffer", restartOffer);
         update.put("iceRestartRequested", false);
 
+        if (!reserveWrite()) return;
         callRef(callId).update(update)
                 .addOnFailureListener(e -> Log.w(TAG, "writeRestartOffer failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
@@ -194,12 +222,14 @@ public class CallSignalRepository {
      * is waiting for a new offer.
      */
     public void requestIceRestart(String callId) {
+        if (!reserveWrite()) return;
         callRef(callId).update("iceRestartRequested", true)
                 .addOnFailureListener(e -> Log.w(TAG, "requestIceRestart failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
 
     /** Clears the ICE restart flag after the callee has acted on it. */
     public void clearIceRestartFlag(String callId) {
+        if (!reserveWrite()) return;
         callRef(callId).update("iceRestartRequested", false)
                 .addOnFailureListener(e -> Log.w(TAG, "clearIceRestartFlag failed: " + com.duoshield.app.util.LogRedact.error(e)));
     }
@@ -211,15 +241,29 @@ public class CallSignalRepository {
     public void deleteCallDoc(String callId) {
         String[] subcollections = {"callerCandidates", "calleeCandidates", "chat"};
         for (String sub : subcollections) {
+            if (!quota.reserveRead(1)) {
+                Log.w(TAG, "Call cleanup deferred: local Firestore read budget exhausted");
+                continue;
+            }
             db.collection(COLLECTION).document(callId).collection(sub).get()
                     .addOnSuccessListener(snap -> {
+                        if (snap.size() > 1) quota.recordReads(snap.size() - 1);
+                        int deleteCount = snap.size();
+                        if (deleteCount == 0 || !quota.reserveDelete(deleteCount)) {
+                            if (deleteCount > 0) Log.w(TAG, "Call subcollection cleanup deferred by local delete budget");
+                            return;
+                        }
                         for (com.google.firebase.firestore.DocumentSnapshot doc : snap.getDocuments()) {
                             doc.getReference().delete();
                         }
                     });
         }
-        callRef(callId).delete()
-                .addOnFailureListener(e -> Log.w(TAG, "deleteCallDoc failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e)));
+        if (quota.reserveDelete(1)) {
+            callRef(callId).delete()
+                    .addOnFailureListener(e -> Log.w(TAG, "deleteCallDoc failed (non-fatal): " + com.duoshield.app.util.LogRedact.error(e)));
+        } else {
+            Log.w(TAG, "Call document cleanup deferred by local delete budget");
+        }
     }
 
     public interface OnCompleteCallback {
