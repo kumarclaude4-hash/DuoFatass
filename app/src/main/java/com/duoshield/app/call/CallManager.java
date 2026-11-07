@@ -199,7 +199,7 @@ public class CallManager {
     // ── Bandwidth tracking ───────────────────────────────────────────��────────
     /** Interval between WebRTC stats polls while connected. */
     private static final long STATS_POLL_INTERVAL_MS = 10_000L;
-    /** Cumulative transport bytes (sent + received) accumulated this call. */
+    /** Cumulative estimated Cloudflare TURN egress received by this client. */
     private long sessionEgressBytesTotal = 0L;
     /** Last snapshot of transport bytes from the stats report (to compute deltas). */
     private long lastTransportBytesSent     = -1L;
@@ -207,8 +207,8 @@ public class CallManager {
     /**
      * True once WebRTC stats confirm the selected candidate pair is a relay
      * (i.e. traffic is actually going through Cloudflare TURN).  We only
-     * accumulate received relay bytes into {@link #sessionEgressBytesTotal} — and thus estimate
-     * the monthly Cloudflare quota — when this flag is set.  P2P calls (srflx
+     * accumulate bytes received from the relay into {@link #sessionEgressBytesTotal} —
+     * the estimate of monthly Cloudflare egress — when this flag is set.  P2P calls (srflx
      * or host candidate pairs) are free and must not erode the quota counter.
      */
     private boolean isRelayCall = false;
@@ -1711,10 +1711,9 @@ public class CallManager {
             collectStats();
         }
         if (sessionEgressBytesTotal > 0) {
-            TurnBandwidthTracker.get(context).recordCallBytes(sessionEgressBytesTotal);
             Log.i(TAG, String.format(Locale.US,
-                    "Call ended — reported %.2f MB estimated TURN egress to tracker. Monthly: %s",
-                    sessionEgressBytesTotal / (1024.0 * 1024.0),
+                    "Call ended — estimated %.2f MB TURN egress. Monthly: %s",
+                    sessionEgressBytesTotal / 1_000_000.0,
                     TurnBandwidthTracker.get(context).getSummary()));
         }
         sessionEgressBytesTotal          = 0L;
@@ -1821,11 +1820,12 @@ public class CallManager {
                     lastTransportBytesReceived = transportRecv;
                     if (isRelayCall) {
                         sessionEgressBytesTotal += deltaRecv;
+                        TurnBandwidthTracker.get(context).recordEgressBytes(deltaRecv);
                     }
                     Log.d(TAG, String.format(Locale.US,
                             "Stats poll: +%.1f KB tx, +%.1f KB rx — estimated TURN egress: %.2f MB [%s]",
                             deltaSent / 1024.0, deltaRecv / 1024.0,
-                            sessionEgressBytesTotal / (1024.0 * 1024.0),
+                            sessionEgressBytesTotal / 1_000_000.0,
                             isRelayCall ? "relay" : "direct"));
                 }
 
