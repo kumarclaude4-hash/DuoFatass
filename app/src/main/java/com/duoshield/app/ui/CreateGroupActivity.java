@@ -154,10 +154,19 @@ public class CreateGroupActivity extends BaseActivity {
             return;
         }
 
-        // ── 1. Write Firestore group doc ────────────────────────────────────
+        // Prepare a unique member list so duplicate contact rows cannot create
+        // duplicate membership entries or duplicate Firestore key writes.
+        List<Contact> uniqueMembers = new ArrayList<>();
         List<String> memberUids = new ArrayList<>();
+        Set<String> seenUids = new HashSet<>();
+        seenUids.add(myUid);
         memberUids.add(myUid);
-        for (Contact c : members) memberUids.add(c.uid);
+        for (Contact contact : members) {
+            if (contact == null || contact.uid == null || contact.uid.trim().isEmpty()
+                    || !seenUids.add(contact.uid)) continue;
+            uniqueMembers.add(contact);
+            memberUids.add(contact.uid);
+        }
 
         Map<String, Object> groupDoc = new HashMap<>();
         groupDoc.put("name",      name);
@@ -165,48 +174,83 @@ public class CreateGroupActivity extends BaseActivity {
         groupDoc.put("createdAt", com.google.firebase.firestore.FieldValue.serverTimestamp());
         groupDoc.put("members",   memberUids);
 
-        FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (guard.reserveWrite(1)) {
-            db.collection("groups").document(groupId)
-              .set(groupDoc, SetOptions.merge());
-        }
-
-        // ── 2. Encrypt group key for each member via Signal + write to Firestore ──
-        for (Contact c : members) {
-            try {
-                SignalCipherHelper.EncryptResult r =
-                        SignalCipherHelper.encrypt(this, c.uid, groupKey);
-                Map<String, Object> keyDoc = new HashMap<>();
-                keyDoc.put("encryptedKey", r.ciphertextB64);
-                keyDoc.put("sigType",      r.sigType);
-                keyDoc.put("senderUid",    myUid);
-                if (guard.reserveWrite(1)) {
-                    db.collection("groups").document(groupId)
-                      .collection("keys").document(c.uid)
-                      .set(keyDoc);
-                }
-            } catch (Exception e) {
-                android.util.Log.w(TAG, "Failed to encrypt group key for " + LogRedact.uid(c.uid) + " (" + LogRedact.error(e) + ")");
-            }
-        }
-
-        // ── BUG-S01 fix: Write the creator's own encrypted key so they can
-        //    re-decrypt messages after a reinstall (their own Signal session
-        //    lets them decrypt a message addressed to themselves). ──────────────
+        // Encrypt every member key before creating anything remotely. If a Signal
+        // session is unavailable, fail without leaving a group that some members
+        // can never open.
+        Map<String, Map<String, Object>> keyDocs = new HashMap<>();
         try {
-            SignalCipherHelper.EncryptResult r =
-                    SignalCipherHelper.encrypt(this, myUid, groupKey);
-            Map<String, Object> myKeyDoc = new HashMap<>();
-            myKeyDoc.put("encryptedKey", r.ciphertextB64);
-            myKeyDoc.put("sigType",      r.sigType);
-            myKeyDoc.put("senderUid",    myUid);
-            if (guard.reserveWrite(1)) {
-                db.collection("groups").document(groupId)
-                  .collection("keys").document(myUid)
-                  .set(myKeyDoc);
+            for (Contact contact : uniqueMembers) {
+                SignalCipherHelper.EncryptResult encrypted =
+                        SignalCipherHelper.encrypt(this, contact.uid, groupKey);
+                Map<String, Object> keyDoc = new HashMap<>();
+                keyDoc.put("encryptedKey", encrypted.ciphertextB64);
+                keyDoc.put("sigType",      encrypted.sigType);
+                keyDoc.put("senderUid",    myUid);
+                keyDocs.put(contact.uid, keyDoc);
             }
+
+            // Creator's own encrypted key allows recovery after a reinstall.
+            SignalCipherHelper.EncryptResult encryptedSelf =
+                    SignalCipherHelper.encrypt(this, myUid, groupKey);
+            Map<String, Object> selfKeyDoc = new HashMap<>();
+            selfKeyDoc.put("encryptedKey", encryptedSelf.ciphertextB64);
+            selfKeyDoc.put("sigType",      encryptedSelf.sigType);
+            selfKeyDoc.put("senderUid",    myUid);
+            keyDocs.put(myUid, selfKeyDoc);
         } catch (Exception e) {
-            android.util.Log.w(TAG, "Failed to encrypt group key for creator " + LogRedact.uid(myUid) + " (" + LogRedact.error(e) + ")");
+            android.util.Log.w(TAG, "Group key preparation failed (" + LogRedact.error(e) + ")");
+            runOnUiThread(() -> {
+                Toast.makeText(this,
+                        "Could not prepare secure keys for every member. No group was created.",
+                        Toast.LENGTH_LONG).show();
+                findViewById(R.id.btn_create).setEnabled(true);
+            });
+            return;
+        }
+
+        // Firestore batches are atomic and allow at most 500 writes. Reserve the
+        // complete group + key-document write set before issuing the batch; never
+        // create a partially-keyed group when a local quota limit is reached.
+        int writesRequired = 1 + keyDocs.size();
+        if (writesRequired > 500) {
+            runOnUiThread(() -> {
+                Toast.makeText(this,
+                        "This group is too large to create in one secure operation.",
+                        Toast.LENGTH_LONG).show();
+                findViewById(R.id.btn_create).setEnabled(true);
+            });
+            return;
+        }
+        FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
+        if (!guard.reserveWrite(writesRequired)) {
+            runOnUiThread(() -> {
+                Toast.makeText(this,
+                        "Daily Firestore write budget reached. Try creating the group after the quota reset.",
+                        Toast.LENGTH_LONG).show();
+                findViewById(R.id.btn_create).setEnabled(true);
+            });
+            return;
+        }
+
+        try {
+            com.google.firebase.firestore.DocumentReference groupRef =
+                    db.collection("groups").document(groupId);
+            com.google.firebase.firestore.WriteBatch batch = db.batch();
+            batch.set(groupRef, groupDoc, SetOptions.merge());
+            for (Map.Entry<String, Map<String, Object>> entry : keyDocs.entrySet()) {
+                batch.set(groupRef.collection("keys").document(entry.getKey()), entry.getValue());
+            }
+            com.google.android.gms.tasks.Tasks.await(
+                    batch.commit(), 30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            android.util.Log.e(TAG, "Atomic group creation failed (" + LogRedact.error(e) + ")");
+            runOnUiThread(() -> {
+                Toast.makeText(this, "Group creation failed. No partial group was created.",
+                        Toast.LENGTH_LONG).show();
+                findViewById(R.id.btn_create).setEnabled(true);
+            });
+            return;
         }
 
         // ── 3. Persist group + members + own plaintext key to Room ──────────
@@ -224,7 +268,7 @@ public class CreateGroupActivity extends BaseActivity {
             myDisplayName = myUid;
         }
         roomMembers.add(new GroupMember(groupId, myUid, myDisplayName));
-        for (Contact c : members) {
+        for (Contact c : uniqueMembers) {
             roomMembers.add(new GroupMember(groupId, c.uid, c.displayName));
         }
 
