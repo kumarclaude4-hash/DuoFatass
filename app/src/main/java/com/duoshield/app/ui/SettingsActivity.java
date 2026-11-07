@@ -155,8 +155,7 @@ public class SettingsActivity extends BaseActivity {
         TextView     tvCallDataSubtitle = findViewById(R.id.tvCallDataSubtitle);
 
         TurnBandwidthTracker tracker = TurnBandwidthTracker.get(this);
-        String subtitleText = String.format(Locale.US, "%.2f GB / 100 GB used this month",
-                tracker.getUsedGb());
+        String subtitleText = tracker.getSummary();
         if (tvCallDataSubtitle != null) tvCallDataSubtitle.setText(subtitleText);
 
         if (rowCallDataUsage != null) {
@@ -305,7 +304,7 @@ public class SettingsActivity extends BaseActivity {
     private void showCallDataDialog() {
         TurnBandwidthTracker tracker = TurnBandwidthTracker.get(this);
         float usedGb      = tracker.getUsedGb();
-        float remainingGb = (float) (tracker.getRemainingBytes() / (1024.0 * 1024.0 * 1024.0));
+        float remainingGb = (float) (tracker.getRemainingBytes() / 1_000_000_000.0);
         int   percent     = tracker.getUsedPercent();
 
         // Compute next reset date (1st of next month)
@@ -337,7 +336,7 @@ public class SettingsActivity extends BaseActivity {
 
         // Percentage label
         TextView tvPct = new TextView(this);
-        tvPct.setText(String.format(Locale.US, "%d%% of 100 GB used", percent));
+        tvPct.setText(String.format(Locale.US, "%d%% of 80 GB local budget used", percent));
         tvPct.setTextColor(barColor);
         tvPct.setTextSize(13f);
         LinearLayout.LayoutParams pctParams = new LinearLayout.LayoutParams(
@@ -356,8 +355,8 @@ public class SettingsActivity extends BaseActivity {
 
         // Note
         TextView tvNote = new TextView(this);
-        tvNote.setText("Only calls relayed through TURN count toward this limit. "
-                + "Direct peer-to-peer calls are free and not included.");
+        tvNote.setText("This is an estimate stored on this device, not a project-wide meter. "
+                + "Only received bytes on relayed calls are counted; direct peer-to-peer calls are excluded.");
         tvNote.setTextSize(11f);
         tvNote.setTextColor(0xFF888888);
         tvNote.setLineSpacing(0, 1.3f);
