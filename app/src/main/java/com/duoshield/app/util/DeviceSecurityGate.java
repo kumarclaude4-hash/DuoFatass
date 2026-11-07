@@ -77,10 +77,10 @@ public final class DeviceSecurityGate {
         SecurePrefs.SecurityTier tier = SecurePrefs.getTier();
         Decision decision = evaluateState(tier, SecurePrefs.legacyPlaintextRemains());
         if (decision == Decision.BLOCKED_NO_DURABLE_STORE) {
+            // Do not emit manufacturer/model: together they are device-fingerprinting
+            // metadata and add no actionable diagnostic beyond the security tier/API.
             Log.e(TAG, "Blocking onboarding/restore: no durable secure store"
-                    + " (tier=" + tier + ", device=" + android.os.Build.MANUFACTURER
-                    + " " + android.os.Build.MODEL
-                    + " API=" + android.os.Build.VERSION.SDK_INT + ").");
+                    + " (tier=" + tier + ", API=" + android.os.Build.VERSION.SDK_INT + ").");
         } else if (decision == Decision.BLOCKED_LEGACY_PLAINTEXT_REMAINS) {
             Log.e(TAG, "Blocking onboarding/restore: legacy plaintext migration is incomplete.");
         } else {

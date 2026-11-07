@@ -555,7 +555,8 @@ public final class PinKeyGate {
             ks.load(null);
             if (ks.containsAlias(alias)) ks.deleteEntry(alias);
         } catch (Exception e) {
-            Log.w(TAG, "Could not delete alias '" + alias + "': "
+            Log.w(TAG, "Could not delete keystore alias "
+                    + com.duoshield.app.util.LogRedact.metadata(alias) + ": "
                     + e.getClass().getSimpleName());
         }
     }
