@@ -8,9 +8,9 @@ import { MediaMutationBudget } from './mediaMutationBudget.js';
 export { AdminLockoutCounter, MediaMutationBudget };
 
 // ─── Hard limits ──────────────────────────────────────────────────────────────
-// R2 free tier: 10 GB storage, 1 M Class A ops/month, 10 M Class B ops/month.
-// Enforce at 95% = 9.5 GB to stay safely within the free tier.
-const MAX_R2_BYTES = 9.5 * 1024 * 1024 * 1024; // 9.5 GB
+// R2 free tier: 10 GB-month storage, 1 M Class A ops/month, 10 M Class B ops/month.
+// Use 9.0 decimal GB (90%) so binary GiB conversion cannot cross the 10 GB cap.
+const MAX_R2_BYTES = 9_000_000_000;
 
 // Workers Free hard allowance: 100,000 requests/day. Keep an 80% early-stop
 // target so KV/DO/storage overhead and measurement error retain headroom.
@@ -593,7 +593,7 @@ async function adjustR2(env, deltaBytes) {
 
 // ─── Per-user storage quota (S03-H3) ───────────────────────────────────��──────
 // The global MAX_R2_BYTES cap alone lets one uploader (~19 uploads at the
-// default 500 MB file size) fill the entire 9.5 GB free-tier budget and stop
+// default 500 MB file size) fill the entire 9 GB free-tier budget and stop
 // uploads for every user for weeks (objects only leave R2 via the 30-day
 // cron). This adds a second, per-holder ceiling — keyed on `cap.holder` from
 // the capability token (SEC-A01), never on a client-supplied header — that
@@ -695,7 +695,7 @@ export default {
           limit_bytes:     MAX_R2_BYTES,
           used_pct:        parseFloat((r2Bytes  / MAX_R2_BYTES  * 100).toFixed(2)),
           remaining_bytes: Math.max(0, MAX_R2_BYTES - r2Bytes),
-          note:            'Capped at 9.5 GB (95% of 10 GB free tier). Reconciled nightly by cron.',
+          note:            'Capped at 9 GB (95% of 10 GB free tier). Reconciled nightly by cron.',
         },
         b2: {
           used_bytes:  b2Bytes,
@@ -869,7 +869,7 @@ export default {
       const projectedR2Bytes = r2Bytes - oldSize + declaredBytes;
       if (projectedR2Bytes > MAX_R2_BYTES) {
         return respond({
-          error:           'Upload rejected — R2 storage limit (9.5 GB) reached. No new media accepted.',
+          error:           'Upload rejected — R2 storage safety limit (9 GB) reached. No new media accepted.',
           r2_used_bytes:   r2Bytes,
           r2_limit_bytes:  MAX_R2_BYTES,
           remaining_bytes: Math.max(0, MAX_R2_BYTES - r2Bytes),
@@ -878,7 +878,7 @@ export default {
 
       // S03-H3: per-holder budget, checked in addition to (not instead of)
       // the global cap above. Without this, one account's uploads alone can
-      // exhaust the entire 9.5 GB global cap and stop uploads platform-wide
+      // exhaust the entire 9 GB global cap and stop uploads platform-wide
       // for weeks (objects only leave R2 via the 30-day tiering cron).
       const userBytes = await getUserBytes(env, cap.holder);
       const projectedUserBytes = userBytes - oldSize + declaredBytes;
