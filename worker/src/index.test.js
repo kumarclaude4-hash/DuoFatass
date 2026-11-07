@@ -127,13 +127,17 @@ function makeR2BudgetNamespace(initial = {}) {
 
 function makeDailyMediaQuotaNamespace(initialCounts = {}) {
   const counts = { upload: initialCounts.upload || 0, delete: initialCounts.delete || 0 };
+  const holderCounts = { ...(initialCounts.holders || {}) };
   let dayKey = new Date().toISOString().slice(0, 10);
   const stub = {
     async fetch(request) {
       const body = await request.json();
       if (body.action !== 'reserve'
           || !['upload', 'delete'].includes(body.operation)
-          || !Number.isSafeInteger(body.limit) || body.limit < 1) {
+          || !Number.isSafeInteger(body.limit) || body.limit < 1
+          || typeof body.holderKey !== 'string' || !/^[a-f0-9]{16}$/.test(body.holderKey)
+          || !Number.isSafeInteger(body.holderLimit) || body.holderLimit < 1
+          || body.holderLimit > body.limit) {
         return new Response(JSON.stringify({ error: 'invalid request' }), { status: 400 });
       }
       const today = new Date().toISOString().slice(0, 10);
@@ -141,23 +145,34 @@ function makeDailyMediaQuotaNamespace(initialCounts = {}) {
         dayKey = today;
         counts.upload = 0;
         counts.delete = 0;
+        for (const key of Object.keys(holderCounts)) delete holderCounts[key];
       }
       const resetAt = Date.now();
       const count = counts[body.operation];
+      const holderCounterKey = body.operation + ':' + body.holderKey;
+      const holderCount = holderCounts[holderCounterKey] || 0;
       if (count >= body.limit) {
         return new Response(JSON.stringify({
-          allowed: false, operation: body.operation, count, limit: body.limit, resetAt,
+          allowed: false, operation: body.operation, scope: 'global', count, limit: body.limit, resetAt,
+        }), { status: 429 });
+      }
+      if (holderCount >= body.holderLimit) {
+        return new Response(JSON.stringify({
+          allowed: false, operation: body.operation, scope: 'holder',
+          count: holderCount, limit: body.holderLimit, resetAt,
         }), { status: 429 });
       }
       counts[body.operation] += 1;
+      holderCounts[holderCounterKey] = holderCount + 1;
       const nextCount = counts[body.operation];
       return new Response(JSON.stringify({
-        allowed: true, operation: body.operation, count: nextCount,
-        limit: body.limit, remaining: body.limit - nextCount, resetAt,
+        allowed: true, operation: body.operation, scope: 'global',
+        count: nextCount, limit: body.limit, holderCount: holderCount + 1,
+        holderLimit: body.holderLimit, remaining: body.limit - nextCount, resetAt,
       }), { status: 200 });
     },
   };
-  return { idFromName: (name) => name, get: () => stub, counts };
+  return { idFromName: (name) => name, get: () => stub, counts, holderCounts };
 }
 
 function makeEnv(overrides = {}) {
@@ -168,7 +183,9 @@ function makeEnv(overrides = {}) {
     ADMIN_LOCKOUT_DO: makeR2BudgetNamespace(),
     MEDIA_QUOTA_DO: makeDailyMediaQuotaNamespace(),
     MAX_DAILY_MEDIA_UPLOADS: '120',
-    MAX_DAILY_MEDIA_DELETES: '120',
+    MAX_DAILY_MEDIA_DELETES: '80',
+    MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER: '20',
+    MAX_DAILY_MEDIA_DELETES_PER_HOLDER: '20',
     MAX_FILE_SIZE: '524288000',
     // getB2Client() constructs an AwsClient unconditionally on every DELETE
     // that finds the object still in R2 (the migration race-guard fires a
@@ -1342,3 +1359,32 @@ test('free-tier guard: exhausted upload budget does not block deletion cleanup',
   assert.equal(quota.counts.delete, 1,
     'the independent deletion allowance must remain available for cleanup');
 });
+
+
+test('free-tier guard: per-holder upload budget prevents one account consuming the global allowance', async () => {
+  const env = makeEnv({ MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER: '1' });
+  const holder = 'same-account';
+  const firstKey = `media/${CHAT_ID}/holder-first.jpg`;
+  const secondKey = `media/${CHAT_ID}/holder-second.jpg`;
+
+  const firstToken = await mintToken('write', firstKey, holder);
+  const first = await worker.fetch(new Request('https://worker.example/' + firstKey, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + firstToken, 'Content-Length': '1' },
+    body: new Uint8Array([1]),
+  }), env, ctx);
+  assert.equal(first.status, 200, await first.clone().text());
+
+  const secondToken = await mintToken('write', secondKey, holder);
+  const second = await worker.fetch(new Request('https://worker.example/' + secondKey, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + secondToken, 'Content-Length': '1' },
+    body: new Uint8Array([2]),
+  }), env, ctx);
+  assert.equal(second.status, 429, await second.clone().text());
+  const payload = await second.json();
+  assert.equal(payload.scope, 'holder');
+  assert.equal(env.HOT_BUCKET.objects.has(secondKey), false,
+    'a holder over its sub-limit must be stopped before the second R2 PutObject');
+});
+
