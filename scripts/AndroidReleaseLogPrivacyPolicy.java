@@ -60,10 +60,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
           + "alias|keyAlias|keystoreAlias|manufacturer|model|deviceManufacturer|deviceModel|"
           + "throwable|exception|cause|failure|stacktrace).*");
 
-    // Explicitly safe numeric operational metrics. Keep this allow-list narrow:
-    // these values reveal aggregate counts, not user identifiers or content.
+    // Explicitly safe numeric/operational identifiers. Keep this allow-list narrow:
+    // these are aggregate counters or fixed numeric protocol constants, not user data.
     private static final Set<String> SAFE_OPERATIONAL_COUNTERS =
-            Collections.unmodifiableSet(new HashSet<>(Collections.singletonList("checksumFailures")));
+            Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
+                    "checksumFailures", "CHUNK_PLAINTEXT_SIZE")));
 
     private static final Pattern SENSITIVE_ACCESSOR = Pattern.compile(
             "(?i)(get|is|to)(uid|userId|accountId|callerId|senderId|recipientId|peerId|"
@@ -456,8 +457,24 @@ public final class AndroidReleaseLogPrivacyPolicy {
             MethodInvocationTree invocation = (MethodInvocationTree) expression;
             String method = methodName(invocation);
             String receiver = receiverName(invocation);
+            if ("redactOperationName".equals(method)) return true;
             return ("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
                     && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"));
+        }
+
+        /**
+         * Known projections that intentionally discard sensitive object contents.
+         * These are narrowly enumerated so a numeric status/count/aggregate may be
+         * logged without blessing the object from which it was derived.
+         */
+        private boolean isSafeOperationalProjection(MethodInvocationTree node) {
+            String method = methodName(node);
+            return "size".equals(method)
+                    || "length".equals(method)
+                    || "code".equals(method)
+                    || "getResponseCode".equals(method)
+                    || "getSummary".equals(method)
+                    || "copyInto".equals(method);
         }
 
         private boolean isContainerConstruction(ExpressionTree expression) {
@@ -476,9 +493,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
                     String method = methodName(node);
                     String receiver = receiverName(node);
-                    if (("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
-                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"))) {
-                        return null; // A sanitizer protects only its returned subtree.
+                    if ((("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")))
+                            || "redactOperationName".equals(method)
+                            || isSafeOperationalProjection(node)) {
+                        return null; // Exact redaction/projection boundary; do not inspect its receiver/arguments.
                     }
                     if (isSafeThrowableClassNameCall(node)) {
                         return null;
@@ -508,8 +527,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 @Override
                 public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                     String name = node.getIdentifier().toString();
-                    if (SENSITIVE_IDENTIFIER.matcher(name).matches()
-                            || SENSITIVE_ACCESSOR.matcher(name).matches()) {
+                    if (!SAFE_OPERATIONAL_COUNTERS.contains(name)
+                            && (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                            || SENSITIVE_ACCESSOR.matcher(name).matches())) {
                         found[0] = true;
                     }
                     return found[0] ? null : super.visitMemberSelect(node, unused);
@@ -536,8 +556,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
                     String method = methodName(node);
                     String receiver = receiverName(node);
-                    if (("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
-                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"))) {
+                    if ((("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")))
+                            || "redactOperationName".equals(method)
+                            || isSafeOperationalProjection(node)) {
                         return null;
                     }
                     if (isSafeThrowableClassNameCall(node)) return null;
