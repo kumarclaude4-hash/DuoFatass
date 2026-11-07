@@ -51,6 +51,13 @@ jobs:
           node --check src/adminLockoutDurableObject.js
           npm test
 
+      # Validate the exact Wrangler bundle/config in CI without credentials or
+      # deploying. This catches bundling, entry-point, and Durable Object binding
+      # errors before Cloudflare's Git-integrated production build is attempted.
+      - name: Validate Cloudflare Worker deployment bundle
+        working-directory: worker
+        run: npx wrangler deploy --dry-run --outdir /tmp/duoshield-worker-dry-run
+
   # SC-01: gate the vendored libsignal JAR before anything builds with it.
   #
   # app/build.gradle ships `libs/libsignal-client-0.54.1-stripped.jar` as an
