@@ -63,6 +63,9 @@
 const DEFAULT_WINDOW_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_FAILS = 10;
 const STORAGE_KEY = "record";
+const R2_BUDGET_STORAGE_KEY = "r2-monthly-class-a-budget";
+// Keep 15% headroom below R2 Standard's 1,000,000 monthly free Class A ops.
+const MAX_R2_CLASS_A_MONTHLY = 850_000;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -116,6 +119,39 @@ export class AdminLockoutCounter {
     }
 
     const { action } = body;
+
+    // Global monthly R2 Class A budget. The Worker calls this through its
+    // existing private DO binding before each R2 PUT and each R2 ListObjects
+    // page. One stable object ID serializes reservations across all users.
+    // This budget is separate from admin lockout state and rolls over lazily
+    // at the start of a new UTC calendar month.
+    if (action === "reserveR2ClassA") {
+      const monthKey = body.monthKey;
+      const amount = body.amount;
+      if (typeof monthKey !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)
+          || !Number.isSafeInteger(amount) || amount < 1 || amount > 100) {
+        return json({ error: "Invalid R2 budget reservation" }, 400);
+      }
+
+      const existing = await this.state.storage.get(R2_BUDGET_STORAGE_KEY);
+      const used = existing && existing.monthKey === monthKey
+        && Number.isSafeInteger(existing.classA) && existing.classA >= 0
+        ? existing.classA : 0;
+      if (used + amount > MAX_R2_CLASS_A_MONTHLY) {
+        return json({
+          allowed: false,
+          used,
+          requested: amount,
+          limit: MAX_R2_CLASS_A_MONTHLY,
+          monthKey,
+        });
+      }
+
+      const next = used + amount;
+      await this.state.storage.put(R2_BUDGET_STORAGE_KEY, { monthKey, classA: next });
+      return json({ allowed: true, used: next, limit: MAX_R2_CLASS_A_MONTHLY, monthKey });
+    }
+
     const windowMs = Number.isFinite(body.windowMs) && body.windowMs > 0 ? body.windowMs : DEFAULT_WINDOW_MS;
     const maxFails = Number.isFinite(body.maxFails) && body.maxFails > 0 ? body.maxFails : DEFAULT_MAX_FAILS;
     const now = this.now();
