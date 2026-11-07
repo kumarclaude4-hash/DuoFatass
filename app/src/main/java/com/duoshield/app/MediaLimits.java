@@ -24,7 +24,7 @@ public final class MediaLimits {
     private MediaLimits() {}
 
     /** Hard ceiling for any single outbound file. */
-    public static final long MAX_BYTES = 500L * 1024 * 1024;
+    public static final long MAX_BYTES = 95_000_000L;
 
     /**
      * Videos above this get routed through {@link VideoTranscoder} first. It is
