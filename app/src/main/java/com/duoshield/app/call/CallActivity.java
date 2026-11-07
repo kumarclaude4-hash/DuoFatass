@@ -1480,8 +1480,8 @@ public class CallActivity extends AppCompatActivity implements CallSession.UiHoo
      * Shows or updates the TURN quota warning banner.
      *
      * <ul>
-     *   <li><b>Near limit (≥800 GB):</b> amber banner — user can dismiss it.</li>
-     *   <li><b>Hard limit reached (≥900 GB):</b> red-tinted banner — TURN is disabled.</li>
+     *   <li><b>Near limit (≥70 GB):</b> amber banner — user can dismiss it.</li>
+     *   <li><b>Local budget reached (≥80 GB):</b> red-tinted banner — TURN is disabled on this installation.</li>
      * </ul>
      */
     private void checkAndShowTurnWarning() {
@@ -1491,13 +1491,13 @@ public class CallActivity extends AppCompatActivity implements CallSession.UiHoo
 
         if (tracker.isLimitReached()) {
             tvTurnWarningText.setText(
-                    "⚠\uFE0F Monthly TURN data cap reached (100 GB). "
+                    "⚠\uFE0F This device reached its 80 GB monthly TURN egress budget. "
                     + "This call uses direct connection only — it may not connect on mobile data or corporate networks.");
             bannerTurnWarning.setBackgroundColor(0xCC8B1A00);
             bannerTurnWarning.setVisibility(View.VISIBLE);
         } else if (tracker.isNearLimit()) {
             tvTurnWarningText.setText(
-                    "⚠\uFE0F TURN relay usage is above 90 GB this month ("
+                    "⚠\uFE0F Estimated TURN egress is above 70 GB this month ("
                     + tracker.getSummary() + "). "
                     + "Calls may stop relaying near month end.");
             bannerTurnWarning.setBackgroundColor(0xCC7B2F00);
