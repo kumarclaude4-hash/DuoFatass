@@ -17,11 +17,11 @@ function makeBudget({ now = 1_800_000_000_000, limit = 3 } = {}) {
   return { storage, instance, limit };
 }
 
-function reserve(limit = 3) {
+function reserve(limit = 3, operation = 'upload') {
   return new Request('https://media-quota.internal/reserve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'reserve', limit }),
+    body: JSON.stringify({ action: 'reserve', operation, limit }),
   });
 }
 
@@ -71,7 +71,7 @@ test('a new UTC day starts a fresh reservation window', async () => {
   await instance.fetch(reserve(1));
   assert.equal((await instance.fetch(reserve(1))).status, 429);
   now += 2_000;
-  const nextDay = await instance.fetch(reserve(1));
+  const nextDay = await instance.fetch(reserve(1, 'upload'));
   assert.equal(nextDay.status, 200);
   assert.equal((await bodyOf(nextDay)).count, 1);
 });
@@ -81,4 +81,21 @@ test('rejects malformed requests and unsupported methods', async () => {
   assert.equal((await instance.fetch(new Request('https://media-quota.internal/', { method: 'GET' }))).status, 405);
   assert.equal((await instance.fetch(new Request('https://media-quota.internal/', { method: 'POST', body: '{' }))).status, 400);
   assert.equal((await instance.fetch(reserve(0))).status, 400);
+  assert.equal((await instance.fetch(reserve(1, 'purge'))).status, 400);
+});
+
+
+test('upload and deletion budgets are independent so uploads cannot exhaust cleanup capacity', async () => {
+  const { instance, storage } = makeBudget({ limit: 2 });
+  await instance.fetch(reserve(2, 'upload'));
+  await instance.fetch(reserve(2, 'upload'));
+  assert.equal((await instance.fetch(reserve(2, 'upload'))).status, 429);
+  const deleteResponse = await instance.fetch(reserve(2, 'delete'));
+  assert.equal(deleteResponse.status, 200);
+  assert.equal((await bodyOf(deleteResponse)).count, 1);
+  assert.deepEqual(storage.data.get('daily-media-mutations'), {
+    dayKey: new Date(1_800_000_000_000).toISOString().slice(0, 10),
+    uploads: 2,
+    deletes: 1,
+  });
 });
