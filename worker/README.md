@@ -140,7 +140,7 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 | B2 storage            | 10 GB             | Hard migration stop at 9 GB; preflight and postflight reconciliation |
 | B2 → CF egress        | Free (Bandwidth Alliance) | —                        |
 | Worker requests       | 100 K/day         | Conservative daily gate at 80 K/day (80%) |
-| KV reads              | 100 K/day         | ~2 reads/request; comfortable     |
+| KV reads              | 100 K/day         | Daily gate reads + bounded mutation lookups; keep under 100K/day |
 | KV writes              | 1 K/day           | ~160 sampled writes/day + bounded storage accounting |
 
 **Target profile: 10 active users with bounded media mutations and usage; not unlimited traffic.**
@@ -150,7 +150,9 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 > ceiling). PUT and DELETE attempts have separate global caps of 120/day each in the
 > SQLite-backed `MediaMutationBudget` Durable Object. This prevents upload traffic
 > from consuming the cleanup allowance used by disappearing messages. At the
-> configured caps, per-object storage accounting and replay markers remain bounded. If the quota DO is unavailable or
+> configured caps, storage accounting and delete replay markers use at most
+> about 760 KV writes/day at the 1-in-500 request-sampling target (plus small
+> scheduled reconciliation overhead). If the quota DO is unavailable or
 > unconfigured, media mutations fail closed. A separate atomic monthly counter
 > reserves R2 Class A operations before each upload and each R2 inventory-list page,
 > with an 850K ceiling below the 1M free allowance. Both quota DOs use SQLite-backed
