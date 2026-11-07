@@ -253,12 +253,16 @@ test('range-aware rate limiting supports chunked playback without adding a secon
   assert.equal((await request('range-limit-mixed-user', 'bytes=0-0')).status, 206);
   assert.equal((await request('range-limit-mixed-user', 'bytes=0-0')).status, 429);
 
-  // Invalid suffix ranges are not discounted; malformed requests cannot buy
-  // a cheaper rate-limit cost by merely supplying a Range header.
+  // Invalid suffix, descending and unsafe-integer ranges are not discounted;
+  // malformed requests cannot buy cheaper rate-limit cost by supplying Range.
   for (let i = 0; i < 2; i++) {
     assert.equal((await request('range-limit-invalid-user', 'bytes=-1')).status, 416);
+    assert.equal((await request('range-limit-descending-user', 'bytes=2-1')).status, 416);
+    assert.equal((await request('range-limit-unsafe-user', 'bytes=999999999999999999999-')).status, 416);
   }
   assert.equal((await request('range-limit-invalid-user', 'bytes=-1')).status, 429);
+  assert.equal((await request('range-limit-descending-user', 'bytes=2-1')).status, 429);
+  assert.equal((await request('range-limit-unsafe-user', 'bytes=999999999999999999999-')).status, 429);
 });
 
 // ─── S03-L4: rejections must carry CORS headers ───────────────────────────
