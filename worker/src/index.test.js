@@ -1232,3 +1232,37 @@ test('free-tier guard: failed B2 preflight reconciliation fails closed and skips
   assert.equal(env.RATE_KV.store.get('global:storage:r2'), undefined,
     'the scheduled job exits before changing storage accounting');
 });
+
+
+test('R2 Class A monthly guard rejects uploads before PutObject when the global budget is exhausted', async () => {
+  const key = \`media/\${CHAT_ID}/class-a-budget.jpg\`;
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const budget = makeR2BudgetNamespace({ monthKey, classA: 850_000 });
+  const env = makeEnv({ ADMIN_LOCKOUT_DO: budget });
+  const token = await mintToken('write', key, 'user-budget-test');
+  const response = await worker.fetch(new Request(\`https://worker.example/\${key}\`, {
+    method: 'PUT',
+    headers: { Authorization: \`Bearer \${token}\`, 'Content-Length': '10' },
+    body: new Uint8Array(10),
+  }), env, ctx);
+
+  assert.equal(response.status, 429, await response.clone().text());
+  assert.equal(env.HOT_BUCKET.objects.has(key), false,
+    'the R2 object must not be written after the shared monthly Class A budget is exhausted');
+  assert.equal(budget.state.classA, 850_000, 'rejected upload must not increment the exhausted budget');
+});
+
+test('R2 Class A monthly guard fails closed when the Durable Object budget service is absent', async () => {
+  const key = \`media/\${CHAT_ID}/budget-do-missing.jpg\`;
+  const env = makeEnv({ ADMIN_LOCKOUT_DO: undefined });
+  const token = await mintToken('write', key, 'user-budget-unavailable');
+  const response = await worker.fetch(new Request(\`https://worker.example/\${key}\`, {
+    method: 'PUT',
+    headers: { Authorization: \`Bearer \${token}\`, 'Content-Length': '10' },
+    body: new Uint8Array(10),
+  }), env, ctx);
+
+  assert.equal(response.status, 503);
+  assert.equal(env.HOT_BUCKET.objects.has(key), false,
+    'the Worker must not write R2 objects when it cannot enforce the monthly operation budget');
+});
