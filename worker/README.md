@@ -186,7 +186,9 @@ closed and leaves media in R2 for a later retry. It never auto-deletes anything 
   (`/health`) is public.
 - **Encryption:** All file content is AES-256-GCM encrypted client-side before
   upload. The Worker and both storage tiers only ever see ciphertext.
-- **Rate limiting:** 120 req/min per `X-Client-ID` enforced per edge isolate
-  (advisory — not globally consistent without Durable Objects).
-- **Storage cap:** Uploads rejected when R2 exceeds 9.5 GB. Actual stored size
-  is verified via R2 HEAD after upload (client `Content-Length` is not trusted).
+- **Rate limiting:** 120 req/min per verified capability-token holder, enforced
+  per edge isolate (advisory across edge locations); a separate global daily
+  media-mutation budget is enforced by SQLite-backed Durable Objects.
+- **Storage cap:** Uploads rejected when R2 reaches the 9 GB decimal safety
+  ceiling. Actual stored size is verified via R2 HEAD after upload (client
+  `Content-Length` is not trusted).
