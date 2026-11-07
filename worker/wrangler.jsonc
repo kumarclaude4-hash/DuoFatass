@@ -53,9 +53,13 @@
     // Objects move from R2 → B2 after this many days.
     "HOT_TIER_DAYS": "30",
 
-    // Per-isolate rate limit: max requests per minute per verified capability holder.
-    // Advisory across edge locations; the daily mutation budgets are global.
+    // Per-isolate rate limit for ordinary data-plane calls per verified holder.
+    // Advisory across edge locations; global daily request and mutation budgets remain.
     "RATE_LIMIT_PER_MIN": "120",
+    // Authenticated single byte-range GETs serve independently authenticated
+    // 1 MiB AEAD chunks. Give them a bounded higher class without multiplying
+    // the aggregate per-user minute ceiling.
+    "RANGE_RATE_LIMIT_PER_MIN": "240",
 
     // S03-H3: per-holder storage quota in bytes (1 GB default). Keeps one
     // uploader from exhausting the shared 9 GB R2 free-tier safety budget for
