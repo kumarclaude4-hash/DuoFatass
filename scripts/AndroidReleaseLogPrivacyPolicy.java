@@ -179,7 +179,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"device=\" + LogRedact.metadata(Build.MODEL) + \"/\" + LogRedact.metadata(Build.MANUFACTURER));\n"
                   + "    Log.w(LogRedact.uid(peerId), \"redacted tag is safe\");\n"
                   + "    String safeValue = LogRedact.metadata(alias);\n"
-                  + "    Log.w(\"TAG\", safeAlias);\n"
+                  + "    Log.w(\"TAG\", safeValue);\n"
                   + "    StringBuilder safeBuilder = new StringBuilder();\n"
                   + "    safeBuilder.append(LogRedact.uid(peerId));\n"
                   + "    Log.w(\"TAG\", safeBuilder.toString());\n"
@@ -397,14 +397,6 @@ public final class AndroidReleaseLogPrivacyPolicy {
         }
 
         @Override
-        public Void visitMethod(MethodTree node, Void unused) {
-            if (node.getBody() != null) {
-                new MethodLocalTaintScanner(unit, positions, violations).scan(node, null);
-            }
-            return super.visitMethod(node, unused);
-        }
-
-        @Override
         public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
             String method = methodName(node);
             String receiver = receiverName(node);
@@ -599,6 +591,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
             this.inspectedCalls = inspectedCalls;
             this.violations = violations;
             this.throwableVariables = throwableVariables;
+        }
+
+        @Override
+        public Void visitMethod(MethodTree node, Void unused) {
+            if (node.getBody() != null) {
+                new MethodLocalTaintScanner(unit, positions, violations).scan(node, null);
+            }
+            return super.visitMethod(node, unused);
         }
 
         @Override
