@@ -6,10 +6,10 @@
 
 - Base: `main` after PR #244 merge, commit `4fb33fd9978249761ba25f1c3d64f68c534978a4`.
 - Work branch: `security/s10-n2-indirect-release-log-review-2026-11-07`.
-- Branch head when this report was written: `24330af3b9c878bd6e88b4bb9bfd4d690244e5c2`.
+- Branch head when this report was written: `2b429653157e9930212b61f52372654eec862086` (PR #246, Draft).
 - PR #244: https://github.com/kumarclaude4-hash/DuoFatass/pull/244 (merged).
 - PR #244 verification on exact pre-merge head `328731b948e15bb1cc93ca2e61343be4b2325c75`: CI run [42325532834](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42325532834), latest attempt 4, 10/10 jobs passed; Security Scan [42325532774](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42325532774), 3/3 jobs passed.
-- New branch verification: **not yet run**. Do not mark the follow-up verified until its own CI and Security Scan complete successfully.
+- New branch verification: **not yet completed for the latest head**. The earlier head's first run is superseded by the latest scanner extension. Do not mark the follow-up verified until its own CI and Security Scan complete successfully.
 
 ## Review scope and method
 
@@ -53,9 +53,9 @@ Commit: `1a98953ef907bcdb22ff4e70304be0476df2471e`.
 
 The sensitive-identifier policy now includes `alias`, `keyAlias`, `keystoreAlias`, `manufacturer`, `model`, `deviceManufacturer` and `deviceModel`.
 
-Positive fixture coverage accepts the corresponding values only behind `LogRedact.metadata()`; negative fixtures require detections for raw alias, `Build.MODEL` and `Build.MANUFACTURER` members.
+Positive fixture coverage accepts the corresponding values only behind `LogRedact.metadata()` and `LogRedact.uid()` in tags; negative fixtures require detections for raw alias, `Build.MODEL`, `Build.MANUFACTURER` and a raw UID used as the tag.
 
-Commit: `01f196e66d3be7261437dca100902a8d221d4ba7`.
+Commits: `01f196e66d3be7261437dca100902a8d221d4ba7` (sensitive fields) and `2b429653157e9930212b61f52372654eec862086` (scan tag and message arguments).
 
 The JVM `ReleaseLogPrivacyTest` now asserts that the device gate does not include manufacturer/model, keeps API-level diagnostics, and pseudonymises the alias in the Keystore deletion warning.
 
