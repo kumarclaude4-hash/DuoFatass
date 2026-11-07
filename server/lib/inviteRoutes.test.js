@@ -193,6 +193,13 @@ test("admin invite list is authenticated and passes filters and cursor to the st
     cursor,
   });
   assert.equal(JSON.parse(accepted.text).totalCount, 1);
+
+  const invalidStateFilter = await fixture.request(
+    "/admin/api/invites?status=invalid",
+    { admin: true }
+  );
+  assert.equal(invalidStateFilter.status, 200);
+  assert.equal(fixture.calls.list[1].status, "invalid");
 });
 
 test("invite creation authenticates before reading the body and returns the one-time token", async (t) => {
