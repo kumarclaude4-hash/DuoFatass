@@ -56,6 +56,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
           + "zipFile|fileName|file|objectKey|objectName|opName|detail|body|message|text|avatar|userId|secret|password|reason|"
           + "error|payload|content|input|output|query|request|response|session|cookie|"
           + "authorization|header|subject|title|username|profile|deviceId|passphrase|"
+          + "alias|keyAlias|keystoreAlias|manufacturer|model|deviceManufacturer|deviceModel|"
           + "throwable|exception|cause|failure|stacktrace).*");
 
     // Explicitly safe numeric operational metrics. Keep this allow-list narrow:
@@ -165,7 +166,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             Path safe = Files.createDirectories(root.resolve("safe"));
             Files.writeString(safe.resolve("SafeFixture.java"),
                     "class SafeFixture {\n"
-                  + "  void log(Throwable failure, String peerId, Profile profile) {\n"
+                  + "  void log(Throwable failure, String peerId, Profile profile, String alias) {\n"
                   + "    Log.w(\"TAG\", \"request failed: \" + LogRedact.error(failure));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(peerId));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(profile.userId));\n"
@@ -173,11 +174,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"exception class=\" + failure.getClass().getSimpleName());\n"
                   + "    long checksumFailures = 2;\n"
                   + "    Log.w(\"TAG\", \"integrity failures=\" + checksumFailures);\n"
+                  + "    Log.w(\"TAG\", \"alias=\" + LogRedact.metadata(alias));\n"
+                  + "    Log.w(\"TAG\", \"device=\" + LogRedact.metadata(Build.MODEL) + \"/\" + LogRedact.metadata(Build.MANUFACTURER));\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 6) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 8) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -193,6 +196,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void constant() { Log.e(\"TAG\", \"uid=\" + Config.ACCOUNT_ID); }\n"
                   + "  void messageAlias(Exception e) { String detail = e.getMessage(); Log.e(\"TAG\", detail); }\n"
                   + "  void helperParameter(String opName) { Log.w(\"TAG\", opName); }\n"
+                  + "  void rawAlias(String alias) { Log.w(\"TAG\", \"alias=\" + alias); }\n"
+                  + "  void rawDeviceModel() { Log.w(\"TAG\", \"device=\" + Build.MODEL + \"/\" + Build.MANUFACTURER); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
@@ -202,12 +207,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(unsafeResult.violations, "raw sensitive member");
             requireViolation(unsafeResult.violations, "raw sensitive identifier 'detail'");
             requireViolation(unsafeResult.violations, "raw sensitive identifier 'opName'");
-            if (unsafeResult.violations.size() < 9) {
+            requireViolation(unsafeResult.violations, "raw sensitive identifier 'alias'");
+            requireViolation(unsafeResult.violations, "raw sensitive member 'MODEL'");
+            requireViolation(unsafeResult.violations, "raw sensitive member 'MANUFACTURER'");
+            if (unsafeResult.violations.size() < 12) {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
             }
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
-                    + "two-argument Throwable overloads, stack traces and sensitive getters rejected).");
+                    + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
             try (java.util.stream.Stream<Path> paths = Files.walk(root)) {
                 paths.sorted(Collections.reverseOrder()).forEach(path -> {
