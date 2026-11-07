@@ -137,7 +137,7 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 | R2 storage            | 10 GB             | Hard cap at 9.5 GB (95%)          |
 | R2 Class A ops (PUT)  | 1 M/month         | No explicit guard — monitor usage  |
 | R2 Class B ops (GET)  | 10 M/month        | No explicit guard — monitor usage  |
-| B2 storage            | 10 GB             | Hard migration stop at 9.5 GB; preflight and postflight reconciliation |
+| B2 storage            | 10 GB             | Hard migration stop at 9 GB; preflight and postflight reconciliation |
 | B2 → CF egress        | Free (Bandwidth Alliance) | —                        |
 | Worker requests       | 100 K/day         | Hard gate at 90 K/day (90%)       |
 | KV reads              | 100 K/day         | ~2 reads/request; comfortable     |
@@ -164,7 +164,7 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 **B2 has no automatic expiry.** Files remain in cold storage until the application
 explicitly deletes them (disappearing-message sweep, manual delete, etc.).
 The nightly cron reconciles B2 storage bytes via `ListObjectsV2` before and after
-tiering. It stops migrating when projected B2 usage would exceed 9.5 GB (a 5% safety
+tiering. It stops migrating when projected B2 usage would exceed 9 GB (a 10% safety
 margin below the 10 GB free allowance). If the preflight listing fails, tiering fails
 closed and leaves media in R2 for a later retry. It never auto-deletes anything from B2.
 
