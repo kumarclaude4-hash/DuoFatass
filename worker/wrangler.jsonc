@@ -58,7 +58,7 @@
     "RATE_LIMIT_PER_MIN": "120",
 
     // S03-H3: per-holder storage quota in bytes (1 GB default). Keeps one
-    // uploader from exhausting the shared 9.5 GB R2 free-tier budget for
+    // uploader from exhausting the shared 9 GB R2 free-tier safety budget for
     // every other user. Enforced in addition to, not instead of, MAX_R2_BYTES.
     "MAX_USER_BYTES": "1073741824",
 
