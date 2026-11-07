@@ -183,9 +183,9 @@ function makeEnv(overrides = {}) {
     ADMIN_LOCKOUT_DO: makeR2BudgetNamespace(),
     MEDIA_QUOTA_DO: makeDailyMediaQuotaNamespace(),
     MAX_DAILY_MEDIA_UPLOADS: '120',
-    MAX_DAILY_MEDIA_DELETES: '80',
+    MAX_DAILY_MEDIA_DELETES: '150',
     MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER: '20',
-    MAX_DAILY_MEDIA_DELETES_PER_HOLDER: '20',
+    MAX_DAILY_MEDIA_DELETES_PER_HOLDER: '60',
     MAX_FILE_SIZE: '95000000',
     // getB2Client() constructs an AwsClient unconditionally on every DELETE
     // that finds the object still in R2 (the migration race-guard fires a
