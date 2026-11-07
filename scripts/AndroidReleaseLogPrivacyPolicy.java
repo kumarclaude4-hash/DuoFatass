@@ -97,7 +97,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             for (String violation : result.violations) System.err.println(" - " + violation);
             System.exit(1);
         }
-        System.out.println("PASS: no raw sensitive interpolation or Throwable stack traces found.");
+        System.out.println("PASS: no raw sensitive interpolation, method-local tainted aliases, or Throwable stack traces found.");
     }
 
     private static ScanResult scan(Path sourceRoot) throws IOException {
@@ -183,11 +183,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    StringBuilder safeBuilder = new StringBuilder();\n"
                   + "    safeBuilder.append(LogRedact.uid(peerId));\n"
                   + "    Log.w(\"TAG\", safeBuilder.toString());\n"
+                  + "    Map<String, Object> safeFields = new HashMap<>();\n"
+                  + "    safeFields.put(\"peer\", LogRedact.uid(peerId));\n"
+                  + "    Log.w(\"TAG\", safeFields.toString());\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 11) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 12) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -211,6 +214,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void builderAlias(Profile profile) { StringBuilder builder = new StringBuilder(); builder.append(profile.getUserId()); Log.e(\"TAG\", builder.toString()); }\n"
                   + "  void mapAlias(Profile profile) { Map<String, Object> fields = new HashMap<>(); fields.put(\"peer\", profile.getUserId()); Log.w(\"TAG\", fields.toString()); }\n"
                   + "  void mapReadAlias(Profile profile) { Map<String, Object> fields = new HashMap<>(); fields.put(\"peer\", profile.getUserId()); String value = (String) fields.get(\"peer\"); Log.e(\"TAG\", value); }\n"
+                  + "  void concatenatedAlias(Profile profile) { String value = profile.getUserId(); Log.w(\"TAG\", \"peer=\" + value); }\n"
+                  + "  void opaqueCallArgumentAlias(Profile profile) { String value = identityEcho(profile.getUserId()); Log.e(\"TAG\", value); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
@@ -224,6 +229,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(unsafeResult.violations, "raw sensitive member 'MODEL'");
             requireViolation(unsafeResult.violations, "raw sensitive member 'MANUFACTURER'");
             requireViolation(unsafeResult.violations, "raw sensitive identifier 'uid'");
+            requireViolation(unsafeResult.violations, "method-local sensitive alias/container reaches Log.e message");
             if (unsafeResult.violations.size() < 13) {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
