@@ -144,7 +144,7 @@ public class TurnBandwidthTracker {
         return Math.max(0L, MONTHLY_LIMIT_BYTES - getUsedBytes());
     }
 
-    /** Human-readable used/total string, e.g. "3.42 GB / 100 GB". */
+    /** Human-readable used/total string, e.g. "3.42 GB / 80 GB". */
     public synchronized String getSummary() {
         long used = getUsedBytes();
         return String.format(Locale.US, "%.2f GB / 80 GB estimated egress this month",
