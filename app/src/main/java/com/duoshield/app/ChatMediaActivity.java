@@ -1216,7 +1216,17 @@ public class ChatMediaActivity extends BaseActivity {
             MessageOutboxWorker.enqueue(ChatMediaActivity.this);
         });
 
-        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) return;
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+            runOnUiThread(() -> {
+                voiceMessage.setStatus("failed");
+                adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+                saveToRoom(voiceMessage);
+                Toast.makeText(ChatMediaActivity.this,
+                        "Daily write budget reached. Voice note is saved and will retry after reset.",
+                        Toast.LENGTH_LONG).show();
+            });
+            return;
+        }
         db.collection("chats").document(conversationId)
           .collection("messages").document(msgId).set(doc)
           .addOnSuccessListener(v -> {
@@ -3675,7 +3685,17 @@ public class ChatMediaActivity extends BaseActivity {
             MessageOutboxWorker.enqueue(ChatMediaActivity.this);
         });
 
-        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) return;
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+            runOnUiThread(() -> {
+                m.setStatus("failed");
+                adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+                saveToRoom(m);
+                Toast.makeText(ChatMediaActivity.this,
+                        "Daily write budget reached. Media is saved and will retry after reset.",
+                        Toast.LENGTH_LONG).show();
+            });
+            return;
+        }
         db.collection("chats").document(conversationId)
 
           .collection("messages").document(msgId).set(doc)
@@ -3892,7 +3912,18 @@ public class ChatMediaActivity extends BaseActivity {
                                 r.ciphertextB64, r.sigType, "text", finalRId, finalRPrv, exp, now));
                 MessageOutboxWorker.enqueue(ChatMediaActivity.this);
 
-                if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) return;
+                if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+                    runOnUiThread(() -> {
+                        if (sendButton != null) sendButton.setEnabled(true);
+                        optimistic.setStatus("failed");
+                        adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+                        saveToRoom(optimistic);
+                        Toast.makeText(ChatMediaActivity.this,
+                                "Daily write budget reached. Message is saved and will retry after reset.",
+                                Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
                 db.collection("chats").document(conversationId)
 
                   .collection("messages").document(msgId).set(doc)
