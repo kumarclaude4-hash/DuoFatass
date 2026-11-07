@@ -2,12 +2,24 @@
 
 **Prepared:** 2026-11-07  
 **Repository:** https://github.com/kumarclaude4-hash/DuoFatass  
-**Reviewed baseline:** `main` at `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` (PR #248 merge)  
-**Purpose:** Source-linked, evidence-aware inventory of incomplete security work, with precise next actions and acceptance criteria for an independent Claude review.
+**Reviewed baseline:** historical baseline `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` (PR #248 merge); current main after PR #252 is `3d41501cf55d706d47bd7bec1a24ccb82d60ae1a`.  
+**Current update:** PR #251 interprocedural S10-N2 work is merged; PR #252 reconciles its handoff; PR #253 adds fail-closed invite-state handling and has passed CI/security/Firestore integration, but remains an open PR pending deliberate deployment coordination.
 
-> This is a handoff report, not a new audit or sign-off. The canonical finding register is [`BUG_TRACKER.md`](../BUG_TRACKER.md). `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. Do not invent finding IDs, change dispositions without evidence, infer owner approval, or mark a finding Fixed merely because a PR merged.
+> This document's original review baseline and line-by-line findings remain historical. For current code status use `BUG_TRACKER.md` and the dated addendum below. `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. This is not a production readiness certificate.
 
----
+## Current-state addendum — 2026-11-07
+
+### S10-N2 — code extension now merged
+
+PR #251 adds bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through, and same-class field write/read flows, with bounded iterative recursion and conservative treatment of ambiguous overloads/unresolved dispatch. It also removes storage-tier detail from DeviceSecurityGate log messages. Tested head `d6041db2033b1950cdf006b900ef5cd8f2d95eba`, merge `fc3dcd948a2410887c23ff8c29913c6c5d92604a`; CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588) 10/10 and Security Scan [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447) 3/3. AST scan: 204 production Java files, 414 log sinks, zero violations. Espresso 4 and API 35 predictive-back 1 test passed. S10-N2 stays Partial: syntax-only, not a whole-program proof; residual source review and physical release-logcat acceptance remain.
+
+### S05-H2 — modern invite states now fail closed
+
+PR #253 changes `inviteStatus` so only an explicit `active` status with finite future expiry is eligible. Unknown/missing states become `invalid`, are visible to admins and can be revoked with transaction-coupled audit. Regression coverage verifies unknown/missing states cannot validate or redeem even with future expiry; listing and operator cleanup are covered. Tested head `62da24d98705a91d11d7a9b926c71fe02b2eeb9a`; CI [42364462022](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364462022) 10/10; Security Scan [42364461937](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364461937) 3/3; Firestore Rules/server-transaction workflow [42364461918](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364461918) passed with 201 rules tests, 3 static App Check checks and 6 server transaction tests. Android CI passed 4 Espresso tests and 1 API 35 predictive-back test; R8 mapping generated and uploaded. PR #253 remains open; S05-H2 remains Partial pending product-contract confirmation and full isolated staging onboarding.
+
+### Release/hosting constraint
+
+Render service `DuoFat` is observed on the free plan, with `autoDeploy=yes` on commits to `main`, root directory `server`, one instance, Singapore. The latest observed Render deploy remains commit `955d603ef2228c3b318b433270c4c31ae923751a` (2026-11-06), not the latest repository main. Do not infer a production deployment from PR merges or CI; coordinate an approved server rollout and confirm the deployed commit/read-back. No production credentials/configuration have been changed by PR #253.
 
 ## 0. Instructions to Claude
 
@@ -115,21 +127,22 @@ A stolen live HttpOnly cookie remains a bearer credential until logout/global re
 
 ## 3.3 S05-H2 — Invite lifecycle and operator visibility
 
-**Status:** Partial; route/Firestore-emulator coverage exists, product contract and staging pending.  
-**Code:** invite and identity routes in `server/index.js`/route modules, `server/lib/identityVerify.js`, invite/claim helpers and Firestore rules.  
-**Evidence:** PRs #226/#227; real Firestore transaction + HTTP tests using genuine libsignal signatures.
+**Status:** Partial; code and emulator coverage now include fail-closed unknown-state handling; product contract and staging remain pending.  
+**Code:** `server/lib/invite.js`, `inviteStore.js`, `inviteRoutes.js`, `identityClaim.js`, `mintTokenRoute.js`, invite UI in `server/index.js`.  
+**Evidence:** PRs #226/#227 (invite lifecycle and proof-of-possession HTTP/Firestore integration), plus PR #253 tested head `62da24d98705a91d11d7a9b926c71fe02b2eeb9a`: CI 10/10, Security Scan 3/3, Firestore Rules/server transactions (201 rules tests, 3 static App Check checks, 6 transaction tests); 4 Espresso and 1 API 35 predictive-back test passed.
 
-Implemented: 256-bit opaque invites; only SHA-256 hashes/short fingerprints persisted; create/redeem/revoke audit records transaction-coupled; cursor-paginated listing; pseudonymized redemption linkage. Tests cover forgery, nonce replay, missing-invite rollback, valid consumption/identity binding/audit and existing-identity restore.
+Implemented: 256-bit opaque invite tokens; only hashes/fingerprints persisted; create/redeem/revoke audit writes coupled to transactions; bounded cursor listing; pseudonymized linkage; signature-proof-gated mintToken; existing-identity restore remains independent of new invite issuance. PR #253 additionally requires explicit active state + finite future expiry, treats unknown/missing status as invalid, blocks redemption, exposes invalid entries in admin list and supports audited cleanup.
 
 **Remaining:**
 1. Product owner confirms invite-only onboarding is intended.
-2. In isolated staging, exercise create/list/revoke/validate.
-3. Complete Android new-user onboarding with synthetic invite.
-4. Test expired, revoked, redeemed and malformed invite paths.
+2. In isolated staging, exercise create/list/filter/revoke/validate.
+3. Complete Android new-user onboarding with synthetic invite after contract approval.
+4. Test expired, revoked, redeemed, malformed and invalid persisted states.
 5. Verify exactly-once audit and no raw invite token in records.
-6. Verify pagination and access control.
+6. Verify pagination, authorization and existing-account restore.
+7. Keep the server PR separate from production deploy; Render currently auto-deploys main commits.
 
-**Acceptance:** dated product decision plus redacted full lifecycle staging evidence. Keep Partial.
+**Acceptance:** dated product decision plus redacted full lifecycle staging evidence and deployment read-back. Keep Partial.
 
 ## 3.4 S06-L4 — Account-lock worker retry/recovery
 
@@ -224,17 +237,17 @@ App Check is defense in depth, not a trust boundary against compromised clients.
 
 ## 3.11 S10-N2 — Release-log data-flow residual
 
-**Status:** Partial; PR #248 method-local analyzer merged; interprocedural residual and logcat acceptance remain.  
+**Status:** Partial; bounded interprocedural helper summaries merged in PR #251; physical release-logcat acceptance and out-of-scope whole-program flows remain.  
 **Code:** `scripts/AndroidReleaseLogPrivacyPolicy.java`, release-log workflow and production Java logging sites.  
-**Evidence:** CI [42331424519](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42331424519), Security [42331424496](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42331424496), [session record](sessions/SESSION-S10-N2-METHOD-LOCAL-TAINT-2026-11-07.md).
+**Evidence:** PR #251 CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588) 10/10, Security [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447) 3/3; 204 Java files / 414 warning/error/fatal sinks / zero violations.
 
-Current analyzer tracks local aliases/reassignment, concatenation, StringBuilder/StringBuffer, common Map/Bundle/JSON/builder patterns and both tag/message sinks. Sanitizers/projections are narrow and owner/type scoped.
+The analyzer now tracks method-local aliases/containers and bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through and same-class field write/read, including helper-mediated writes. Recursion is iterative and bounded; ambiguous overloads/unresolved dispatch are conservative; redaction is accepted only when source analysis proves the returned value is redacted.
 
-**Remaining codeable work:** assess bounded method summaries for app-owned helpers; resolve owner/signature rather than method-name-only assumptions; simple fields only where reliable; fixtures for tainted parameter pass-through, sanitized helper return, tainted helper return, overloads, recursion limits and simple fields. Explicitly document reflection/native/unknown callback/third-party flows. Keep allow-lists exact and source-backed. Do not claim whole-program analysis.
+**Remaining:** residual source review; inheritance/virtual dispatch, reflection, cross-class field aliasing, native methods and third-party callback internals are not proven by this syntax-only pass.
 
 **After feature-complete:** build release/minified APK, exercise identity/media/call/lock/migration/error flows, capture sanitized logcat and inspect for raw UID, peer identifiers, device fingerprint, tokens, media keys, user metadata and exception payloads.
 
-**Acceptance:** fixtures + workflow evidence + residual review + post-feature-complete logcat. Keep Partial.
+**Acceptance:** residual review + post-feature-complete logcat. Keep Partial; do not claim whole-program analysis.
 
 ## 3.12 S10-N3 — R2-to-B2 cold-tier migration race
 
