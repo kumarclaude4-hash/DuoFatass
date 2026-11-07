@@ -2,7 +2,8 @@
 
 **Prepared:** 2026-11-07  
 **Repository:** https://github.com/kumarclaude4-hash/DuoFatass  
-**Reviewed baseline:** `main` at `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` (PR #248 merge)  
+**Original source-review baseline:** `main` at `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` (PR #248 merge)  
+**Current reconciliation baseline:** `main` at `98f76cdf374eeaf5c8144befad068ef05805a20b` (PR #256 merge)  
 **Purpose:** Source-linked, evidence-aware inventory of incomplete security work, with precise next actions and acceptance criteria for an independent Claude review.
 
 > This is a handoff report, not a new audit or sign-off. The canonical finding register is [`BUG_TRACKER.md`](../BUG_TRACKER.md). `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. Do not invent finding IDs, change dispositions without evidence, infer owner approval, or mark a finding Fixed merely because a PR merged.
@@ -11,10 +12,10 @@
 
 ## 0. Instructions to Claude
 
-Start from the exact reviewed `main` SHA above. Independently read the current source, tests and referenced documents; this report is a navigation map, not a substitute for code review.
+Start from the current reconciliation baseline above. The original PR #248 analysis is retained as historical context; the current-main sections and dated addenda supersede it where they differ. Independently read current source/tests before changing a finding.
 
 For every item:
-1. Confirm the current implementation and tests at the reviewed baseline.
+1. Confirm the current implementation and tests at the current reconciliation baseline; do not treat the original PR #248 baseline as current.
 2. Separate **code**, **automated verification**, **staging/operator action**, **physical-device acceptance**, and **owner decision**. These are different gates.
 3. If code is needed, create a narrow branch from current `main`; add a regression test that fails before the fix; run focused tests plus applicable CI/security workflows; open a PR. Never commit directly to main.
 4. Capture exact commit SHA and reproducible evidence: workflow URL, test report, redacted staging record, provider-console read-back, or dated owner decision.
