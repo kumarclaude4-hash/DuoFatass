@@ -897,11 +897,10 @@ public class ChatMediaActivity extends BaseActivity {
     private void refreshPresenceFromServer() {
         if (conversationId == null || partnerUid == null) return;
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canRead(1)) return;
+        if (!guard.reserveRead(1)) return;
         db.collection("chats").document(conversationId)
           .get(com.google.firebase.firestore.Source.SERVER)
           .addOnSuccessListener(snap -> {
-              guard.recordReads(1);
               if (isFinishing() || isDestroyed()) return;
               long lastSeenMs = com.duoshield.app.util.PresenceFormatter.timestampMillis(
                       snap.get("lastSeen_" + partnerUid));
@@ -2761,7 +2760,7 @@ public class ChatMediaActivity extends BaseActivity {
     private void syncDisappearToFirestore(long ms) {
         if (conversationId == null || myUid == null) return;
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canWrite(1)) return;
+        if (!guard.reserveWrite(1)) return;
         Map<String, Object> update = new HashMap<>();
         update.put("disappear_ms",     ms);
         update.put("disappear_set_by", myUid);
