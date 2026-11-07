@@ -226,6 +226,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void mapReadAlias(Profile profile) { Map<String, Object> fields = new HashMap<>(); fields.put(\"peer\", profile.getUserId()); String value = (String) fields.get(\"peer\"); Log.e(\"TAG\", value); }\n"
                   + "  void concatenatedAlias(Profile profile) { String value = profile.getUserId(); Log.w(\"TAG\", \"peer=\" + value); }\n"
                   + "  void opaqueCallArgumentAlias(Profile profile) { String value = identityEcho(profile.getUserId()); Log.e(\"TAG\", value); }\n"
+                  + "  void messageLengthStillSensitive(String message) { int length = message.length(); Log.w(\"TAG\", \"message length=\" + length); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
@@ -240,6 +241,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(unsafeResult.violations, "raw sensitive member 'MANUFACTURER'");
             requireViolation(unsafeResult.violations, "raw sensitive identifier 'uid'");
             requireViolation(unsafeResult.violations, "method-local sensitive alias/container reaches Log.e message");
+            requireViolation(unsafeResult.violations, "method-local sensitive alias/container reaches Log.w message");
             if (unsafeResult.violations.size() < 13) {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
@@ -478,9 +480,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
          */
         private boolean isSafeOperationalProjection(MethodInvocationTree node) {
             String method = methodName(node);
-            return "size".equals(method)
-                    || "length".equals(method)
-                    || "code".equals(method)
+            if ("size".equals(method)) {
+                // Only collection/map sizes are treated as aggregate counts. A String
+                // or byte-array length may expose content length and is not exempt.
+                String root = rootIdentifier(receiverExpression(node));
+                return root != null && containerLocals.contains(root);
+            }
+            return "code".equals(method)
                     || "getResponseCode".equals(method)
                     || "getSummary".equals(method)
                     || "copyInto".equals(method)
