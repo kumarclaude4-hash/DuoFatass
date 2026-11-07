@@ -64,7 +64,9 @@
 
     // Independent global daily caps preserve the cleanup budget when upload traffic is high.
     "MAX_DAILY_MEDIA_UPLOADS": "120",
-    "MAX_DAILY_MEDIA_DELETES": "120",
+    "MAX_DAILY_MEDIA_DELETES": "80",
+    "MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER": "20",
+    "MAX_DAILY_MEDIA_DELETES_PER_HOLDER": "20",
 
     // S08-I3: comma-separated allow list of browser Origins permitted to
     // call this Worker cross-origin. Empty by default — the Android app
