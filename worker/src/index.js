@@ -26,10 +26,13 @@ const MAX_B2_BYTES = 9_000_000_000;
 // so the worst-case external request count stays below 50.
 const MAX_MIGRATIONS_PER_RUN = 15;
 const MAX_B2_LIST_PAGES_PER_RUN = 10;
+// R2.list + the Class A reservation each consume one internal subrequest.
+// 400 pages plus 15 migrations × 3 R2 operations stays below 1,000 internal calls.
+const MAX_R2_LIST_PAGES_PER_RUN = 400;
 
 // ─── Tier config ──────────────────────────────────────────────────────────────
 function hotTierMs(env)  { return safeInt(env.HOT_TIER_DAYS || '30', 30) * 86_400_000; }
-function maxFileSize(env){ return safeInt(env.MAX_FILE_SIZE  || '524288000', 524_288_000); }
+function maxFileSize(env){ return safeInt(env.MAX_FILE_SIZE  || '95000000', 95_000_000); }
 function rateLimit(env)  { return safeInt(env.RATE_LIMIT_PER_MIN || '120', 120); }
 
 // ─── Safe integer parsing ─────────────────────────────────────────────────────
@@ -1292,7 +1295,13 @@ export default {
 
     // ── Step 1: Scan R2 ─────────────────────────��──────────────────────────────
     let cursor;
+    let r2Pages = 0;
     do {
+      r2Pages++;
+      if (r2Pages > MAX_R2_LIST_PAGES_PER_RUN) {
+        console.warn(`R2 inventory exceeds the ${MAX_R2_LIST_PAGES_PER_RUN}-page internal-subrequest budget; leaving counters unchanged and retrying tomorrow`);
+        return;
+      }
       // R2 ListObjects is also Class A. Reserve before every page scan;
       // if the budget is exhausted, leave remaining objects in R2 and retry
       // on the next month instead of crossing the shared free allowance.
