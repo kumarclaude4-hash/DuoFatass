@@ -147,9 +147,10 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 
 > **Note on free-tier request accounting:** Workers KV allows 1,000 writes/day.
 > Request counting samples 1 in 500 requests (~160 writes/day at the 80K request
-> ceiling). PUT/DELETE attempts are globally capped at 160/day by the SQLite-backed
-> `MediaMutationBudget` Durable Object. This bounds per-object storage-counter
-> writes and delete replay-protection writes. If the quota DO is unavailable or
+> ceiling). PUT and DELETE attempts have separate global caps of 120/day each in the
+> SQLite-backed `MediaMutationBudget` Durable Object. This prevents upload traffic
+> from consuming the cleanup allowance used by disappearing messages. At the
+> configured caps, per-object storage accounting and replay markers remain bounded. If the quota DO is unavailable or
 > unconfigured, media mutations fail closed. A separate atomic monthly counter
 > reserves R2 Class A operations before each upload and each R2 inventory-list page,
 > with an 850K ceiling below the 1M free allowance. Both quota DOs use SQLite-backed
