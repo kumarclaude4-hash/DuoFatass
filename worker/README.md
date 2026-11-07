@@ -65,6 +65,7 @@ npx wrangler secret put B2_ACCESS_KEY_ID      # paste your B2 keyID
 npx wrangler secret put B2_SECRET_ACCESS_KEY  # paste your B2 applicationKey
 npx wrangler secret put STATS_SECRET          # operator-only /stats token (S08-H1)
 npx wrangler secret put MEDIA_TOKEN_SECRET    # per-object capability signing key (must match the push server)
+npx wrangler secret put ADMIN_LOCKOUT_SECRET  # must match Render's ADMIN_LOCKOUT_WORKER_SECRET
 ```
 
 **`STATS_SECRET`** is a random string you generate (e.g. `openssl rand -hex 32`)
@@ -78,13 +79,21 @@ mints for each media PUT/GET/DELETE (SEC-A01). It must be byte-identical to the
 push server's `MEDIA_TOKEN_SECRET`. The data plane no longer uses any shared
 bearer secret, so the client never holds a long-lived storage credential.
 
-### 7. Install dependencies and deploy
+### 7. Validate and deploy
 
 ```bash
 cd worker
-npm install
+npm ci
+# Compile the exact Worker bundle and validate wrangler.jsonc without deploying.
+npx wrangler deploy --dry-run --outdir /tmp/duoshield-worker-dry-run
+# Apply the configured SQLite Durable Object migrations and deploy.
 npx wrangler deploy
 ```
+
+The Wrangler config declares two SQLite-backed Durable Object classes:
+`AdminLockoutCounter` and `MediaMutationBudget`. Their versioned migrations
+are applied by the first successful deploy. Workers Free supports SQLite-backed
+Durable Objects; do not switch these bindings to the legacy KV storage backend.
 
 Your Worker URL will be:
 ```
@@ -142,6 +151,7 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 | Worker requests       | 100 K/day         | Conservative daily gate at 80 K/day (80%) |
 | KV reads              | 100 K/day         | Daily gate reads + bounded mutation lookups; keep under 100K/day |
 | KV writes              | 1 K/day           | ~160 sampled writes/day + bounded storage accounting |
+| SQLite Durable Objects | 100 K requests/day; 13,000 GB-s/day; 5 GB storage | Two SQLite-backed counters; media uploads/deletes capped at 120/150 per day |
 
 **Target profile: 10 active users with bounded media mutations and usage; not unlimited traffic.**
 
