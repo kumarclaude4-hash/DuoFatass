@@ -259,6 +259,39 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
             }
+            Path interprocedural = Files.createDirectories(root.resolve("interprocedural"));
+            Files.writeString(interprocedural.resolve("HelperFlow.java"),
+                    "class Profile { String getUserId() { return \\"uid\\"; } }\\n"
+                  + "class HelperFlow {\\n"
+                  + "  String cached;\\n"
+                  + "  String direct(Profile profile) { return profile.getUserId(); }\\n"
+                  + "  String pass(String value) { return value; }\\n"
+                  + "  String sanitized(Profile profile) { return LogRedact.uid(profile.getUserId()); }\\n"
+                  + "  String recursive(Profile profile, boolean recurse) { if (recurse) return profile.getUserId(); return recursive(profile, true); }\\n"
+                  + "  String safeRecursive(boolean again) { if (again) return safeRecursive(false); return \\"safe\\"; }\\n"
+                  + "  String overloaded(String value) { return \\"safe\\"; }\\n"
+                  + "  String overloaded(int value) { return \\"safe\\"; }\\n"
+                  + "  void saveField(Profile profile) { this.cached = profile.getUserId(); }\\n"
+                  + "  String readField() { return this.cached; }\\n"
+                  + "  void directHelper(Profile profile) { String x = direct(profile); Log.w(\\"TAG\\", x); }\\n"
+                  + "  void passThrough(Profile profile) { String x = pass(profile.getUserId()); Log.w(\\"TAG\\", x); }\\n"
+                  + "  void sanitizedHelper(Profile profile) { String x = sanitized(profile); Log.w(\\"TAG\\", x); }\\n"
+                  + "  void recursiveHelper(Profile profile) { String x = recursive(profile, true); Log.w(\\"TAG\\", x); }\\n"
+                  + "  void overloadHelper(Profile profile) { String x = overloaded(profile.getUserId()); Log.w(\\"TAG\\", x); }\\n"
+                  + "  void safeRecursionHelper() { String x = safeRecursive(true); Log.w(\\"TAG\\", x); }\\n"
+                  + "  void fieldHelper(Profile profile) { saveField(profile); String x = readField(); Log.w(\\"TAG\\", x); }\\n"
+                  + "}\\n", StandardCharsets.UTF_8);
+
+            ScanResult interproceduralResult = scan(interprocedural);
+            if (interproceduralResult.inspectedCalls != 7
+                    || interproceduralResult.violations.size() != 5) {
+                throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
+                        + "5 unsafe helper flows and 2 safe helper flows, got "
+                        + interproceduralResult.violations.size() + " violations:\\n"
+                        + join(interproceduralResult.violations));
+            }
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -504,6 +537,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 return ((IdentifierTree) node.getMethodSelect()).getName().toString();
             }
             return "";
+        }
+
+        private static String receiverName(MethodInvocationTree node) {
+            ExpressionTree receiver = receiverExpression(node);
+            return receiver == null ? "" : receiver.toString();
         }
 
         private static ExpressionTree receiverExpression(MethodInvocationTree node) {
@@ -812,6 +850,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         }
                         // An unresolved external/virtual call is not assumed to be
                         // a sanitizer. Preserve the previous conservative behavior.
+                        value.merge(evaluate(receiverExpression(node)));
                         for (ExpressionTree argument : node.getArguments()) {
                             value.merge(evaluate(argument));
                         }
@@ -1150,9 +1189,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 @Override
                 public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                     String name = node.getIdentifier().toString();
-                    if (!SAFE_OPERATIONAL_COUNTERS.contains(name)
+                    if (returnSummaries.isSensitiveField(ownerClass, name)
+                            || (!SAFE_OPERATIONAL_COUNTERS.contains(name)
                             && (SENSITIVE_IDENTIFIER.matcher(name).matches()
-                            || SENSITIVE_ACCESSOR.matcher(name).matches())) {
+                            || SENSITIVE_ACCESSOR.matcher(name).matches()))) {
                         found[0] = true;
                     }
                     return found[0] ? null : super.visitMemberSelect(node, unused);
