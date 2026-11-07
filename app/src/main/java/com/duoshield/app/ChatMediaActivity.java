@@ -709,7 +709,7 @@ public class ChatMediaActivity extends BaseActivity {
         // message listener only after the session is ready so messages can be decrypted.
         ensureSignalSession();
 
-        typingThrottle = new PresenceThrottle(conversationId, myUid);
+        typingThrottle = new PresenceThrottle(ChatMediaActivity.this, conversationId, myUid);
 
         ButtonPressAnimator.attach(sendButton);
         sendButton.setOnClickListener(v -> {
@@ -897,11 +897,10 @@ public class ChatMediaActivity extends BaseActivity {
     private void refreshPresenceFromServer() {
         if (conversationId == null || partnerUid == null) return;
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canRead(1)) return;
+        if (!guard.reserveRead(1)) return;
         db.collection("chats").document(conversationId)
           .get(com.google.firebase.firestore.Source.SERVER)
           .addOnSuccessListener(snap -> {
-              guard.recordReads(1);
               if (isFinishing() || isDestroyed()) return;
               long lastSeenMs = com.duoshield.app.util.PresenceFormatter.timestampMillis(
                       snap.get("lastSeen_" + partnerUid));
@@ -1217,10 +1216,20 @@ public class ChatMediaActivity extends BaseActivity {
             MessageOutboxWorker.enqueue(ChatMediaActivity.this);
         });
 
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+            runOnUiThread(() -> {
+                voiceMessage.setStatus("failed");
+                adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+                saveToRoom(voiceMessage);
+                Toast.makeText(ChatMediaActivity.this,
+                        "Daily write budget reached. Voice note is saved and will retry after reset.",
+                        Toast.LENGTH_LONG).show();
+            });
+            return;
+        }
         db.collection("chats").document(conversationId)
           .collection("messages").document(msgId).set(doc)
           .addOnSuccessListener(v -> {
-              FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
               dbExecutor.execute(() -> AppDatabase.getInstance(ChatMediaActivity.this)
                       .outboxDao().delete(msgId));
               voiceMessage.setStatus("sent");
@@ -1784,7 +1793,7 @@ public class ChatMediaActivity extends BaseActivity {
                             }
                         }
                         if (!unread.isEmpty()) {
-                            DeliveryReceiptHelper.markRead(conversationId, unread, myUid);
+                            DeliveryReceiptHelper.markRead(ChatMediaActivity.this, conversationId, unread, myUid);
                         }
                     }
                     attachFirestoreListener();
@@ -2228,7 +2237,7 @@ public class ChatMediaActivity extends BaseActivity {
             // (teal double tick for the sender). Background delivery uses
             // DuoShieldMessagingService.acknowledgeDelivery() via FCM data payload.
             if (!newIncoming.isEmpty()) {
-                DeliveryReceiptHelper.markRead(conversationId, newIncoming, myUid);
+                DeliveryReceiptHelper.markRead(ChatMediaActivity.this, conversationId, newIncoming, myUid);
 
                 // Partner is actively in the chat (they just sent messages), which
                 // proves they received our previous messages. Locally advance any of
@@ -2244,7 +2253,7 @@ public class ChatMediaActivity extends BaseActivity {
                     // batchUpdateStatus: single notifyItemChanged per row vs N adapter.updateMessage() calls.
                     adapter.batchUpdateStatus(sentIds, "delivered");
                     // Persist to Firestore so ticks survive app restarts
-                    DeliveryReceiptHelper.markDeliveredByIds(conversationId, sentIds);
+                    DeliveryReceiptHelper.markDeliveredByIds(ChatMediaActivity.this, conversationId, sentIds);
                 }
             }
         });
@@ -2761,13 +2770,12 @@ public class ChatMediaActivity extends BaseActivity {
     private void syncDisappearToFirestore(long ms) {
         if (conversationId == null || myUid == null) return;
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canWrite(1)) return;
+        if (!guard.reserveWrite(1)) return;
         Map<String, Object> update = new HashMap<>();
         update.put("disappear_ms",     ms);
         update.put("disappear_set_by", myUid);
         db.collection("chats").document(conversationId)
-          .update(update)
-          .addOnSuccessListener(v -> guard.recordWrites(1));
+          .update(update);
     }
 
     private void updateDisappearBanner() {
@@ -3202,10 +3210,18 @@ public class ChatMediaActivity extends BaseActivity {
         doc.put("timestamp", FieldValue.serverTimestamp());
         doc.put("status", "sent");
 
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+            m.setStatus("failed");
+            adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+            cleanupUnpublishedAlbumMedia(items);
+            Toast.makeText(this,
+                    "Daily write budget reached — album not sent. Re-select the media after the quota reset.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         db.collection("chats").document(conversationId)
           .collection("messages").document(msgId).set(doc)
           .addOnSuccessListener(v -> {
-              FirebaseCostGuard.getInstance(this).recordWrites(1);
               m.setStatus("sent");
               adapter.updateMessage(msgId, msg -> msg.setStatus("sent"));
               saveToRoom(m);
@@ -3220,9 +3236,26 @@ public class ChatMediaActivity extends BaseActivity {
               Log.e(TAG, "Failed to send album message: " + com.duoshield.app.util.LogRedact.error(e));
               adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
               m.setStatus("failed");
-              saveToRoom(m);
-              Toast.makeText(this, "Failed to send album. Please try again.", Toast.LENGTH_LONG).show();
+              cleanupUnpublishedAlbumMedia(items);
+              Toast.makeText(this,
+                      "Album was not sent. Re-select the media to try again.",
+                      Toast.LENGTH_LONG).show();
           });
+    }
+
+    /**
+     * Removes newly uploaded album objects when their Firestore envelope cannot
+     * be published. Albums do not have an OutboxMessage retry record, so keeping
+     * those objects would create unreachable B2 storage that no expiry worker
+     * can associate with a message document.
+     */
+    private void cleanupUnpublishedAlbumMedia(java.util.List<String[]> items) {
+        if (items == null) return;
+        for (String[] item : items) {
+            if (item == null || item.length == 0 || item[0] == null
+                    || !B2StorageHelper.isB2Path(item[0])) continue;
+            B2StorageHelper.deleteFileAsync(item[0]);
+        }
     }
 
     private void uploadMedia(Uri fileUri, String mediaType) {
@@ -3672,11 +3705,21 @@ public class ChatMediaActivity extends BaseActivity {
             MessageOutboxWorker.enqueue(ChatMediaActivity.this);
         });
 
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+            runOnUiThread(() -> {
+                m.setStatus("failed");
+                adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+                saveToRoom(m);
+                Toast.makeText(ChatMediaActivity.this,
+                        "Daily write budget reached. Media is saved and will retry after reset.",
+                        Toast.LENGTH_LONG).show();
+            });
+            return;
+        }
         db.collection("chats").document(conversationId)
 
           .collection("messages").document(msgId).set(doc)
           .addOnSuccessListener(v -> {
-              FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
               dbExecutor.execute(() -> AppDatabase.getInstance(ChatMediaActivity.this)
                       .outboxDao().delete(msgId));
               m.setStatus("sent");
@@ -3732,10 +3775,15 @@ public class ChatMediaActivity extends BaseActivity {
                 doc.put("isEncrypted", true); doc.put("sigType", r.sigType);
                 doc.put("timestamp", FieldValue.serverTimestamp());
 
+                if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+                    m.setStatus("failed");
+                    adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+                    saveToRoom(m);
+                    return;
+                }
                 db.collection("chats").document(conversationId)
                   .collection("messages").document(msgId).set(doc)
                   .addOnSuccessListener(v -> {
-                      FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
                       m.setStatus("sent");
                       adapter.updateMessage(msgId, msg -> msg.setStatus("sent"));
                       saveToRoom(m);  // stores plaintext in Room for local display
@@ -3772,6 +3820,11 @@ public class ChatMediaActivity extends BaseActivity {
                 m.setStatus("sent");
             });
             retryPendingDecryption();
+            return;
+        }
+        if ("album".equals(msg.getMediaType())) {
+            Toast.makeText(this, "Please re-select the media to retry this album.",
+                    Toast.LENGTH_LONG).show();
             return;
         }
         if ("voice".equals(msg.getMediaType())) {
@@ -3884,12 +3937,23 @@ public class ChatMediaActivity extends BaseActivity {
                                 r.ciphertextB64, r.sigType, "text", finalRId, finalRPrv, exp, now));
                 MessageOutboxWorker.enqueue(ChatMediaActivity.this);
 
+                if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+                    runOnUiThread(() -> {
+                        if (sendButton != null) sendButton.setEnabled(true);
+                        optimistic.setStatus("failed");
+                        adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+                        saveToRoom(optimistic);
+                        Toast.makeText(ChatMediaActivity.this,
+                                "Daily write budget reached. Message is saved and will retry after reset.",
+                                Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
                 db.collection("chats").document(conversationId)
 
                   .collection("messages").document(msgId).set(doc)
                   .addOnSuccessListener(v -> {
                       runOnUiThread(() -> { if (sendButton != null) sendButton.setEnabled(true); });
-                      FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
                       dbExecutor.execute(() -> AppDatabase.getInstance(ChatMediaActivity.this)
                               .outboxDao().delete(msgId));
                       adapter.updateMessage(msgId, m -> m.setStatus("sent"));
@@ -4025,7 +4089,7 @@ public class ChatMediaActivity extends BaseActivity {
 
         // Bug B fix: reset the unread counter so the badge clears when chat is opened.
         // UnreadCountHelper.reset() sets unread_<myUid> to 0 on the conversation doc.
-        com.duoshield.app.util.UnreadCountHelper.reset(conversationId, myUid);
+        com.duoshield.app.util.UnreadCountHelper.reset(ChatMediaActivity.this, conversationId, myUid);
 
         if (partnerUid == null) return;
 

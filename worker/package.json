@@ -1,14 +1,14 @@
 {
   "name": "duoshield-storage-worker",
   "version": "1.0.0",
-  "description": "Cloudflare Worker for DuoShield tiered storage (R2 hot → B2 cold → purge at 180 days)",
+  "description": "Cloudflare Worker for DuoShield tiered storage (R2 hot → B2 cold; B2 objects remain until explicitly deleted)",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "tail": "wrangler tail",
-    "test": "node --test src/index.test.js src/adminLockoutDurableObject.test.js"
+    "test": "node --test src/index.test.js src/adminLockoutDurableObject.test.js src/mediaMutationBudget.test.js"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20"

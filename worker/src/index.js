@@ -1,29 +1,38 @@
 import { AwsClient } from 'aws4fetch';
 import { AdminLockoutCounter } from './adminLockoutDurableObject.js';
+import { MediaMutationBudget } from './mediaMutationBudget.js';
 
 // Durable Object classes must be exported from this entry module for the
 // `durable_objects` binding in wrangler.jsonc to resolve them — see
 // adminLockoutDurableObject.js for what this class does and why it exists.
-export { AdminLockoutCounter };
+export { AdminLockoutCounter, MediaMutationBudget };
 
 // ─── Hard limits ──────────────────────────────────────────────────────────────
-// R2 free tier: 10 GB storage, 1 M Class A ops/month, 10 M Class B ops/month.
-// Enforce at 95% = 9.5 GB to stay safely within the free tier.
-const MAX_R2_BYTES = 9.5 * 1024 * 1024 * 1024; // 9.5 GB
+// R2 free tier: 10 GB-month storage, 1 M Class A ops/month, 10 M Class B ops/month.
+// Use 9.0 decimal GB (90%) so binary GiB conversion cannot cross the 10 GB cap.
+const MAX_R2_BYTES = 9_000_000_000;
 
-// Workers free tier: 100,000 requests/day (not per month). Enforce at 90% = 90K/day.
-const MAX_DAILY_REQUESTS = 90_000;
+// Workers Free hard allowance: 100,000 requests/day. Keep an 80% early-stop
+// target so KV/DO/storage overhead and measurement error retain headroom.
+const MAX_DAILY_REQUESTS = 80_000;
 
-// B2 free tier: 10 GB — tracked for informational use only, no hard cap enforced.
-const MAX_B2_BYTES = 10 * 1024 * 1024 * 1024;
+// B2 free tier: 10 GB (decimal). Keep a 10% safety margin for accounting
+// drift and objects written outside this Worker. Tiering stops before 9 GB.
+const MAX_B2_BYTES = 9_000_000_000;
 
-// Maximum objects migrated per cron run. 3 subrequests per migration (get + put + delete)
-// plus list overhead keeps total well under the 1,000 subrequest-per-invocation limit.
-const MAX_MIGRATIONS_PER_RUN = 200;
+// Workers Free allows 50 external subrequests per invocation. The scheduled
+// path makes one B2 list request per inventory page, one B2 PUT per migration,
+// and may make one compensating B2 DELETE per raced migration. Bound both sides
+// so the worst-case external request count stays below 50.
+const MAX_MIGRATIONS_PER_RUN = 15;
+const MAX_B2_LIST_PAGES_PER_RUN = 10;
+// R2.list + the Class A reservation each consume one internal subrequest.
+// 400 pages plus 15 migrations × 3 R2 operations stays below 1,000 internal calls.
+const MAX_R2_LIST_PAGES_PER_RUN = 400;
 
 // ─── Tier config ──────────────────────────────────────────────────────────────
 function hotTierMs(env)  { return safeInt(env.HOT_TIER_DAYS || '30', 30) * 86_400_000; }
-function maxFileSize(env){ return safeInt(env.MAX_FILE_SIZE  || '524288000', 524_288_000); }
+function maxFileSize(env){ return safeInt(env.MAX_FILE_SIZE  || '95000000', 95_000_000); }
 function rateLimit(env)  { return safeInt(env.RATE_LIMIT_PER_MIN || '120', 120); }
 
 // ─── Safe integer parsing ─────────────────────────────────────────────────────
@@ -32,6 +41,34 @@ function rateLimit(env)  { return safeInt(env.RATE_LIMIT_PER_MIN || '120', 120);
 function safeInt(val, fallback = 0) {
   const n = parseInt(val, 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+// Reserve one R2 Class A operation in the existing SQLite Durable Object.
+// The stable global object ID makes monthly reservations atomic across edge
+// locations and all app users. Fail closed if the budget service is unavailable.
+async function reserveR2ClassA(env) {
+  if (!env.ADMIN_LOCKOUT_DO) {
+    throw new Error('R2 operation budget Durable Object is not configured');
+  }
+  const id = env.ADMIN_LOCKOUT_DO.idFromName('duoshield-r2-class-a-budget-v1');
+  const stub = env.ADMIN_LOCKOUT_DO.get(id);
+  const response = await stub.fetch('https://r2-budget.internal/reserve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'reserveR2ClassA',
+      monthKey: new Date().toISOString().slice(0, 7),
+      amount: 1,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`R2 operation budget returned HTTP ${response.status}`);
+  }
+  const result = await response.json();
+  if (!result || typeof result.allowed !== 'boolean') {
+    throw new Error('R2 operation budget returned a malformed response');
+  }
+  return result;
 }
 
 // ─── B2 S3-compatible client ──────────────────────────────────────────────────
@@ -427,25 +464,84 @@ async function kvSet(env, key, value, opts = {}) {
 }
 
 // ─── Daily request gate ───────────────────────────────────────────────────────
-// Free tier: 100K requests/day. Enforce at 90K (90%).
-//
-// KV write cost is amortised via 1-in-10 sampling: each write adds 10 to the
-// counter instead of 1. This keeps accuracy within ±9 while consuming only
-// ~0.1 KV writes per request instead of 1, reducing write pressure ~10×.
+// Workers Free permits 100K requests/day. The app-level early-stop target is
+// 80K/day; sampled telemetry is approximate and Cloudflare's own hard limit
+// remains authoritative. Request counts sample 1 in 500 and add 500, using
+// about 160 KV writes/day at the 80K target (sampling error can be up to 499).
+async function reserveDailyMediaMutation(env, cors, operation, holder) {
+  // A global SQLite-backed Durable Object serializes mutation reservations
+  // across all Worker locations. KV cannot safely do this: it is eventually
+  // consistent and its free tier permits only 1K writes/day.
+  if (!env.MEDIA_QUOTA_DO) {
+    console.error('MEDIA_QUOTA_DO is not configured — denying media mutation (fail closed)');
+    return json({ error: 'Media quota service unavailable' }, 503, cors);
+  }
+  if (operation !== 'upload' && operation !== 'delete') {
+    return json({ error: 'Invalid media mutation operation' }, 400, cors);
+  }
+  const defaultLimit = operation === 'upload' ? 120 : 80;
+  const configuredLimit = operation === 'upload'
+    ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS || String(defaultLimit), defaultLimit)
+    : safeInt(env.MAX_DAILY_MEDIA_DELETES || String(defaultLimit), defaultLimit);
+  const limit = configuredLimit >= 1 && configuredLimit <= 10_000 ? configuredLimit : defaultLimit;
+  const configuredHolderLimit = operation === 'upload'
+    ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER || '20', 20)
+    : safeInt(env.MAX_DAILY_MEDIA_DELETES_PER_HOLDER || '60', 60);
+  const holderLimit = configuredHolderLimit >= 1 && configuredHolderLimit <= limit
+    ? configuredHolderLimit : Math.min(20, limit);
+  if (typeof holder !== 'string' || !holder) {
+    return json({ error: 'Media quota identity unavailable' }, 503, cors);
+  }
+  const holderKey = await holderBucketKey(holder);
+  try {
+    const id = env.MEDIA_QUOTA_DO.idFromName('duoshield-global-daily-media-mutations');
+    const stub = env.MEDIA_QUOTA_DO.get(id);
+    const response = await stub.fetch('https://media-quota.internal/reserve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reserve', operation, limit, holderKey, holderLimit }),
+    });
+    let result;
+    try { result = await response.json(); } catch { result = null; }
+    if (response.status === 429 && result?.allowed === false) {
+      return json({
+        error: result.scope === 'holder'
+          ? `This account reached its daily media ${operation} budget. Try again after the UTC reset.`
+          : `Daily media ${operation} budget reached. Try again after the UTC reset.`,
+        operation: result.operation,
+        scope: result.scope,
+        count: result.count,
+        limit: result.limit,
+        reset_at: result.resetAt,
+      }, 429, cors);
+    }
+    if (!response.ok || result?.allowed !== true) {
+      console.error('Media quota service returned an invalid reservation response');
+      return json({ error: 'Media quota service unavailable' }, 503, cors);
+    }
+    return null;
+  } catch (err) {
+    console.error(`Media quota reservation failed (${err?.name || 'Error'})`);
+    return json({ error: 'Media quota service unavailable' }, 503, cors);
+  }
+}
+
 async function checkDailyRequestLimit(env, cors) {
-  if (!env.RATE_KV) return null;
+  if (!env.RATE_KV) {
+    return json({ error: 'Daily usage counter unavailable' }, 503, cors);
+  }
   const key   = dayKey();
   const count = safeInt(await kvGet(env, key));
   if (count >= MAX_DAILY_REQUESTS) {
     return json({
-      error: 'Daily request limit reached (90K/day). Resets at midnight UTC.',
+      error: 'Daily request safety threshold reached (80K/day). Resets at midnight UTC.',
       count,
       limit: MAX_DAILY_REQUESTS,
     }, 429, cors);
   }
-  // Sampled write: fires ~10% of the time, adds 10 to preserve the expected value.
-  if (Math.random() < 0.1) {
-    await kvSet(env, key, count + 10, { expirationTtl: 2 * 86_400 }); // 48h TTL
+  // Sampled write: fires ~0.2% of the time, adds 500 to preserve the expected value.
+  if (Math.random() < 1 / 500) {
+    await kvSet(env, key, count + 500, { expirationTtl: 2 * 86_400 }); // 48h TTL
   }
   return null;
 }
@@ -455,23 +551,21 @@ async function checkDailyRequestLimit(env, cors) {
 // (typically minutes to hours on a given Cloudflare edge node).
 //
 // This is advisory — it is not globally consistent across edge locations — but
-// it prevents burst abuse within a single PoP without consuming any KV writes.
-// KV-based rate limiting is ineffective on the free tier anyway (KV writes have
-// ~60s eventual consistency, making cross-PoP enforcement impossible without
-// Durable Objects, which require a paid plan).
+// it prevents burst abuse within a single PoP without consuming KV writes.
+// Cross-location mutation volume is separately bounded by the atomic
+// MediaMutationBudget Durable Object on the Workers Free plan.
 //
-// The bucket key is derived from a SHA-256 truncation of the Authorization
-// header value, NOT from the client-supplied X-Client-ID header.
-// Using X-Client-ID let any client:
-//   (a) bypass the limit by cycling through arbitrary header values, or
-//   (b) exhaust another client's quota by sending that client's known ID.
-// The credential hash is non-spoofable (only the authorized app knows the
-// WORKER_SECRET) and stable within a session.
+// The bucket key is derived from the verified capability holder's UID and
+// hashed before being kept in memory. Client-controlled IDs and per-operation
+// capability-token strings are never used as the rate-limit identity.
 const perUserCounts = new Map();
 
-async function credentialBucketKey(request) {
-  const auth = request.headers.get('Authorization') ?? 'anon';
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(auth));
+async function holderBucketKey(holder) {
+  // Capability tokens are unique per object/operation. Hash the verified UID
+  // from the signed token instead, otherwise a caller can evade the limiter by
+  // requesting fresh tokens for every operation.
+  const identity = typeof holder === 'string' && holder.length > 0 ? holder : 'unknown';
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
   // Take the first 8 bytes (64 bits) as a hex string — enough entropy for
   // bucket identity, short enough to avoid memory blowup in the Map.
   return Array.from(new Uint8Array(hash).slice(0, 8))
@@ -479,9 +573,9 @@ async function credentialBucketKey(request) {
     .join('');
 }
 
-async function checkPerUserRateLimit(request, env, cors) {
+async function checkPerUserRateLimit(env, cors, holder) {
   const limit     = rateLimit(env);
-  const bucketId  = await credentialBucketKey(request);
+  const bucketId  = await holderBucketKey(holder);
   const minuteKey = `${bucketId}:${Math.floor(Date.now() / 60_000)}`;
   const count     = perUserCounts.get(minuteKey) ?? 0;
   if (count >= limit) {
@@ -500,8 +594,8 @@ async function checkPerUserRateLimit(request, env, cors) {
 // ─── R2 storage tracking ──────────────────────────────────────────────────────
 // Authoritative R2 bytes are written by the nightly cron (full object scan).
 // Per-request writes keep the counter timely between cron runs.
-// B2 bytes are reconciled exclusively by the cron via B2 ListObjectsV2 —
-// never tracked per-request to conserve KV write quota.
+// B2 bytes are reconciled by the scheduled job before and after tiering.
+// The cron tracks projected bytes in memory to preserve the free KV write budget.
 async function getR2Bytes(env) {
   return safeInt(await kvGet(env, 'global:storage:r2'));
 }
@@ -512,11 +606,9 @@ async function adjustR2(env, deltaBytes) {
   const next = Math.max(0, cur + deltaBytes);
   await kvSet(env, 'global:storage:r2', next);
   // Best-effort observability only: concurrent uploads can both pass the
-  // pre-check in the PUT handler and land here before either write is
-  // visible, so this counter is not a hard reservation (true atomicity
-  // would need Durable Objects, not provisioned for this project). Log
-  // loudly if we drift past the cap so it's visible in Worker logs rather
-  // than silently over-accepting indefinitely.
+  // pre-check in the PUT handler and land here before either write is visible.
+  // The operation-count Durable Object does not make this byte counter atomic;
+  // this remains a best-effort KV delta reconciled by the nightly bucket scan.
   if (next > MAX_R2_BYTES) {
     console.warn(`R2 usage (${next} B) exceeds cap (${MAX_R2_BYTES} B) — likely concurrent uploads racing the pre-check`);
   }
@@ -524,15 +616,15 @@ async function adjustR2(env, deltaBytes) {
 
 // ─── Per-user storage quota (S03-H3) ───────────────────────────────────��──────
 // The global MAX_R2_BYTES cap alone lets one uploader (~19 uploads at the
-// default 500 MB file size) fill the entire 9.5 GB free-tier budget and stop
+// default 500 MB file size) fill the entire 9 GB free-tier budget and stop
 // uploads for every user for weeks (objects only leave R2 via the 30-day
 // cron). This adds a second, per-holder ceiling — keyed on `cap.holder` from
 // the capability token (SEC-A01), never on a client-supplied header — that
 // is checked in the PUT path *before* `HOT_BUCKET.put`, alongside the
 // existing global check, not instead of it.
 //
-// Same non-atomic, best-effort accounting model as `adjustR2` above (no
-// Durable Objects on this tier — see S03-I2) — concurrent uploads from the
+// Same non-atomic, best-effort KV accounting model as `adjustR2` above.
+// The Durable Object protects mutation counts, not exact byte reservations — concurrent uploads from the
 // same holder can overshoot slightly, but the exhaustion attack this closes
 // needs dozens of sequential uploads, not a tight race.
 function maxUserBytes(env) { return safeInt(env.MAX_USER_BYTES || '1073741824', 1_073_741_824); } // 1 GB default
@@ -556,7 +648,13 @@ async function adjustUserBytes(env, holder, deltaBytes) {
 async function getB2TotalBytes(b2, env) {
   let total             = 0;
   let continuationToken = '';
+  let pages             = 0;
   do {
+    pages++;
+    if (pages > MAX_B2_LIST_PAGES_PER_RUN) {
+      console.warn(`B2 inventory exceeds the ${MAX_B2_LIST_PAGES_PER_RUN}-page free-tier scan budget; skipping tiering until inventory can be scanned safely`);
+      return null;
+    }
     const url = new URL(`${env.B2_ENDPOINT}/${env.B2_BUCKET}`);
     url.searchParams.set('list-type', '2');
     url.searchParams.set('max-keys', '1000');
@@ -626,7 +724,7 @@ export default {
           limit_bytes:     MAX_R2_BYTES,
           used_pct:        parseFloat((r2Bytes  / MAX_R2_BYTES  * 100).toFixed(2)),
           remaining_bytes: Math.max(0, MAX_R2_BYTES - r2Bytes),
-          note:            'Capped at 9.5 GB (95% of 10 GB free tier). Reconciled nightly by cron.',
+          note:            'Capped at 9 GB (90% of 10 GB free tier). Reconciled nightly by cron.',
         },
         b2: {
           used_bytes:  b2Bytes,
@@ -638,7 +736,7 @@ export default {
           today_approx:     reqCount,
           limit_per_day:    MAX_DAILY_REQUESTS,
           remaining_approx: Math.max(0, MAX_DAILY_REQUESTS - reqCount),
-          note:             'Sampled counter (±10 accuracy). Resets at midnight UTC.',
+          note:             'Sampled estimate (one request sample per 500 operations); not an exact counter. Resets at midnight UTC.',
         },
       });
     }
@@ -746,7 +844,7 @@ export default {
     if (dailyLimited) return dailyLimited;
 
     // ── Per-isolate rate limit ────────────────────────────────────────────────
-    const rateLimited = await checkPerUserRateLimit(request, env, cors);
+    const rateLimited = await checkPerUserRateLimit(env, cors, cap.holder);
     if (rateLimited) return rateLimited;
 
     // ── UPLOAD ────────────────────────────────────────────────────────────────
@@ -800,7 +898,7 @@ export default {
       const projectedR2Bytes = r2Bytes - oldSize + declaredBytes;
       if (projectedR2Bytes > MAX_R2_BYTES) {
         return respond({
-          error:           'Upload rejected — R2 storage limit (9.5 GB) reached. No new media accepted.',
+          error:           'Upload rejected — R2 storage safety limit (9 GB) reached. No new media accepted.',
           r2_used_bytes:   r2Bytes,
           r2_limit_bytes:  MAX_R2_BYTES,
           remaining_bytes: Math.max(0, MAX_R2_BYTES - r2Bytes),
@@ -809,7 +907,7 @@ export default {
 
       // S03-H3: per-holder budget, checked in addition to (not instead of)
       // the global cap above. Without this, one account's uploads alone can
-      // exhaust the entire 9.5 GB global cap and stop uploads platform-wide
+      // exhaust the entire 9 GB global cap and stop uploads platform-wide
       // for weeks (objects only leave R2 via the 30-day tiering cron).
       const userBytes = await getUserBytes(env, cap.holder);
       const projectedUserBytes = userBytes - oldSize + declaredBytes;
@@ -827,6 +925,30 @@ export default {
       // rationale. The client's Content-Type header is intentionally never
       // read here.
       const contentType = contentTypeForKey(key);
+
+      // Bound KV-backed storage-accounting writes globally. Failed attempts
+      // consume a slot deliberately so retries cannot bypass the daily budget.
+      const mutationLimited = await reserveDailyMediaMutation(env, cors, 'upload', cap.holder);
+      if (mutationLimited) return mutationLimited;
+
+      // Cloudflare R2 PutObject is a Class A operation. Reserve before
+      // touching storage so concurrent clients cannot overspend the shared
+      // monthly free allowance. An unavailable budget service fails closed.
+      let r2Budget;
+      try {
+        r2Budget = await reserveR2ClassA(env);
+      } catch (err) {
+        console.error('R2 Class A budget unavailable — rejecting upload:', err?.message || 'unknown error');
+        return respond({ error: 'Storage operation budget temporarily unavailable. Retry later.' }, 503);
+      }
+      if (!r2Budget.allowed) {
+        return respond({
+          error: 'Monthly R2 Class A free-tier safety budget reached. New uploads are paused until next month.',
+          used: r2Budget.used,
+          limit: r2Budget.limit,
+          month: r2Budget.monthKey,
+        }, 429);
+      }
 
       await env.HOT_BUCKET.put(key, request.body, {
         httpMetadata:   { contentType },
@@ -1044,6 +1166,11 @@ export default {
       if (alreadyUsed) {
         return respond({ error: 'Capability token already used' }, 403);
       }
+      // Reserve before consuming the one-shot token: quota exhaustion must
+      // leave the caller's capability retryable after the daily reset.
+      const mutationLimited = await reserveDailyMediaMutation(env, cors, 'delete', cap.holder);
+      if (mutationLimited) return mutationLimited;
+
       const remainingTtlSeconds = Math.ceil(Math.max(0, cap.expiresAt - Date.now()) / 1000);
       // Persist the single-use marker BEFORE mutating storage. A failed KV write
       // must not allow deletion without replay protection.
@@ -1140,13 +1267,14 @@ export default {
   // Runs at 02:00 UTC every day (configured in wrangler.jsonc).
   //
   // Steps:
-  //   1. Full R2 scan: migrate objects older than HOT_TIER_DAYS to B2.
-  //      Migration is capped at MAX_MIGRATIONS_PER_RUN (200) to stay under the
-  //      1,000-subrequest-per-invocation Worker limit. Objects that exceed the
-  //      cap remain in R2 and are retried the next day.
-  //   2. Write authoritative R2 byte count to KV.
-  //   3. Reconcile B2 byte count via B2 ListObjectsV2 and write to KV.
-  //      This corrects any drift from failed per-request counter updates.
+  //   1. Reconcile B2 before writes. The list is capped at 10 pages so preflight
+  //      plus 15 PUTs and up to 15 compensating DELETEs stays below the 50
+  //      external-subrequest limit on Workers Free.
+  //   2. Scan R2 and migrate at most 15 eligible objects. Remaining files stay
+  //      in R2 and are retried tomorrow.
+  //   3. Write authoritative R2 bytes and a conservative projected B2 total to
+  //      KV. The next night's B2 preflight reconciles any race/delete drift; a
+  //      second full B2 scan today would spend another 10 external subrequests.
   async scheduled(event, env, ctx) {
     const b2        = getB2Client(env);
     const now       = Date.now();
@@ -1155,9 +1283,40 @@ export default {
     let moved        = 0;
     let r2TotalBytes = 0;
 
+    // Reconcile cold-tier usage BEFORE migrating anything. If listing fails,
+    // fail closed: leave objects in R2 rather than assume B2 is empty.
+    let b2ProjectedBytes = await getB2TotalBytes(b2, env);
+    if (b2ProjectedBytes === null) {
+      console.error('B2 pre-migration reconciliation failed — skipping tiering to protect the free-tier cap');
+      return;
+    }
+    if (b2ProjectedBytes > MAX_B2_BYTES) {
+      console.warn(`B2 is already above the safety cap (${b2ProjectedBytes} B / ${MAX_B2_BYTES} B); tiering paused`);
+    }
+
     // ── Step 1: Scan R2 ─────────────────────────��──────────────────────────────
     let cursor;
+    let r2Pages = 0;
     do {
+      r2Pages++;
+      if (r2Pages > MAX_R2_LIST_PAGES_PER_RUN) {
+        console.warn(`R2 inventory exceeds the ${MAX_R2_LIST_PAGES_PER_RUN}-page internal-subrequest budget; leaving counters unchanged and retrying tomorrow`);
+        return;
+      }
+      // R2 ListObjects is also Class A. Reserve before every page scan;
+      // if the budget is exhausted, leave remaining objects in R2 and retry
+      // on the next month instead of crossing the shared free allowance.
+      let listBudget;
+      try {
+        listBudget = await reserveR2ClassA(env);
+      } catch (err) {
+        console.error('R2 Class A budget unavailable — pausing scheduled tiering:', err?.message || 'unknown error');
+        return;
+      }
+      if (!listBudget.allowed) {
+        console.warn('R2 Class A monthly safety budget reached — scheduled tiering paused');
+        return;
+      }
       const list = await env.HOT_BUCKET.list({
         cursor,
         include: ['httpMetadata', 'customMetadata'],
@@ -1179,6 +1338,15 @@ export default {
           // Count the object as still in R2 so the cap check stays conservative.
           // It will be retried tomorrow.
           r2TotalBytes += obj.size ?? 0;
+          continue;
+        }
+
+        // Enforce the B2 budget before uploading. If the object cannot fit,
+        // retain it in R2 and retry on a later run after cold media is deleted.
+        const objectBytes = obj.size ?? 0;
+        if (b2ProjectedBytes + objectBytes > MAX_B2_BYTES) {
+          r2TotalBytes += objectBytes;
+          console.warn(`B2 safety cap reached; retaining ${objectBytes} B in R2 for a later retry`);
           continue;
         }
 
@@ -1214,6 +1382,10 @@ export default {
         });
 
         if (putResp.ok) {
+          // Track successful writes in this cron invocation before evaluating
+          // the next object; no per-object KV writes are needed.
+          b2ProjectedBytes += body.byteLength;
+
           // Race guard: a client PUT/DELETE could have landed on this key
           // between the get() above and now. Re-HEAD and only delete from R2
           // if the object is unchanged (same etag) — otherwise we'd delete
@@ -1305,20 +1477,20 @@ export default {
     // ── Step 2: Persist authoritative R2 byte count ────────────────────────────
     await kvSet(env, 'global:storage:r2', r2TotalBytes);
 
-    // ── Step 3: Reconcile B2 byte count via B2 ListObjectsV2 ─────────────────
-    // This is the authoritative B2 figure. Per-request counter writes can drift
-    // (KV quota exhaustion, failed deletes, etc.); the list always tells the truth.
-    const b2TotalBytes = await getB2TotalBytes(b2, env);
-    if (b2TotalBytes !== null) {
-      await kvSet(env, 'global:storage:b2', b2TotalBytes);
-    } else {
-      console.warn('B2 list reconciliation failed — KV b2 counter unchanged this run');
+    // ── Step 3: Persist conservative projected B2 count ───────────────────────
+    // The preflight listing was authoritative before migration. Add only B2 PUTs
+    // that returned success while the cron ran. Concurrent deletes and a failed
+    // compensating delete can make this estimate high, never intentionally low;
+    // tomorrow's preflight scan reconciles it before accepting more tiering.
+    await kvSet(env, 'global:storage:b2', b2ProjectedBytes);
+    if (b2ProjectedBytes > MAX_B2_BYTES) {
+      console.error(`B2 usage exceeds safety cap: ${b2ProjectedBytes} B / ${MAX_B2_BYTES} B`);
     }
 
     console.log(
       `Tiering complete: migrated=${moved} (cap=${MAX_MIGRATIONS_PER_RUN}) | ` +
       `R2=${(r2TotalBytes / 1_048_576).toFixed(1)} MB / ${(MAX_R2_BYTES / 1_048_576).toFixed(0)} MB cap | ` +
-      `B2=${b2TotalBytes !== null ? (b2TotalBytes / 1_048_576).toFixed(1) + ' MB (reconciled)' : 'reconciliation failed'}`
+      `B2=${(b2ProjectedBytes / 1_048_576).toFixed(1)} MB (preflight + projected writes)`
     );
   },
 };

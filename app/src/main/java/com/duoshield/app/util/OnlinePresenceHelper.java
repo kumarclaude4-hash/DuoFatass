@@ -18,13 +18,12 @@ public class OnlinePresenceHelper {
      */
     public static void setOnline(Context ctx, String convId, String myUid) {
         if (convId == null || myUid == null) return;
-        if (!FirebaseCostGuard.getInstance(ctx).canWrite(1)) return;
+        if (!FirebaseCostGuard.getInstance(ctx).reserveWrite(1)) return;
         Map<String, Object> data = new HashMap<>();
         data.put("online_" + myUid, true);
         FirebaseFirestore.getInstance()
             .collection("chats").document(convId)
             .set(data, SetOptions.merge());
-        FirebaseCostGuard.getInstance(ctx).recordWrites(1);
     }
 
     /**
@@ -34,13 +33,13 @@ public class OnlinePresenceHelper {
      */
     public static void setOffline(Context ctx, String convId, String myUid) {
         if (convId == null || myUid == null) return;
-        if (!FirebaseCostGuard.getInstance(ctx).canWrite(1)) return;
+        FirebaseCostGuard guard = FirebaseCostGuard.getInstance(ctx);
+        if (!guard.reserveWrite(1)) return;
         Map<String, Object> data = new HashMap<>();
         data.put("online_"   + myUid, false);
         data.put("lastSeen_" + myUid, FieldValue.serverTimestamp());
         FirebaseFirestore.getInstance()
             .collection("chats").document(convId)
             .set(data, SetOptions.merge());
-        FirebaseCostGuard.getInstance(ctx).recordWrites(1);
     }
 }

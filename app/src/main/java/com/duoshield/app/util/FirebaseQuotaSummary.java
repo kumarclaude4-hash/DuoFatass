@@ -6,8 +6,9 @@ public class FirebaseQuotaSummary {
 
     public static String get(Context ctx) {
         FirebaseCostGuard g = FirebaseCostGuard.getInstance(ctx);
-        return "Reads today: " + g.getReads() + " / 40,000\n"
-             + "Writes today: " + g.getWrites() + " / 16,000\n"
-             + "Deletes today: " + g.getDeletes() + " / 16,000";
+        return "Device-estimated reads today: " + g.getReads() + " / 4,000\n"
+             + "Device-estimated writes today: " + g.getWrites() + " / 1,600\n"
+             + "Device-estimated deletes today: " + g.getDeletes() + " / 1,600\n"
+             + "Per-installation allowance for a 10-user profile; local estimates only, not a project-wide quota enforcer.";
     }
 }

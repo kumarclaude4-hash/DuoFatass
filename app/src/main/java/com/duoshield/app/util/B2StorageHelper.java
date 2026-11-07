@@ -970,6 +970,23 @@ public final class B2StorageHelper {
     // ── Delete ────────────────────────────────────────────────────────────────
 
     /**
+     * Schedules deletion of an unpublished B2 object on the process-wide media
+     * pool. Unlike an Activity-owned executor, this remains available when the
+     * screen that initiated an upload is destroyed before its Firestore callback.
+     */
+    public static void deleteFileAsync(String b2Path) {
+        if (!isB2Path(b2Path)) return;
+        MEDIA_POOL.execute(() -> {
+            try {
+                deleteFile(b2Path);
+            } catch (Exception e) {
+                Log.w(TAG, "Asynchronous media cleanup failed ("
+                        + com.duoshield.app.util.LogRedact.error(e) + ")");
+            }
+        });
+    }
+
+    /**
      * Synchronously deletes the object at {@code b2Path} using S3 DeleteObject + AWS SigV4.
      * Retries on transient network errors. 404 is treated as success (already gone).
      * Call from a background thread.
@@ -1574,7 +1591,7 @@ public final class B2StorageHelper {
      * OkHttp {@link RequestBody} that streams a {@link File} in
      * {@link #BUFFER_SIZE}-byte chunks and reports progress.
      * Unlike {@link ProgressRequestBody}, this never holds more than one chunk
-     * in RAM at a time — safe for files up to 500 MB.
+     * in RAM at a time — safe for files up to 95 MB.
      */
     private static final class FileRequestBody extends RequestBody {
         private final File             file;
@@ -1609,7 +1626,7 @@ public final class B2StorageHelper {
     /**
      * AES-256-GCM encrypts the content at {@code uri} into {@code dest} using
      * streaming {@code Cipher.update()} so the full plaintext and ciphertext are
-     * never held in memory simultaneously — safe for files up to 500 MB.
+     * never held in memory simultaneously — safe for files up to 95 MB.
      *
      * <p>Output format: {@code [12-byte IV | ciphertext | 16-byte GCM auth tag]}.
      * Identical to {@link #encryptForUpload(byte[])} — decrypted by
@@ -1938,7 +1955,7 @@ public final class B2StorageHelper {
      * AES-256-GCM decrypts {@code encFile} (format: {@code [12-byte IV | ciphertext | 16-byte
      * tag]}) into {@code dest}, streaming through {@link CipherInputStream} so the full
      * plaintext and ciphertext are never held in memory simultaneously — safe for files up to
-     * 500 MB. Inverse of {@link #encryptUriToFile}; also decrypts blobs produced by
+     * 95 MB. Inverse of {@link #encryptUriToFile}; also decrypts blobs produced by
      * {@link #encryptForUpload(byte[])} since the on-wire format is identical.
      */
     public static void decryptFileToFile(File encFile, String keyBase64, File dest) throws Exception {
@@ -2127,13 +2144,13 @@ public final class B2StorageHelper {
      * streaming AEAD and {@code age}), and it is what makes truncation fail closed: a
      * non-final chunk was authenticated under an IV with this bit clear, so an attacker who
      * drops the tail and relabels chunk k as final changes the IV, and GCM tag verification
-     * fails. Overflow is not reachable — the app's 500 MB file cap means at most ~500 chunks
+     * fails. Overflow is not reachable — the app's 95 MB file cap means at most ~500 chunks
      * against a 2^31 counter space.
      */
     private static final int LAST_CHUNK_FLAG = 0x80000000;
 
     /**
-     * Hard ceiling on chunk count, derived from the app's 500 MB upload cap with generous
+     * Hard ceiling on chunk count, derived from the app's 95 MB upload cap with generous
      * headroom. A header claiming more chunks than this is malformed or hostile; rejecting it
      * up front keeps a corrupted 8-byte length field from turning into an unbounded fetch loop.
      */
@@ -2411,7 +2428,7 @@ public final class B2StorageHelper {
                 ResponseBody errBody = response.body();
                 if (code == 200) {
                     // The server ignored Range and is about to stream the whole object. Do not
-                    // silently buffer it — for a 500 MB video that is precisely the OOM this
+                    // silently buffer it — for a 95 MB video that is precisely the OOM this
                     // format exists to avoid. Fail loudly so the caller can fall back to the
                     // whole-file path instead.
                     throw new NonRetryableException(200,

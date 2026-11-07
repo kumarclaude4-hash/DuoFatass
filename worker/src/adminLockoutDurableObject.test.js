@@ -315,3 +315,57 @@ test('NEGATIVE CONTROL: the same 10 concurrent calls WITHOUT the serializing har
   const maxCount = Math.max(...results.map((r) => r.count));
   assert.ok(maxCount < 10, `expected an undercount without serialization, got max count ${maxCount}`);
 });
+
+
+function r2BudgetRequest({ monthKey = '2026-11', amount = 1 } = {}) {
+  return new Request('https://r2-budget.internal/reserve', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'reserveR2ClassA', monthKey, amount }),
+  });
+}
+
+test('R2 monthly budget: denies a reservation that would cross the 850K Class A safety ceiling', async () => {
+  const storage = makeFakeStorage(0);
+  storage.map.set('r2-monthly-class-a-budget', { monthKey: '2026-11', classA: 850_000 });
+  const stub = makeDO(storage);
+  const result = await bodyOf(await stub.fetch(r2BudgetRequest({ monthKey: '2026-11' })));
+  assert.deepEqual(result, {
+    allowed: false,
+    used: 850_000,
+    requested: 1,
+    limit: 850_000,
+    monthKey: '2026-11',
+  });
+  assert.equal(storage.map.get('r2-monthly-class-a-budget').classA, 850_000,
+    'a rejected reservation must not mutate the stored counter');
+});
+
+test('R2 monthly budget: resets lazily when the UTC billing month changes', async () => {
+  const storage = makeFakeStorage(0);
+  storage.map.set('r2-monthly-class-a-budget', { monthKey: '2026-11', classA: 849_999 });
+  const stub = makeDO(storage);
+  const result = await bodyOf(await stub.fetch(r2BudgetRequest({ monthKey: '2026-12' })));
+  assert.equal(result.allowed, true);
+  assert.equal(result.used, 1);
+  assert.deepEqual(storage.map.get('r2-monthly-class-a-budget'), {
+    monthKey: '2026-12',
+    classA: 1,
+  });
+});
+
+test('R2 monthly budget: concurrent reservations are serialized without losing increments', async () => {
+  const stub = serializeFetch(makeDO(makeFakeStorage(1)));
+  const results = await Promise.all(
+    Array.from({ length: 50 }, () => stub.fetch(r2BudgetRequest()).then(bodyOf)),
+  );
+  assert.deepEqual(results.map((result) => result.used).sort((a, b) => a - b),
+    Array.from({ length: 50 }, (_, i) => i + 1));
+});
+
+test('R2 monthly budget: malformed month and non-positive reservations are rejected', async () => {
+  const stub = makeDO(makeFakeStorage(0));
+  const badMonth = await stub.fetch(r2BudgetRequest({ monthKey: '2026-13' }));
+  assert.equal(badMonth.status, 400);
+  const zeroAmount = await stub.fetch(r2BudgetRequest({ amount: 0 }));
+  assert.equal(zeroAmount.status, 400);
+});

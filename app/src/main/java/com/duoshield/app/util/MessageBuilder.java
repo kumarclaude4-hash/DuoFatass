@@ -99,17 +99,23 @@ public class MessageBuilder {
                 }
                 if (forwarded) doc.put("forwarded", true);
 
+                FirebaseCostGuard guard = FirebaseCostGuard.getInstance(ctx);
+                if (!guard.reserveWrite(1)) {
+                    AppDatabase.getInstance(ctx).messageDao().updateStatus(msgId, "failed");
+                    return;
+                }
                 FirebaseFirestore.getInstance()
                     .collection("chats").document(convId)
                     .collection("messages").document(msgId)
                     .set(doc)
                     .addOnSuccessListener(v -> {
-                        FirebaseCostGuard.getInstance(ctx).recordWrites(1);
                         AppDatabase.getInstance(ctx).messageDao().updateStatus(msgId, "sent");
                         ConversationMetaUpdater.update(ctx, convId, myUid, partnerUid,
                             previewFor(text));
-                        FirebaseFirestore.getInstance().collection("chats").document(convId)
-                            .update("lastActivity", FieldValue.serverTimestamp());
+                        if (guard.reserveWrite(1)) {
+                            FirebaseFirestore.getInstance().collection("chats").document(convId)
+                                .update("lastActivity", FieldValue.serverTimestamp());
+                        }
                     })
                     .addOnFailureListener(e -> {
                         Log.e(TAG, "sendTextMessage: Firestore set failed for msgId=" + com.duoshield.app.util.LogRedact.metadata(msgId) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
@@ -183,19 +189,25 @@ public class MessageBuilder {
             doc.put("status",      "sent");
             if (forwarded) doc.put("forwarded", true);
 
+            FirebaseCostGuard guard = FirebaseCostGuard.getInstance(ctx);
+            if (!guard.reserveWrite(1)) {
+                AppDatabase.getInstance(ctx).messageDao().updateStatus(msgId, "failed");
+                return;
+            }
             FirebaseFirestore.getInstance()
                 .collection("chats").document(convId)
                 .collection("messages").document(msgId)
                 .set(doc)
                 .addOnSuccessListener(v -> {
-                    FirebaseCostGuard.getInstance(ctx).recordWrites(1);
                     AppDatabase.getInstance(ctx).messageDao().updateStatus(msgId, "sent");
                     String preview = "voice".equals(mediaType) ? "Sent a voice note 🎤"
                             : "video".equals(mediaType) ? "Sent a video 🎬"
                             : "Sent a photo 🖼";
                     ConversationMetaUpdater.update(ctx, convId, myUid, partnerUid, preview);
-                    FirebaseFirestore.getInstance().collection("chats").document(convId)
-                        .update("lastActivity", FieldValue.serverTimestamp());
+                    if (guard.reserveWrite(1)) {
+                        FirebaseFirestore.getInstance().collection("chats").document(convId)
+                            .update("lastActivity", FieldValue.serverTimestamp());
+                    }
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "sendMediaMessage: Firestore set failed for msgId=" + com.duoshield.app.util.LogRedact.metadata(msgId) + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");

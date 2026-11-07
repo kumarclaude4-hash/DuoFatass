@@ -10,7 +10,7 @@ import java.io.File;
 /**
  * Single source of truth for outbound media size limits.
  *
- * <p>Before this class existed the 500 MB cap was enforced on the single
+ * <p>Before this class existed the upload-size cap was enforced on the single
  * photo/video path and the album path only. Documents and voice notes had no
  * cap at all, so an arbitrarily large file could be read fully into memory,
  * encrypted, and pushed at the upload endpoint — which then failed with an
@@ -23,8 +23,15 @@ public final class MediaLimits {
 
     private MediaLimits() {}
 
-    /** Hard ceiling for any single outbound file. */
-    public static final long MAX_BYTES = 500L * 1024 * 1024;
+    /**
+     * Hard ceiling for a plaintext outbound file.
+     *
+     * <p>The Worker accepts at most 95,000,000 encrypted bytes. Whole-blob
+     * AES-GCM adds a 12-byte IV and 16-byte tag; chunked media adds a 16-byte
+     * header and one 16-byte tag per 1 MiB chunk. Keep 1 MB of headroom so
+     * every permitted plaintext file still fits after encryption.
+     */
+    public static final long MAX_BYTES = 94_000_000L;
 
     /**
      * Videos above this get routed through {@link VideoTranscoder} first. It is

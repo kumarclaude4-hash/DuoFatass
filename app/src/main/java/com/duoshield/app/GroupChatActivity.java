@@ -369,7 +369,7 @@ public class GroupChatActivity extends BaseActivity {
      */
     private void fetchGroupKey() {
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canRead(1)) {
+        if (!guard.reserveRead(1)) {
             runOnUiThread(() ->
                 Toast.makeText(this, "Read quota reached — try again tomorrow",
                         Toast.LENGTH_LONG).show());
@@ -379,7 +379,6 @@ public class GroupChatActivity extends BaseActivity {
           .collection("keys").document(myUid)
           .get()
           .addOnSuccessListener(snap -> {
-              guard.recordReads(1);
               if (!snap.exists()) {
                   Toast.makeText(this, "Group key not found — ask the creator to re-add you",
                           Toast.LENGTH_LONG).show();
@@ -678,16 +677,21 @@ public class GroupChatActivity extends BaseActivity {
             doc.put("aadV1",       true);
 
             FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-            if (!guard.canWrite(1)) {
-                runOnUiThread(() -> Toast.makeText(this,
-                        "Write quota reached — try again tomorrow", Toast.LENGTH_LONG).show());
+            if (!guard.reserveWrite(1)) {
+                runOnUiThread(() -> {
+                    optimistic.setStatus("failed");
+                    adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+                    executor.execute(() -> localDb.messageDao().insert(optimistic));
+                    Toast.makeText(this,
+                            "Daily write budget reached — try again after the quota reset.",
+                            Toast.LENGTH_LONG).show();
+                });
                 return;
             }
             db.collection("groups").document(groupId)
               .collection("messages").document(msgId)
               .set(doc)
               .addOnSuccessListener(v -> {
-                  guard.recordWrites(1);
                   adapter.updateMessage(msgId, m -> m.setStatus("sent"));
 
                   // Persist to Room
@@ -751,6 +755,12 @@ public class GroupChatActivity extends BaseActivity {
     }
 
     private void retryMessage(Message msg) {
+        if (msg != null && ("album".equals(msg.getMediaType())
+                || (msg.getMediaUrl() != null && !msg.getMediaUrl().isEmpty()))) {
+            Toast.makeText(this, "Please re-select the media to retry this message.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         adapter.removeMessage(msg.getId());
         knownIds.remove(msg.getId());
         etMessage.setText(msg.getText());
@@ -1218,16 +1228,21 @@ public class GroupChatActivity extends BaseActivity {
         if (sealedThumb != null && !sealedThumb.isEmpty()) doc.put("thumb", sealedThumb);
 
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canWrite(1)) {
-            runOnUiThread(() -> Toast.makeText(this,
-                    "Write quota reached — try again tomorrow", Toast.LENGTH_LONG).show());
+        if (!guard.reserveWrite(1)) {
+            runOnUiThread(() -> {
+                optimistic.setStatus("failed");
+                adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+                Toast.makeText(this,
+                        "Daily write budget reached — media was not sent. Re-select it after the quota reset.",
+                        Toast.LENGTH_LONG).show();
+            });
+            B2StorageHelper.deleteFileAsync(storagePath);
             return;
         }
         db.collection("groups").document(groupId)
           .collection("messages").document(msgId)
           .set(doc)
           .addOnSuccessListener(v -> {
-              guard.recordWrites(1);
               adapter.updateMessage(msgId, m -> m.setStatus("sent"));
               // Persist to Room
               Message stored = new Message(msgId, groupId, myUid, "", now, false, storagePath, mediaType);
@@ -1248,12 +1263,7 @@ public class GroupChatActivity extends BaseActivity {
           .addOnFailureListener(ex -> {
               adapter.updateMessage(msgId, m -> m.setStatus("failed"));
               // Clean up orphaned B2 file
-              if (B2StorageHelper.isB2Path(storagePath)) {
-                  executor.execute(() -> {
-                      try { B2StorageHelper.deleteFile(storagePath); }
-                      catch (Exception ignored) {}
-                  });
-              }
+              B2StorageHelper.deleteFileAsync(storagePath);
               Toast.makeText(this, "Failed to send media.", Toast.LENGTH_SHORT).show();
           });
     }
@@ -1303,15 +1313,19 @@ public class GroupChatActivity extends BaseActivity {
         if (caption != null && !caption.isEmpty()) doc.put("caption", caption);
 
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canWrite(1)) {
+        if (!guard.reserveWrite(1)) {
+            optimistic.setStatus("failed");
             adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+            cleanupUnpublishedGroupAlbumMedia(items);
+            Toast.makeText(this,
+                    "Daily write budget reached — album was not sent. Re-select it after the quota reset.",
+                    Toast.LENGTH_LONG).show();
             return;
         }
         db.collection("groups").document(groupId)
                 .collection("messages").document(msgId)
                 .set(doc)
                 .addOnSuccessListener(v -> {
-                    guard.recordWrites(1);
                     adapter.updateMessage(msgId, m -> m.setStatus("sent"));
                     Message stored = new Message(msgId, groupId, myUid, "", now, false,
                             null, "album");
@@ -1331,8 +1345,23 @@ public class GroupChatActivity extends BaseActivity {
                 })
                 .addOnFailureListener(ex -> {
                     adapter.updateMessage(msgId, m -> m.setStatus("failed"));
-                    Toast.makeText(this, "Failed to send album.", Toast.LENGTH_SHORT).show();
+                    cleanupUnpublishedGroupAlbumMedia(items);
+                    Toast.makeText(this,
+                            "Album was not sent. Re-select the media to try again.",
+                            Toast.LENGTH_LONG).show();
                 });
+    }
+
+    /**
+     * Removes B2 objects uploaded for a group album whose Firestore envelope
+     * could not be published. Such albums have no outbox record to retry from.
+     */
+    private void cleanupUnpublishedGroupAlbumMedia(java.util.List<String[]> items) {
+        if (items == null) return;
+        for (String[] item : items) {
+            if (item == null || item.length == 0 || item[0] == null) continue;
+            B2StorageHelper.deleteFileAsync(item[0]);
+        }
     }
 
     /** Returns the file size in bytes from ContentResolver, or 0 if unavailable. */
@@ -1481,6 +1510,23 @@ public class GroupChatActivity extends BaseActivity {
         if (myUid == null || !myUid.equals(creatorUid)) return;
 
         executor.execute(() -> {
+            // Reserve the complete key-distribution write set before removing
+            // the member on the server. A partial reservation after removal can
+            // strand remaining members without the newly rotated group key.
+            List<String> remaining = new ArrayList<>(memberUids);
+            remaining.remove(memberUid);
+            int keyDistributionWrites = 0;
+            for (String uid : remaining) {
+                if (!myUid.equals(uid)) keyDistributionWrites++;
+            }
+            FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
+            if (keyDistributionWrites > 0 && !guard.reserveWrite(keyDistributionWrites)) {
+                runOnUiThread(() -> Toast.makeText(this,
+                        "Not enough daily write budget to rotate the group key safely. Try after the quota reset.",
+                        Toast.LENGTH_LONG).show());
+                return;
+            }
+
             // ── Step 1: server call ────────────────────────────────────────
             try {
                 com.google.firebase.auth.FirebaseUser user =
@@ -1533,10 +1579,6 @@ public class GroupChatActivity extends BaseActivity {
                 return;
             }
 
-            List<String> remaining = new ArrayList<>(memberUids);
-            remaining.remove(memberUid);
-
-            FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
             for (String uid : remaining) {
                 if (myUid.equals(uid)) continue; // own key stored locally below
                 try {
@@ -1546,12 +1588,9 @@ public class GroupChatActivity extends BaseActivity {
                     kd.put("encryptedKey", r.ciphertextB64);
                     kd.put("sigType",      r.sigType);
                     kd.put("senderUid",    myUid);
-                    if (guard.canWrite(1)) {
-                        db.collection("groups").document(groupId)
-                          .collection("keys").document(uid)
-                          .set(kd)
-                          .addOnSuccessListener(v -> guard.recordWrites(1));
-                    }
+                    db.collection("groups").document(groupId)
+                      .collection("keys").document(uid)
+                      .set(kd);
                 } catch (Exception e) {
                     Log.w(TAG, "Key dist failed for " + LogRedact.uid(uid) + ": " + com.duoshield.app.util.LogRedact.error(e));
                 }

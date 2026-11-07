@@ -65,6 +65,7 @@ npx wrangler secret put B2_ACCESS_KEY_ID      # paste your B2 keyID
 npx wrangler secret put B2_SECRET_ACCESS_KEY  # paste your B2 applicationKey
 npx wrangler secret put STATS_SECRET          # operator-only /stats token (S08-H1)
 npx wrangler secret put MEDIA_TOKEN_SECRET    # per-object capability signing key (must match the push server)
+npx wrangler secret put ADMIN_LOCKOUT_SECRET  # must match Render's ADMIN_LOCKOUT_WORKER_SECRET
 ```
 
 **`STATS_SECRET`** is a random string you generate (e.g. `openssl rand -hex 32`)
@@ -78,13 +79,21 @@ mints for each media PUT/GET/DELETE (SEC-A01). It must be byte-identical to the
 push server's `MEDIA_TOKEN_SECRET`. The data plane no longer uses any shared
 bearer secret, so the client never holds a long-lived storage credential.
 
-### 7. Install dependencies and deploy
+### 7. Validate and deploy
 
 ```bash
 cd worker
-npm install
+npm ci
+# Compile the exact Worker bundle and validate wrangler.jsonc without deploying.
+npx wrangler deploy --dry-run --outdir /tmp/duoshield-worker-dry-run
+# Apply the configured SQLite Durable Object migrations and deploy.
 npx wrangler deploy
 ```
+
+The Wrangler config declares two SQLite-backed Durable Object classes:
+`AdminLockoutCounter` and `MediaMutationBudget`. Their versioned migrations
+are applied by the first successful deploy. Workers Free supports SQLite-backed
+Durable Objects; do not switch these bindings to the legacy KV storage backend.
 
 Your Worker URL will be:
 ```
@@ -134,22 +143,35 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 
 | Resource              | Free limit        | Guard                              |
 |-----------------------|-------------------|------------------------------------|
-| R2 storage            | 10 GB             | Hard cap at 9.5 GB (95%)          |
-| R2 Class A ops (PUT)  | 1 M/month         | No explicit guard — monitor usage  |
-| R2 Class B ops (GET)  | 10 M/month        | No explicit guard — monitor usage  |
-| B2 storage            | 10 GB             | Tracked via nightly list; informational only |
+| R2 storage            | 10 GB-month        | Hard cap at 9.0 decimal GB (90%)   |
+| R2 Class A ops         | 1 M/month         | Atomic monthly cap at 850K, including uploads and list pages |
+| R2 Class B ops         | 10 M/month        | 80K Worker requests/day; up to 2 Class B calls/request (~4.8M/30 days) |
+| B2 storage            | 10 GB             | Hard migration stop at 9 GB; bounded preflight + projected writes |
 | B2 → CF egress        | Free (Bandwidth Alliance) | —                        |
-| Worker requests       | 100 K/day         | Hard gate at 90 K/day (90%)       |
-| KV reads              | 100 K/day         | ~2 reads/request; comfortable     |
-| KV writes             | 1 K/day           | Minimised via sampling + in-memory rate limiting |
+| Worker requests       | 100 K/day         | Conservative daily gate at 80 K/day (80%) |
+| KV reads              | 100 K/day         | Daily gate reads + bounded mutation lookups; keep under 100K/day |
+| KV writes              | 1 K/day           | ~160 sampled writes/day + bounded storage accounting |
+| SQLite Durable Objects | 100 K requests/day; 13,000 GB-s/day; 5 GB storage | Two SQLite-backed counters; media uploads/deletes capped at 120/150 per day |
 
-**Estimated monthly cost for ~50 users: $0.**
+**Target profile: 10 active users with bounded media mutations and usage; not unlimited traffic.**
 
-> **Note on KV writes:** The free tier allows 1,000 KV writes/day. The Worker
-> minimises this by using sampled request counting (~0.1 writes/request) and
-> in-memory rate limiting (0 KV writes). Storage counter writes happen only on
-> PUT/DELETE (~1 write each). For Durable Objects-grade global consistency on
-> rate limiting, upgrade to Workers Paid ($5/month).
+> **Note on free-tier request accounting:** Workers KV allows 1,000 writes/day.
+> Request counting samples 1 in 500 requests (~160 writes/day at the 80K request
+> ceiling). Daily media mutation caps leave substantial KV-write headroom even
+> when the scheduled tiering job runs. PUT and DELETE attempts have independent global caps of 120 uploads/day and
+> 150 deletes/day in the SQLite-backed `MediaMutationBudget` Durable Object.
+> Each account is additionally limited to 20 uploads and 60 deletes per UTC day,
+> so one account cannot monopolise the shared pool. At those global operation
+> caps, storage accounting and DELETE replay markers can consume up to roughly
+> 690 KV writes/day; request sampling adds about 160 writes/day on average at
+> the 80K request target. Sampling is probabilistic, not a strict write ceiling. If the quota DO is unavailable or
+> unconfigured, media mutations fail closed. A separate atomic monthly counter
+> reserves R2 Class A operations before each upload and each R2 inventory-list page,
+> with an 850K ceiling below the 1M free allowance. The per-holder quota map is
+> bounded to 500 operation/holder entries per UTC day. Both quota DOs use SQLite-backed
+> Durable Objects available on the Workers Free plan; no paid upgrade is required.
+> These are application safeguards, not protection against direct bucket writes or
+> usage outside this Worker.
 
 ---
 
@@ -163,8 +185,14 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 
 **B2 has no automatic expiry.** Files remain in cold storage until the application
 explicitly deletes them (disappearing-message sweep, manual delete, etc.).
-The nightly cron reconciles B2 storage bytes via `ListObjectsV2` but never
-auto-deletes anything from B2.
+The nightly cron reconciles B2 storage bytes with a bounded preflight `ListObjectsV2` scan,
+then adds only successful B2 writes to a conservative in-run projection. It caps the
+B2 inventory at 10 pages and tiering at 15 objects/run, keeping the preflight, B2 uploads,
+and worst-case compensating deletes below Workers Free's 50 external subrequests. The
+R2 inventory is separately capped at 400 pages (each R2 page and DO reservation consume
+internal subrequests). If either inventory cannot be completed within its budget or a
+listing fails, the cron aborts without overwriting storage counters. B2 objects are never
+auto-deleted; the next night's preflight reconciles projected-counter drift.
 
 ---
 
@@ -178,7 +206,9 @@ auto-deletes anything from B2.
   (`/health`) is public.
 - **Encryption:** All file content is AES-256-GCM encrypted client-side before
   upload. The Worker and both storage tiers only ever see ciphertext.
-- **Rate limiting:** 120 req/min per `X-Client-ID` enforced per edge isolate
-  (advisory — not globally consistent without Durable Objects).
-- **Storage cap:** Uploads rejected when R2 exceeds 9.5 GB. Actual stored size
-  is verified via R2 HEAD after upload (client `Content-Length` is not trusted).
+- **Rate limiting:** 120 req/min per verified capability-token holder, enforced
+  per edge isolate (advisory across edge locations); a separate global daily
+  media-mutation budget is enforced by SQLite-backed Durable Objects.
+- **Storage cap:** Uploads rejected when R2 reaches the 9 GB decimal safety
+  ceiling. Actual stored size is verified via R2 HEAD after upload (client
+  `Content-Length` is not trusted).

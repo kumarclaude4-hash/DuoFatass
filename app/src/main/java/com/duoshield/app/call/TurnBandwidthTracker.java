@@ -7,22 +7,28 @@ import android.util.Log;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.TimeZone;
 
 /**
  * Tracks cumulative TURN relay bytes consumed in the current calendar month and
- * enforces an internal hard cap of {@link #MONTHLY_LIMIT_BYTES} (900 GB) to stay
- * safely below Cloudflare's 1 TB free-tier allowance.
+ * applies a device-local safety ceiling to estimated TURN egress. The counter is
+ * not project-wide or tamper-proof; it protects normal use on this installation.
  *
  * <p><b>How it works:</b>
  * <ul>
- *   <li>Each call reports its total transport bytes (sent + received) via
- *       {@link #recordCallBytes(long)} when the call ends.</li>
+ *   <li>While connected, WebRTC stats deltas are persisted via
+ *       {@link #recordEgressBytes(long)}. Only bytes received by this client
+ *       are counted, matching Cloudflare TURN egress billing direction. Callers
+ *       that only have a final total may use {@link #recordCallBytes(long)}.</li>
  *   <li>On the first call of a new calendar month the counter automatically resets.</li>
- *   <li>{@link #isLimitReached()} returns {@code true} when usage ≥ 900 GB.
+ *   <li>{@link #isLimitReached()} returns {@code true} when local usage ≥ 80 GB decimal.
  *       {@link com.duoshield.app.call.CallManager} checks this before adding any TURN
  *       ICE server entry, falling back to STUN-only mode so the user gets a clear
  *       "TURN quota exhausted" warning instead of a silent call failure.</li>
  * </ul>
+ *
+ * <p><b>Scope:</b> device-local advisory budget, not an account-wide or project-wide
+ * billing control. A reinstall or another device has an independent counter.
  *
  * <p><b>Storage:</b> {@code duoshield_turn_tracker} SharedPreferences (plaintext — bytes
  * transferred are not sensitive data).
@@ -31,19 +37,23 @@ public class TurnBandwidthTracker {
 
     private static final String TAG = "TurnBandwidthTracker";
 
-    /** 100 GB in bytes — hard monthly TURN cap per user. */
-    public static final long MONTHLY_LIMIT_BYTES = 100L * 1024L * 1024L * 1024L;
+    /**
+     * 80 GB decimal local egress budget per installation. With one tracked
+     * installation for each of 10 users, the combined app-side target is at
+     * most 800 GB of Cloudflare's 1,000 GB monthly free Realtime allowance.
+     */
+    public static final long MONTHLY_LIMIT_BYTES = 80_000_000_000L;
 
-    /** Warning threshold — 90 GB (90 % of cap). Used to show an early-warning in call UI. */
-    public static final long WARNING_THRESHOLD_BYTES = 90L * 1024L * 1024L * 1024L;
+    /** Warn at 70 GB decimal to leave time to reduce relay-heavy usage. */
+    public static final long WARNING_THRESHOLD_BYTES = 70_000_000_000L;
 
     private static final String PREFS_NAME    = "duoshield_turn_tracker";
     private static final String KEY_MONTH     = "turn_month";       // "YYYY-MM"
     private static final String KEY_BYTES     = "turn_bytes";       // long
     private static final String KEY_CALLS     = "turn_calls";       // int count for diagnostics
 
-    private static final SimpleDateFormat MONTH_FMT =
-            new SimpleDateFormat("yyyy-MM", Locale.US);
+    private static final SimpleDateFormat MONTH_FMT = new SimpleDateFormat("yyyy-MM", Locale.US);
+    static { MONTH_FMT.setTimeZone(TimeZone.getTimeZone("UTC")); }
 
     private static volatile TurnBandwidthTracker instance;
 
@@ -69,40 +79,43 @@ public class TurnBandwidthTracker {
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Records {@code bytes} bytes consumed by a completed call.
-     *
-     * <p>Thread-safe; can be called from any thread.
-     *
-     * @param bytes total transport bytes (sent + received) for the call
+     * Records an egress delta as soon as a WebRTC stats sample arrives.
+     * Persisting each sample means a process death loses at most one polling
+     * interval instead of the entire call's usage.
      */
+    public synchronized void recordEgressBytes(long bytes) {
+        recordBytes(bytes, false);
+    }
+
+    /** Records a completed-call total for callers that report only once. */
     public synchronized void recordCallBytes(long bytes) {
+        recordBytes(bytes, true);
+    }
+
+    private void recordBytes(long bytes, boolean completedCall) {
         if (bytes <= 0) return;
         rollMonthIfNeeded();
 
         long current = prefs.getLong(KEY_BYTES, 0L);
-        int  calls   = prefs.getInt(KEY_CALLS, 0);
-        long updated = current + bytes;
-
-        prefs.edit()
-             .putLong(KEY_BYTES, updated)
-             .putInt(KEY_CALLS, calls + 1)
-             .apply();
-
-        Log.i(TAG, String.format(Locale.US,
-                "TURN usage recorded: +%s this call | month total: %s / %s GB",
-                humanBytes(bytes), humanBytes(updated), humanBytes(MONTHLY_LIMIT_BYTES)));
+        long updated = Long.MAX_VALUE - current < bytes ? Long.MAX_VALUE : current + bytes;
+        SharedPreferences.Editor editor = prefs.edit().putLong(KEY_BYTES, updated);
+        if (completedCall) {
+            int calls = prefs.getInt(KEY_CALLS, 0);
+            editor.putInt(KEY_CALLS, calls == Integer.MAX_VALUE ? calls : calls + 1);
+        }
+        editor.apply();
 
         if (updated >= MONTHLY_LIMIT_BYTES) {
-            Log.e(TAG, "⚠️  TURN monthly cap REACHED — TURN disabled until next month.");
+            Log.e(TAG, "TURN local monthly egress budget reached — TURN disabled until next month.");
         } else if (updated >= WARNING_THRESHOLD_BYTES) {
             Log.w(TAG, String.format(Locale.US,
-                    "⚠️  TURN usage warning: %.1f GB of 100 GB used this month.",
-                    updated / (1024.0 * 1024.0 * 1024.0)));
+                    "TURN egress warning: %.1f GB of 80 GB local budget used this month.",
+                    updated / 1_000_000_000.0));
         }
     }
 
     /**
-     * Returns {@code true} if the 900 GB monthly cap has been reached.
+     * Returns {@code true} if this installation has reached its 80 GB local budget.
      * When this is {@code true} the app should skip adding TURN ICE servers.
      */
     public synchronized boolean isLimitReached() {
@@ -111,7 +124,7 @@ public class TurnBandwidthTracker {
     }
 
     /**
-     * Returns {@code true} if usage has crossed the 800 GB early-warning threshold.
+     * Returns {@code true} if usage has crossed the 70 GB local warning threshold.
      * The call UI shows a banner when this is {@code true}.
      */
     public synchronized boolean isNearLimit() {
@@ -131,26 +144,26 @@ public class TurnBandwidthTracker {
         return Math.max(0L, MONTHLY_LIMIT_BYTES - getUsedBytes());
     }
 
-    /** Human-readable used/total string, e.g. "3.42 GB / 100 GB". */
+    /** Human-readable used/total string, e.g. "3.42 GB / 80 GB". */
     public synchronized String getSummary() {
         long used = getUsedBytes();
-        return String.format(Locale.US, "%.2f GB / 100 GB used this month",
-                used / (1024.0 * 1024.0 * 1024.0));
+        return String.format(Locale.US, "%.2f GB / 80 GB estimated egress this month",
+                used / 1_000_000_000.0);
     }
 
     /** Used GB as a float (0.0 – 100.0). */
     public synchronized float getUsedGb() {
-        return (float) (getUsedBytes() / (1024.0 * 1024.0 * 1024.0));
+        return (float) (getUsedBytes() / 1_000_000_000.0);
     }
 
     /** 0–100 integer percentage of the monthly cap consumed. */
     public synchronized int getUsedPercent() {
         long used = getUsedBytes();
-        return (int) Math.min(100L, used * 100L / MONTHLY_LIMIT_BYTES);
+        return (int) Math.min(100.0, (used * 100.0) / MONTHLY_LIMIT_BYTES);
     }
 
     /** Returns the current month key (YYYY-MM). */
-    public String getCurrentMonthKey() {
+    public synchronized String getCurrentMonthKey() {
         return MONTH_FMT.format(new Date());
     }
 
@@ -182,6 +195,6 @@ public class TurnBandwidthTracker {
         if (kb < 1024) return String.format(Locale.US, "%.1f KB", kb);
         double mb = kb / 1024.0;
         if (mb < 1024) return String.format(Locale.US, "%.1f MB", mb);
-        return String.format(Locale.US, "%.2f GB", mb / 1024.0);
+        return String.format(Locale.US, "%.2f GB", bytes / 1_000_000_000.0);
     }
 }

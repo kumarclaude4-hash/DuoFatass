@@ -28,7 +28,8 @@
   // plan — no paid plan upgrade required for this one Durable Object class.
   "durable_objects": {
     "bindings": [
-      { "name": "ADMIN_LOCKOUT_DO", "class_name": "AdminLockoutCounter" }
+      { "name": "ADMIN_LOCKOUT_DO", "class_name": "AdminLockoutCounter" },
+      { "name": "MEDIA_QUOTA_DO", "class_name": "MediaMutationBudget" }
     ]
   },
 
@@ -36,7 +37,8 @@
   // `new_sqlite_classes` (rather than `new_classes`) selects the free-plan
   // SQLite storage backend for this class.
   "migrations": [
-    { "tag": "v1-admin-lockout-do", "new_sqlite_classes": ["AdminLockoutCounter"] }
+    { "tag": "v1-admin-lockout-do", "new_sqlite_classes": ["AdminLockoutCounter"] },
+    { "tag": "v2-media-mutation-budget", "new_sqlite_classes": ["MediaMutationBudget"] }
   ],
 
   "vars": {
@@ -45,20 +47,26 @@
     "B2_BUCKET":   "duoshield-cold",
     "B2_REGION":   "eu-central-003",
 
-    // Maximum file size in bytes (500 MB default).
-    "MAX_FILE_SIZE": "524288000",
+    // Maximum encrypted request body: 95 MB, below Cloudflare Free's 100 MB upload ceiling.
+    "MAX_FILE_SIZE": "95000000",
 
     // Objects move from R2 → B2 after this many days.
     "HOT_TIER_DAYS": "30",
 
-    // Per-isolate rate limit: max requests per minute per X-Client-ID header.
-    // Advisory only on the free tier (not globally consistent across edge PoPs).
+    // Per-isolate rate limit: max requests per minute per verified capability holder.
+    // Advisory across edge locations; the daily mutation budgets are global.
     "RATE_LIMIT_PER_MIN": "120",
 
     // S03-H3: per-holder storage quota in bytes (1 GB default). Keeps one
-    // uploader from exhausting the shared 9.5 GB R2 free-tier budget for
+    // uploader from exhausting the shared 9 GB R2 free-tier safety budget for
     // every other user. Enforced in addition to, not instead of, MAX_R2_BYTES.
     "MAX_USER_BYTES": "1073741824",
+
+    // Independent global daily caps preserve the cleanup budget when upload traffic is high.
+    "MAX_DAILY_MEDIA_UPLOADS": "120",
+    "MAX_DAILY_MEDIA_DELETES": "150",
+    "MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER": "20",
+    "MAX_DAILY_MEDIA_DELETES_PER_HOLDER": "60",
 
     // S08-I3: comma-separated allow list of browser Origins permitted to
     // call this Worker cross-origin. Empty by default — the Android app

@@ -23,9 +23,10 @@ public class ConversationMetaUpdater {
         if (recipientUid != null) {
             data.put("unread_" + recipientUid, FieldValue.increment(1));
         }
+        FirebaseCostGuard guard = FirebaseCostGuard.getInstance(ctx);
+        if (!guard.reserveWrite(1)) return;
         FirebaseFirestore.getInstance()
             .collection("chats").document(convId)
-            .set(data, SetOptions.merge())
-            .addOnSuccessListener(v -> FirebaseCostGuard.getInstance(ctx).recordWrites(1));
+            .set(data, SetOptions.merge());
     }
 }

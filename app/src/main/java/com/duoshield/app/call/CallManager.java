@@ -199,16 +199,18 @@ public class CallManager {
     // ── Bandwidth tracking ───────────────────────────────────────────��────────
     /** Interval between WebRTC stats polls while connected. */
     private static final long STATS_POLL_INTERVAL_MS = 10_000L;
-    /** Cumulative transport bytes (sent + received) accumulated this call. */
-    private long sessionBytesTotal = 0L;
+    /** Cumulative estimated Cloudflare TURN egress received by this client. */
+    private long sessionEgressBytesTotal = 0L;
+    /** Invalidates asynchronous stats callbacks from a previous call/session. */
+    private volatile long statsGeneration = 0L;
     /** Last snapshot of transport bytes from the stats report (to compute deltas). */
     private long lastTransportBytesSent     = -1L;
     private long lastTransportBytesReceived = -1L;
     /**
      * True once WebRTC stats confirm the selected candidate pair is a relay
      * (i.e. traffic is actually going through Cloudflare TURN).  We only
-     * accumulate bytes into {@link #sessionBytesTotal} — and thus charge against
-     * the monthly Cloudflare quota — when this flag is set.  P2P calls (srflx
+     * accumulate bytes received from the relay into {@link #sessionEgressBytesTotal} —
+     * the estimate of monthly Cloudflare egress — when this flag is set.  P2P calls (srflx
      * or host candidate pairs) are free and must not erode the quota counter.
      */
     private boolean isRelayCall = false;
@@ -439,7 +441,7 @@ public class CallManager {
         DevicePerformanceTier.get(this.context); // Resolve once for non-sensitive diagnostics.
         this.qualityCeiling = LADDER_HIGH_START;
         this.qualityStep = LADDER_HIGH_START;
-        this.repo = new CallSignalRepository();
+        this.repo = new CallSignalRepository(this.context);
     }
 
     public void setListener(CallListener listener) {
@@ -564,13 +566,13 @@ public class CallManager {
             return list;
         }
 
-        // Bandwidth cap check — skip TURN if 900 GB monthly limit is reached.
+        // Bandwidth cap check — skip TURN if this installation reaches its 80 GB egress budget.
         TurnBandwidthTracker tracker = TurnBandwidthTracker.get(context);
         if (tracker.isLimitReached()) {
             Log.e(TAG, "TURN monthly cap reached (" + tracker.getSummary()
                     + ") — TURN disabled for this call. Call may fail on CGNAT.");
             if (listener != null) {
-                listener.onError("Monthly TURN data cap reached (100 GB). "
+                listener.onError("This device reached its 80 GB monthly TURN egress budget. "
                         + "Calls over restricted networks may not connect until next month.");
             }
             return list;
@@ -1685,6 +1687,7 @@ public class CallManager {
 
     private void startStatsPolling() {
         statsHandler.removeCallbacks(statsPollRunnable);
+        statsGeneration++;
         lastTransportBytesSent     = -1L;
         lastTransportBytesReceived = -1L;
         lastFramesEncoded          = -1L;
@@ -1704,20 +1707,28 @@ public class CallManager {
 
     private void stopStatsPolling() {
         statsHandler.removeCallbacks(statsPollRunnable);
-        // Attempt a final stats snapshot to capture bytes from the last polling interval.
-        // Guard: peerConnection may already be null/closed when stopStatsPolling is called
-        // from the FAILED path; the async callback would fire on a disposed object.
-        if (peerConnection != null) {
-            collectStats();
+        // Invalidate every in-flight periodic stats callback, then take one final
+        // snapshot before resetting per-call baselines. Calling getStats() and
+        // immediately zeroing the baselines lets its asynchronous callback treat
+        // all historical transport bytes as a new delta (overcounting relay use).
+        final long stoppingGeneration = ++statsGeneration;
+        if (peerConnection == null) {
+            mainHandler.post(() -> finishStatsPollingStop(stoppingGeneration));
+            return;
         }
-        if (sessionBytesTotal > 0) {
-            TurnBandwidthTracker.get(context).recordCallBytes(sessionBytesTotal);
+        collectStats(() -> mainHandler.post(() -> finishStatsPollingStop(stoppingGeneration)));
+    }
+
+    private void finishStatsPollingStop(long stoppingGeneration) {
+        // A new call/session may have started while the final snapshot was in flight.
+        if (stoppingGeneration != statsGeneration) return;
+        if (sessionEgressBytesTotal > 0) {
             Log.i(TAG, String.format(Locale.US,
-                    "Call ended — reported %.2f MB to TURN tracker. Monthly: %s",
-                    sessionBytesTotal / (1024.0 * 1024.0),
+                    "Call ended — estimated %.2f MB TURN egress. Monthly: %s",
+                    sessionEgressBytesTotal / 1_000_000.0,
                     TurnBandwidthTracker.get(context).getSummary()));
         }
-        sessionBytesTotal          = 0L;
+        sessionEgressBytesTotal          = 0L;
         lastTransportBytesSent     = -1L;
         lastTransportBytesReceived = -1L;
         lastFramesEncoded          = -1L;
@@ -1726,14 +1737,17 @@ public class CallManager {
         qualityStep                = qualityCeiling;
         isRelayCall                = false;
         unregisterThermalListener();
+        // Prevent a duplicate/late completion from resetting another session.
+        statsGeneration++;
     }
 
     /**
      * Requests a WebRTC stats snapshot.  Two things happen on each poll:
      *
      * <ol>
-     *   <li><b>Bandwidth accounting</b> — transport-level bytes delta is accumulated
-     *       into {@link #sessionBytesTotal} and later flushed to {@link TurnBandwidthTracker}.</li>
+     *   <li><b>Bandwidth accounting</b> — relayed transport receive-byte deltas are
+     *       accumulated into {@link #sessionEgressBytesTotal} and persisted to
+     *       {@link TurnBandwidthTracker} on each stats sample.</li>
      *   <li><b>Thermal watchdog (32-bit only)</b> — the outbound-rtp {@code framesEncoded}
      *       counter is compared with the previous snapshot to derive actual encoder FPS.
      *       If it falls below {@link #THERMAL_FPS_THRESHOLD} (12 fps), the camera
@@ -1743,19 +1757,42 @@ public class CallManager {
      * </ol>
      */
     private void collectStats() {
-        if (peerConnection == null) return;
-        peerConnection.getStats(new RTCStatsCollectorCallback() {
+        collectStats(null);
+    }
+
+    private void collectStats(Runnable onComplete) {
+        final PeerConnection statsConnection = peerConnection;
+        final long requestGeneration = statsGeneration;
+        if (statsConnection == null) {
+            if (onComplete != null) onComplete.run();
+            return;
+        }
+        statsConnection.getStats(new RTCStatsCollectorCallback() {
             @Override
             public void onStatsDelivered(RTCStatsReport report) {
-                if (report == null) return;
+                // Drop late samples from a previous call, disposed peer connection,
+                // or stopped polling generation. They must never mutate a new call's
+                // byte baselines or account stale traffic twice.
+                if (requestGeneration != statsGeneration || peerConnection != statsConnection) {
+                    if (onComplete != null) onComplete.run();
+                    return;
+                }
+                if (report == null) {
+                    if (onComplete != null) onComplete.run();
+                    return;
+                }
 
                 // ── Pass 1: build lookup maps ───────────────────────────────
                 // local-candidate id → candidateType ("host","srflx","relay")
                 Map<String, String> localCandidateTypes = new java.util.HashMap<>();
                 // transport id → {bytesSent, bytesReceived}
                 long transportSent = -1L, transportRecv = -1L;
-                // nominated candidate-pair local candidate id
+                // Prefer the nominated active pair. Some implementations omit
+                // nominated=true on a transient sample; only then fall back to
+                // the first succeeded pair rather than letting iteration order
+                // select an arbitrary historical candidate.
                 String nominatedLocalId = null;
+                String succeededLocalId = null;
                 // outbound-rtp fields for thermal watchdog
                 long framesEncoded = -1L;
                 String outboundKind = null;
@@ -1775,9 +1812,10 @@ public class CallManager {
                         Object stateObj = m.get("state");
                         boolean nominated = Boolean.TRUE.equals(nomObj);
                         boolean succeeded = "succeeded".equals(stateObj);
-                        if (nominated || succeeded) {
-                            Object lcid = m.get("localCandidateId");
-                            if (lcid != null) nominatedLocalId = lcid.toString();
+                        Object lcid = m.get("localCandidateId");
+                        if (lcid != null) {
+                            if (nominated) nominatedLocalId = lcid.toString();
+                            else if (succeeded && succeededLocalId == null) succeededLocalId = lcid.toString();
                         }
 
                     } else if ("transport".equals(type)) {
@@ -1796,6 +1834,10 @@ public class CallManager {
                     }
                 }
 
+                // Use a succeeded-pair fallback only if no nominated pair was reported.
+                if (nominatedLocalId == null) nominatedLocalId = succeededLocalId;
+                boolean wasRelayCall = isRelayCall;
+
                 // ── Pass 2: determine relay status ──────────────────────────
                 if (nominatedLocalId != null) {
                     String ct = localCandidateTypes.get(nominatedLocalId);
@@ -1809,7 +1851,9 @@ public class CallManager {
                 }
 
                 // ── Transport bytes (bandwidth accounting) ──────────────────
-                // Only charge against the Cloudflare quota when actually relayed.
+                // Only estimate billable Cloudflare TURN egress when actually relayed.
+                // Cloudflare bills bytes sent from its edge to this TURN client; from
+                // this device that is transport bytesReceived, not bytesSent.
                 if (transportSent >= 0 && transportRecv >= 0) {
                     long deltaSent = (lastTransportBytesSent >= 0 && transportSent >= lastTransportBytesSent)
                             ? transportSent - lastTransportBytesSent : 0L;
@@ -1817,13 +1861,18 @@ public class CallManager {
                             ? transportRecv - lastTransportBytesReceived : 0L;
                     lastTransportBytesSent     = transportSent;
                     lastTransportBytesReceived = transportRecv;
-                    if (isRelayCall) {
-                        sessionBytesTotal += deltaSent + deltaRecv;
+                    // Charge the interval if either endpoint sample says the
+                    // selected path was relayed. This conservatively includes the
+                    // last sampled relay interval when ICE switches back to P2P.
+                    if (isRelayCall || wasRelayCall) {
+                        sessionEgressBytesTotal = Long.MAX_VALUE - sessionEgressBytesTotal < deltaRecv
+                                ? Long.MAX_VALUE : sessionEgressBytesTotal + deltaRecv;
+                        TurnBandwidthTracker.get(context).recordEgressBytes(deltaRecv);
                     }
                     Log.d(TAG, String.format(Locale.US,
-                            "Stats poll: +%.1f KB tx, +%.1f KB rx — session TURN: %.2f MB [%s]",
+                            "Stats poll: +%.1f KB tx, +%.1f KB rx — estimated TURN egress: %.2f MB [%s]",
                             deltaSent / 1024.0, deltaRecv / 1024.0,
-                            sessionBytesTotal / (1024.0 * 1024.0),
+                            sessionEgressBytesTotal / 1_000_000.0,
                             isRelayCall ? "relay" : "direct"));
                 }
 
@@ -1844,6 +1893,7 @@ public class CallManager {
                     lastFramesEncoded = framesEncoded;
                     lastFramesTs      = nowMs;
                 }
+                if (onComplete != null) onComplete.run();
             }
         });
     }

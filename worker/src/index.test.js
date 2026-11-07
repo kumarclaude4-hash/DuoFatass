@@ -98,12 +98,97 @@ function makeHotBucket() {
   };
 }
 
+function makeR2BudgetNamespace(initial = {}) {
+  const state = { monthKey: initial.monthKey || '', classA: initial.classA || 0 };
+  const stub = {
+    async fetch(input, init) {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const body = await request.json();
+      if (body.action !== 'reserveR2ClassA'
+          || !/^\d{4}-(0[1-9]|1[0-2])$/.test(body.monthKey || '')
+          || !Number.isSafeInteger(body.amount) || body.amount < 1 || body.amount > 100) {
+        return Response.json({ error: 'Invalid R2 budget reservation' }, { status: 400 });
+      }
+      const used = state.monthKey === body.monthKey ? state.classA : 0;
+      const limit = 850_000;
+      if (used + body.amount > limit) {
+        return Response.json({ allowed: false, used, requested: body.amount, limit, monthKey: body.monthKey });
+      }
+      state.monthKey = body.monthKey;
+      state.classA = used + body.amount;
+      return Response.json({ allowed: true, used: state.classA, limit, monthKey: state.monthKey });
+    },
+  };
+  return {
+    state,
+    idFromName(name) { return name; },
+    get() { return stub; },
+  };
+}
+
+function makeDailyMediaQuotaNamespace(initialCounts = {}) {
+  const counts = { upload: initialCounts.upload || 0, delete: initialCounts.delete || 0 };
+  const holderCounts = { ...(initialCounts.holders || {}) };
+  let dayKey = new Date().toISOString().slice(0, 10);
+  const stub = {
+    async fetch(input, init) {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const body = await request.json();
+      if (body.action !== 'reserve'
+          || !['upload', 'delete'].includes(body.operation)
+          || !Number.isSafeInteger(body.limit) || body.limit < 1
+          || typeof body.holderKey !== 'string' || !/^[a-f0-9]{16}$/.test(body.holderKey)
+          || !Number.isSafeInteger(body.holderLimit) || body.holderLimit < 1
+          || body.holderLimit > body.limit) {
+        return new Response(JSON.stringify({ error: 'invalid request' }), { status: 400 });
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      if (today !== dayKey) {
+        dayKey = today;
+        counts.upload = 0;
+        counts.delete = 0;
+        for (const key of Object.keys(holderCounts)) delete holderCounts[key];
+      }
+      const resetAt = Date.now();
+      const count = counts[body.operation];
+      const holderCounterKey = body.operation + ':' + body.holderKey;
+      const holderCount = holderCounts[holderCounterKey] || 0;
+      if (count >= body.limit) {
+        return new Response(JSON.stringify({
+          allowed: false, operation: body.operation, scope: 'global', count, limit: body.limit, resetAt,
+        }), { status: 429 });
+      }
+      if (holderCount >= body.holderLimit) {
+        return new Response(JSON.stringify({
+          allowed: false, operation: body.operation, scope: 'holder',
+          count: holderCount, limit: body.holderLimit, resetAt,
+        }), { status: 429 });
+      }
+      counts[body.operation] += 1;
+      holderCounts[holderCounterKey] = holderCount + 1;
+      const nextCount = counts[body.operation];
+      return new Response(JSON.stringify({
+        allowed: true, operation: body.operation, scope: 'global',
+        count: nextCount, limit: body.limit, holderCount: holderCount + 1,
+        holderLimit: body.holderLimit, remaining: body.limit - nextCount, resetAt,
+      }), { status: 200 });
+    },
+  };
+  return { idFromName: (name) => name, get: () => stub, counts, holderCounts };
+}
+
 function makeEnv(overrides = {}) {
   return {
     MEDIA_TOKEN_SECRET,
     RATE_KV: makeKv(),
     HOT_BUCKET: makeHotBucket(),
-    MAX_FILE_SIZE: '524288000',
+    ADMIN_LOCKOUT_DO: makeR2BudgetNamespace(),
+    MEDIA_QUOTA_DO: makeDailyMediaQuotaNamespace(),
+    MAX_DAILY_MEDIA_UPLOADS: '120',
+    MAX_DAILY_MEDIA_DELETES: '150',
+    MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER: '20',
+    MAX_DAILY_MEDIA_DELETES_PER_HOLDER: '60',
+    MAX_FILE_SIZE: '95000000',
     // getB2Client() constructs an AwsClient unconditionally on every DELETE
     // that finds the object still in R2 (the migration race-guard fires a
     // best-effort alongside B2 delete — see index.js). aws4fetch's AwsClient
@@ -203,7 +288,7 @@ test('S03-H3: a single holder is rejected with 507 once their per-user quota is 
   assert.equal(put1.status, 200, await put1.clone().text());
 
   // Second upload of 600 more bytes from the SAME holder must be rejected —
-  // 600 + 600 > 1000 — even though MAX_R2_BYTES (9.5 GB) is untouched.
+  // 600 + 600 > 1000 — even though MAX_R2_BYTES (9 GB decimal) is untouched.
   const key2 = `media/${CHAT_ID}/two.jpg`;
   const token2 = await mintToken('write', key2, holder);
   const body2 = new Uint8Array(600);
@@ -620,7 +705,7 @@ test('S03-M1: the cold (B2) tier also serves the key-derived Content-Type with n
 
 // ─── S03-M3: delete tokens are single-use and reject a legacy 5-part shape ─
 
-test('S03-M3: DELETE fails closed when the replay KV namespace is absent', async () => {
+test('data plane fails closed before storage when the daily request-counter KV is absent', async () => {
   const env = makeEnv({ RATE_KV: undefined });
   const key = `media/${'z'.repeat(20)}/kv-unavailable.jpg`;
   const holder = 'user-alice';
@@ -630,17 +715,13 @@ test('S03-M3: DELETE fails closed when the replay KV namespace is absent', async
     headers: { Authorization: `Bearer ${putToken}`, 'Content-Length': '3' },
     body: 'abc',
   }), env, ctx);
-  assert.equal(put.status, 200);
-  assert.ok(await env.HOT_BUCKET.head(key));
 
-  const deleteToken = await mintToken('delete', key, holder);
-  const deletion = await worker.fetch(new Request(`https://worker.example/${key}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${deleteToken}` },
-  }), env, ctx);
-  assert.equal(deletion.status, 503);
-  assert.match((await deletion.json()).error, /replay protection unavailable/i);
-  assert.ok(await env.HOT_BUCKET.head(key), 'object must remain untouched when replay protection is unavailable');
+  assert.equal(put.status, 503);
+  assert.match((await put.json()).error, /daily usage counter unavailable/i);
+  assert.equal(await env.HOT_BUCKET.head(key), null,
+    'a missing request counter must fail closed before any object is written');
+  assert.equal(env.MEDIA_QUOTA_DO.counts.upload, 0,
+    'the request-counter gate must reject before reserving a media mutation');
 });
 
 test('S03-M3: DELETE fails closed when replay KV lookup throws', async () => {
@@ -1160,4 +1241,190 @@ test('S10-N3: a failed compensating B2 DELETE is observable without logging the 
     'migration warnings must not expose the conversation/media key');
   assert.ok(errorLogs.some((line) => line.includes('compensating B2 DELETE failed')),
     'the compensation failure must remain visible even though the key is redacted');
+});
+
+
+test('free-tier guard: B2 at its safety cap retains aged media in R2 without uploading', async () => {
+  const key = `media/${CHAT_ID}/b2-full.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init);
+    calls.push(req.method);
+    if (req.method === 'PUT') return new Response(null, { status: 200 });
+    return new Response('<ListBucketResult><Contents><Size>10200547328</Size></Contents></ListBucketResult>', { status: 200 });
+  };
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(calls.includes('PUT'), false, 'B2 cap must be checked before any cold-tier upload');
+  assert.ok(await bucket.head(key), 'the hot source must remain available for a later retry');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), '100');
+});
+
+test('free-tier guard: failed B2 preflight reconciliation fails closed and skips migration', async () => {
+  const key = `media/${CHAT_ID}/b2-unavailable.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('unavailable', { status: 503 });
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.ok(await bucket.head(key), 'uncertain B2 usage must never cause the hot source to be deleted');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), undefined,
+    'the scheduled job exits before changing storage accounting');
+});
+
+
+test('R2 Class A monthly guard rejects uploads before PutObject when the global budget is exhausted', async () => {
+  const key = `media/${CHAT_ID}/class-a-budget.jpg`;
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const budget = makeR2BudgetNamespace({ monthKey, classA: 850_000 });
+  const env = makeEnv({ ADMIN_LOCKOUT_DO: budget });
+  const token = await mintToken('write', key, 'user-budget-test');
+  const response = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Length': '10' },
+    body: new Uint8Array(10),
+  }), env, ctx);
+
+  assert.equal(response.status, 429, await response.clone().text());
+  assert.equal(env.HOT_BUCKET.objects.has(key), false,
+    'the R2 object must not be written after the shared monthly Class A budget is exhausted');
+  assert.equal(budget.state.classA, 850_000, 'rejected upload must not increment the exhausted budget');
+});
+
+test('R2 Class A monthly guard fails closed when the Durable Object budget service is absent', async () => {
+  const key = `media/${CHAT_ID}/budget-do-missing.jpg`;
+  const env = makeEnv({ ADMIN_LOCKOUT_DO: undefined });
+  const token = await mintToken('write', key, 'user-budget-unavailable');
+  const response = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Length': '10' },
+    body: new Uint8Array(10),
+  }), env, ctx);
+
+  assert.equal(response.status, 503);
+  assert.equal(env.HOT_BUCKET.objects.has(key), false,
+    'the Worker must not write R2 objects when it cannot enforce the monthly operation budget');
+});
+
+
+test('free-tier guard: write fails closed when the global media mutation budget binding is missing', async () => {
+  const key = `media/${CHAT_ID}/missing-media-budget.jpg`;
+  const token = await mintToken('write', key, 'user-alice');
+  const env = makeEnv({ MEDIA_QUOTA_DO: null });
+  const response = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Length': '1' },
+    body: new Uint8Array([1]),
+  }), env, ctx);
+  assert.equal(response.status, 503);
+  assert.equal(await env.HOT_BUCKET.head(key), null,
+    'storage must not be mutated without the global free-tier quota ledger');
+});
+
+
+test('free-tier guard: exhausted upload budget does not block deletion cleanup', async () => {
+  const deleteKey = 'media/' + CHAT_ID + '/delete-budget-remains.jpg';
+  const quota = makeDailyMediaQuotaNamespace({ upload: 120, delete: 0 });
+  const env = makeEnv({ MEDIA_QUOTA_DO: quota });
+  const token = await mintToken('delete', deleteKey, 'user-budget-test');
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('', { status: 404 });
+  let response;
+  try {
+    response = await worker.fetch(new Request('https://worker.example/' + deleteKey, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+    }), env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(quota.counts.upload, 120);
+  assert.equal(quota.counts.delete, 1,
+    'the independent deletion allowance must remain available for cleanup');
+});
+
+
+test('free-tier guard: per-holder upload budget prevents one account consuming the global allowance', async () => {
+  const env = makeEnv({ MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER: '1' });
+  const holder = 'same-account';
+  const firstKey = `media/${CHAT_ID}/holder-first.jpg`;
+  const secondKey = `media/${CHAT_ID}/holder-second.jpg`;
+
+  const firstToken = await mintToken('write', firstKey, holder);
+  const first = await worker.fetch(new Request('https://worker.example/' + firstKey, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + firstToken, 'Content-Length': '1' },
+    body: new Uint8Array([1]),
+  }), env, ctx);
+  assert.equal(first.status, 200, await first.clone().text());
+
+  const secondToken = await mintToken('write', secondKey, holder);
+  const second = await worker.fetch(new Request('https://worker.example/' + secondKey, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + secondToken, 'Content-Length': '1' },
+    body: new Uint8Array([2]),
+  }), env, ctx);
+  assert.equal(second.status, 429, await second.clone().text());
+  const payload = await second.json();
+  assert.equal(payload.scope, 'holder');
+  assert.equal(env.HOT_BUCKET.objects.has(secondKey), false,
+    'a holder over its sub-limit must be stopped before the second R2 PutObject');
+});
+
+
+
+test('free-tier guard: reject media uploads above the 95 MB request-body safety limit before storage', async () => {
+  const key = `media/${CHAT_ID}/oversized-free-tier.jpg`;
+  const token = await mintToken('write', key, 'user-size-test');
+  const env = makeEnv();
+  const response = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Length': '95000001' },
+    body: new Uint8Array([1]),
+  }), env, ctx);
+  assert.equal(response.status, 413, await response.clone().text());
+  assert.equal(env.HOT_BUCKET.objects.has(key), false,
+    'oversized request must be rejected before R2 storage or monthly Class A reservation');
+});
+
+test('free-tier guard: fail closed when B2 inventory cannot be fully scanned within its page budget', async () => {
+  const key = `media/${CHAT_ID}/r2-must-stay.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const realFetch = globalThis.fetch;
+  let b2ListCalls = 0;
+  globalThis.fetch = async () => {
+    b2ListCalls++;
+    return new Response(
+      `<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>page-${b2ListCalls}</NextContinuationToken></ListBucketResult>`,
+      { status: 200 },
+    );
+  };
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(b2ListCalls, 10,
+    'B2 preflight must stop after the configured 10-page external-request budget');
+  assert.ok(await bucket.head(key), 'R2 source must remain intact when B2 inventory is incomplete');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), undefined,
+    'partial inventory must not overwrite authoritative storage counters');
 });

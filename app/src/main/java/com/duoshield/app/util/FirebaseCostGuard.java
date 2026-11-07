@@ -4,7 +4,20 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.widget.Toast;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
+
 /**
+ * Device-local, best-effort usage guard for explicitly instrumented Firestore
+ * operations. This is NOT a project-wide quota counter: SharedPreferences are
+ * local to one app installation and cannot account for other users/devices or
+ * SDK operations that are not instrumented here.
+ *
+ * Firestore's free-tier quota resets at midnight America/Los_Angeles. Keep the
+ * local diagnostic day boundary aligned with that reset rather than device time.
+ *
  * Bug 13 fix: converted to a per-day singleton so the 80% quota warning fires
  * reliably even when a new instance is constructed after the threshold is
  * already crossed.
@@ -23,10 +36,15 @@ import android.widget.Toast;
 public class FirebaseCostGuard {
 
     private static final String PREFS       = "duoshield_cost_guard";
-    private static final int    MAX_READS   = 40_000;
-    private static final int    MAX_WRITES  = 16_000;
-    private static final int    MAX_DELETES = 16_000;
+    // Allocate 80% of each project-wide Spark quota evenly across 10 active
+    // installations, leaving 20% project headroom for uninstrumented SDK work,
+    // retries, other devices, and operational variance. These remain local,
+    // best-effort limits — they are not a project-wide billing firewall.
+    private static final int    MAX_READS   = 4_000;
+    private static final int    MAX_WRITES  = 1_600;
+    private static final int    MAX_DELETES = 1_600;
     private static final float  WARN_PCT    = 0.80f;
+    private static final String QUOTA_TIME_ZONE = "America/Los_Angeles";
 
     private static FirebaseCostGuard instance;
 
@@ -61,7 +79,9 @@ public class FirebaseCostGuard {
      * detected correctly.
      */
     private void rolloverIfNeeded() {
-        String currentDayKey = String.valueOf(System.currentTimeMillis() / 86_400_000L);
+        SimpleDateFormat dayFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        dayFormat.setTimeZone(TimeZone.getTimeZone(QUOTA_TIME_ZONE));
+        String currentDayKey = dayFormat.format(new Date());
         String stored = prefs.getString("day_key", "");
         if (!stored.equals(currentDayKey)) {
             prefs.edit()
@@ -74,30 +94,68 @@ public class FirebaseCostGuard {
         }
     }
 
-    public boolean canRead(int n) {
+    public synchronized boolean canRead(int n) {
         int current = prefs.getInt("reads", 0);
         warnIfNearing("reads", current, MAX_READS);
         return current + n <= MAX_READS;
     }
 
-    public boolean canWrite(int n) {
+    public synchronized boolean canWrite(int n) {
         int current = prefs.getInt("writes", 0);
         warnIfNearing("writes", current, MAX_WRITES);
         return current + n <= MAX_WRITES;
     }
 
-    public boolean canDelete(int n) {
+    public synchronized boolean canDelete(int n) {
         int current = prefs.getInt("deletes", 0);
         warnIfNearing("deletes", current, MAX_DELETES);
         return current + n <= MAX_DELETES;
     }
 
-    public void recordReads(int n)   { add("reads",   n); }
-    public void recordWrites(int n)  { add("writes",  n); }
-    public void recordDeletes(int n) { add("deletes", n); }
+    /**
+     * Atomically checks and reserves local budget BEFORE issuing a Firestore
+     * operation. Reservations are conservative: a failed request still counts
+     * for this device's local budget, avoiding concurrent preflight races.
+     */
+    public synchronized boolean reserveRead(int n) {
+        return reserve("reads", n, MAX_READS);
+    }
+
+    public synchronized boolean reserveWrite(int n) {
+        return reserve("writes", n, MAX_WRITES);
+    }
+
+    public synchronized boolean reserveDelete(int n) {
+        return reserve("deletes", n, MAX_DELETES);
+    }
+
+    private boolean reserve(String key, int n, int max) {
+        rolloverIfNeeded();
+        if (n <= 0) return false;
+        int current = prefs.getInt(key, 0);
+        if (current > max - n) {
+            warnIfNearing(key, current, max);
+            return false;
+        }
+        int updated = current + n;
+        prefs.edit().putInt(key, updated).apply();
+        warnIfNearing(key, updated, max);
+        return true;
+    }
+
+    public synchronized void recordReads(int n)   { add("reads", n); }
+    public synchronized void recordWrites(int n)  { add("writes", n); }
+    public synchronized void recordDeletes(int n) { add("deletes", n); }
 
     private void add(String key, int n) {
-        prefs.edit().putInt(key, prefs.getInt(key, 0) + n).apply();
+        rolloverIfNeeded();
+        if (n <= 0) return;
+        int current = prefs.getInt(key, 0);
+        int updated = current > Integer.MAX_VALUE - n ? Integer.MAX_VALUE : current + n;
+        prefs.edit().putInt(key, updated).apply();
+        int max = "reads".equals(key) ? MAX_READS
+                : "writes".equals(key) ? MAX_WRITES : MAX_DELETES;
+        warnIfNearing(key, updated, max);
     }
 
     /**
@@ -117,7 +175,18 @@ public class FirebaseCostGuard {
         }
     }
 
-    public int getReads()   { return prefs.getInt("reads",   0); }
-    public int getWrites()  { return prefs.getInt("writes",  0); }
-    public int getDeletes() { return prefs.getInt("deletes", 0); }
+    public synchronized int getReads() {
+        rolloverIfNeeded();
+        return prefs.getInt("reads", 0);
+    }
+
+    public synchronized int getWrites() {
+        rolloverIfNeeded();
+        return prefs.getInt("writes", 0);
+    }
+
+    public synchronized int getDeletes() {
+        rolloverIfNeeded();
+        return prefs.getInt("deletes", 0);
+    }
 }
