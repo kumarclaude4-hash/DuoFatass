@@ -35,12 +35,22 @@ test("hash and fingerprint are deterministic without storing the raw token", () 
 });
 
 test("invite status distinguishes active, expired, used, and revoked states", () => {
-  assert.equal(invite.inviteStatus(null, NOW), "revoked");
+  assert.equal(invite.inviteStatus(null, NOW), "invalid");
   assert.equal(invite.inviteStatus({ status: "revoked", expiresAt: new Date(NOW + DAY) }, NOW), "revoked");
   assert.equal(invite.inviteStatus({ status: "used", expiresAt: new Date(NOW - DAY) }, NOW), "used");
   assert.equal(invite.inviteStatus({ status: "active", expiresAt: new Date(NOW + 1) }, NOW), "active");
   assert.equal(invite.inviteStatus({ status: "active", expiresAt: new Date(NOW) }, NOW), "expired");
   assert.equal(invite.inviteStatus({ status: "active", expiresAt: new Date(NOW - 1) }, NOW), "expired");
+});
+
+test("unknown or malformed persisted invite state fails closed", () => {
+  const future = new Date(NOW + DAY);
+  assert.equal(invite.inviteStatus({ status: "pending", expiresAt: future }, NOW), "invalid");
+  assert.equal(invite.inviteStatus({ status: "approved", expiresAt: future }, NOW), "invalid");
+  assert.equal(invite.inviteStatus({ expiresAt: future }, NOW), "invalid");
+  assert.equal(invite.inviteStatus({ status: "active", expiresAt: Infinity }, NOW), "invalid");
+  assert.equal(invite.inviteStatus({ status: "active", expiresAt: future }, NaN), "invalid");
+  assert.equal(invite.inviteStatus({ status: "active", expiresAt: future }, NOW), "active");
 });
 
 test("create input trims fields and accepts the exact one-hour and 90-day TTL boundaries", () => {

@@ -124,7 +124,11 @@ function createInviteStore({
       if (!snapshot.exists) return { status: "missing" };
 
       const current = invite.inviteStatus(snapshot.data(), now());
-      if (current !== "active") return { status: "conflict", current };
+      // A malformed/unknown record is never redeemable, but an operator may
+      // explicitly revoke it to clean up the invalid persisted state.
+      if (current !== "active" && current !== "invalid") {
+        return { status: "conflict", current };
+      }
 
       tx.update(ref, {
         status: "revoked",
@@ -141,7 +145,7 @@ function createInviteStore({
     const search = typeof options.search === "string" ? options.search.trim().toLowerCase() : "";
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(10, Number(options.pageSize) || DEFAULT_PAGE_SIZE));
     const cursor = invite.decodeCursor(options.cursor || null);
-    if (!["all", "active", "used", "expired", "revoked"].includes(wantedStatus) || search.length > 80) {
+    if (!["all", "active", "used", "expired", "revoked", "invalid"].includes(wantedStatus) || search.length > 80) {
       throw new TypeError("Invalid filter");
     }
 
@@ -172,7 +176,7 @@ function createInviteStore({
       };
     });
 
-    const counts = { active: 0, used: 0, expired: 0, revoked: 0 };
+    const counts = { active: 0, used: 0, expired: 0, revoked: 0, invalid: 0 };
     for (const record of records) counts[record.status]++;
     records = records
       .filter((record) => wantedStatus === "all" || record.status === wantedStatus)

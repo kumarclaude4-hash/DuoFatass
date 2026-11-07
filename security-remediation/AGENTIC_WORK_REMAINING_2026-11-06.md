@@ -2,15 +2,17 @@
 
 Repository: kumarclaude4-hash/DuoFatass
 Base branch: main
-Latest merged mainline: PR #251 at `fc3dcd948a2410887c23ff8c29913c6c5d92604a`.
-Current security work: S10-N2 bounded interprocedural release-log taint extension — code merged in PR #251; finding remains **Partial**.
-PR #251: https://github.com/kumarclaude4-hash/DuoFatass/pull/251
-Tested PR head: `d6041db2033b1950cdf006b900ef5cd8f2d95eba`.
-Post-merge evidence: CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588) 10/10 jobs; Security Scan [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447) 3/3 jobs. AST: 204 production Java files, 414 warning/error/fatal log calls, zero violations; Espresso 4 tests and API 35 predictive-back 1 test executed and passed.
-The interprocedural pass adds bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through and same-class field write/read flows. It preserves conservative behavior for ambiguous overloads and unresolved dispatch; recursive summaries are bounded and fail closed. See the updated S10-N2 tracker row and session addendum for exact scope and limitations.
-S10-N2 remains Partial: syntax-only analysis is not whole-program proof, and physical-device release-logcat acceptance is deferred until feature-complete. `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
+Latest merged mainline: PR #252 at `3d41501cf55d706d47bd7bec1a24ccb82d60ae1a`.
+Current open code PR: #253 — fail-closed invite lifecycle-state handling (S05-H2).
+PR: https://github.com/kumarclaude4-hash/DuoFatass/pull/253
+Tested PR head: `62da24d98705a91d11d7a9b926c71fe02b2eeb9a`.
+PR #253 evidence: CI [42364462022](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364462022) **10/10 jobs**; Security Scan [42364461937](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364461937) **3/3 jobs**; Firestore Rules/server transaction workflow [42364461918](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42364461918) passed (3 Firestore/App Check emulator suites, 201 tests total, plus 6 server transaction tests). The code changes require explicit active status + finite future expiry for modern invites; unknown/missing states are invalid, cannot redeem, are visible to admins and can be revoked with transactional audit.
+Android CI on PR #253 also passed: unit tests, lint, debug APK, minified R8/mapping, Espresso (**4 tests**) and API 35 predictive-back (**1 test**). AST: 204 production Java files, 414 `Log.w/e/wtf` calls, zero violations.
+PR #251 remains merged at `fc3dcd948a2410887c23ff8c29913c6c5d92604a`; PR #252 reconciled its tracker/session/handoff evidence. S10-N2 remains Partial for syntax-only analysis limits and physical release-logcat acceptance.
+**Release boundary:** Render service `DuoFat` is on the free plan and configured for auto-deploy from `main` on commit. Do not merge server-code PRs or mutate provider settings as a side effect; coordinate the production deployment/cutover explicitly. The latest observed Render deployment commit remains `955d603ef2228c3b318b433270c4c31ae923751a` (2026-11-06), so do not assume the live server matches the latest repository head.
+S05-H2 remains Partial pending owner confirmation of the invite-only contract and full isolated staging onboarding. `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
 
-This is the current execution handoff for the next coding agent. Start from the latest main on a fresh branch. Continue source-level and authorized staging work only; physical-device acceptance must wait until the owner declares the app feature-complete.
+This is the current execution handoff for the next coding agent. Start from latest main on a fresh branch; do not commit directly to main. Continue source-level work and authorized isolated staging only. Physical-device acceptance must wait until the owner declares the app feature-complete.
 
 ## 1. Binding instructions
 
@@ -96,9 +98,11 @@ All protected verifyIdToken call sites pass checkRevoked=true and the static rou
 
 Review of migration callers, rollback paths and recovery routes is source-complete for the current code. Existing regressions cover unverified schema types, conflicting destination values, retry and preservation of original data. PR #243 added deterministic one-shot fault injection for failed encrypted destination commit, post-write read-back exception, and failed plaintext cleanup commit; retry behavior is covered. The merged PR #243 head `a98d79e46919fa4c472b36a9ec33075d09479a2a` passed CI run `42185303041` (9/9 jobs, including Android unit tests, Espresso, predictive-back and minified R8) plus security run `42185303045`. Do not delete retained legacy data before exact encrypted destination read-back is proven. S08-H5/S07-M1 remain Partial until the real Android Keystore/EncryptedSharedPreferences upgrade/recovery flow and a verified support/recovery path for un-migratable installs are accepted on physical devices after app feature completion.
 
-### I. S05-H2 — invite-only backend contract
+### I. S05-H2 — invite lifecycle code hardening merged into a green PR; owner/staging acceptance remains
 
-Review invite create/list/revoke/validate and mint-token/nonce replay paths, including transaction boundaries, rate limits and fail-closed behavior. Maintain backend HTTP and Firestore emulator tests. Prepare the staging test matrix and onboarding contract, but do not perform Android device onboarding until the app is feature-complete.
+PR #253 adds a fail-closed lifecycle-state guard to `server/lib/invite.js`: only records with explicit `status === "active"` and a finite future expiry can validate/redeem. Unknown or missing status values are categorized as invalid, listed through the admin "Invalid (blocked)" filter and can be revoked by an authenticated admin with transactional audit. Unit, HTTP route and Firestore-emulator regressions cover the behavior. Exact PR head `62da24d98705a91d11d7a9b926c71fe02b2eeb9a` passed CI 10/10, Security Scan 3/3 and the Firestore Rules/server-transaction workflow.
+
+Keep S05-H2 **Partial**. Remaining: owner confirmation that onboarding is intentionally invite-only; authorized isolated staging exercise of create/list/filter/revoke/validate; expired/used/revoked/invalid paths; parallel one-time redemption; audit/no-bearer persistence; complete Android new-user onboarding and existing-account restore. Do not perform physical-device onboarding until the app is declared feature-complete. Because Render auto-deploys commits to main, do not merge/deploy this server-code PR without a deliberate production release plan.
 
 ## 4. Physical-device acceptance — explicitly deferred
 

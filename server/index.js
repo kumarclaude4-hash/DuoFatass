@@ -1577,7 +1577,7 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
           <label class="sr-only" for="inviteSearch">Search recipient labels</label>
           <input class="search-input" id="inviteSearch" maxlength="80" placeholder="Search recipient labels" autocomplete="off">
           <label class="sr-only" for="inviteStatus">Filter by status</label>
-          <select class="action" id="inviteStatus"><option value="all">All statuses</option><option value="active">Active</option><option value="used">Used</option><option value="expired">Expired</option><option value="revoked">Revoked</option></select>
+          <select class="action" id="inviteStatus"><option value="all">All statuses</option><option value="active">Active</option><option value="used">Used</option><option value="expired">Expired</option><option value="revoked">Revoked</option><option value="invalid">Invalid (blocked)</option></select>
           <button class="action" type="button" id="inviteApplyBtn">Apply</button>
         </div>
         <div class="section-help" id="invitesMeta" aria-live="polite"></div>
