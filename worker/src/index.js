@@ -458,12 +458,10 @@ async function kvSet(env, key, value, opts = {}) {
 }
 
 // ─── Daily request gate ───────────────────────────────────────────────────────
-// Free tier: 100K requests/day. Enforce at 90K (90%).
-//
-// KV writes are amortised via 1-in-500 sampling: each sample adds 500 to the
-// estimate. At the 90K/day ceiling this uses ~180 writes/day, leaving room for
-// per-object accounting and replay protection under the 1K/day KV free limit.
-// The estimate is intentionally approximate (up to 499 requests of sampling error).
+// Workers Free permits 100K requests/day. The app-level early-stop target is
+// 80K/day; sampled telemetry is approximate and Cloudflare's own hard limit
+// remains authoritative. Request counts sample 1 in 500 and add 500, using
+// about 160 KV writes/day at the 80K target (sampling error can be up to 499).
 async function reserveDailyMediaMutation(env, cors) {
   // A global SQLite-backed Durable Object serializes mutation reservations
   // across all Worker locations. KV cannot safely do this: it is eventually
@@ -509,7 +507,7 @@ async function checkDailyRequestLimit(env, cors) {
   const count = safeInt(await kvGet(env, key));
   if (count >= MAX_DAILY_REQUESTS) {
     return json({
-      error: 'Daily request limit reached (90K/day). Resets at midnight UTC.',
+      error: 'Daily request safety threshold reached (80K/day). Resets at midnight UTC.',
       count,
       limit: MAX_DAILY_REQUESTS,
     }, 429, cors);
@@ -695,7 +693,7 @@ export default {
           limit_bytes:     MAX_R2_BYTES,
           used_pct:        parseFloat((r2Bytes  / MAX_R2_BYTES  * 100).toFixed(2)),
           remaining_bytes: Math.max(0, MAX_R2_BYTES - r2Bytes),
-          note:            'Capped at 9 GB (95% of 10 GB free tier). Reconciled nightly by cron.',
+          note:            'Capped at 9 GB (90% of 10 GB free tier). Reconciled nightly by cron.',
         },
         b2: {
           used_bytes:  b2Bytes,
