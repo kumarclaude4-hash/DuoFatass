@@ -171,7 +171,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             Path safe = Files.createDirectories(root.resolve("safe"));
             Files.writeString(safe.resolve("SafeFixture.java"),
                     "class SafeFixture {\n"
-                  + "  void log(Throwable failure, String peerId, Profile profile, String alias) {\n"
+                  + "  void log(Throwable failure, String peerId, Profile profile, String alias, HttpURLConnection connection, TurnBandwidthTracker tracker, Response httpResult) {\n"
                   + "    Log.w(\"TAG\", \"request failed: \" + LogRedact.error(failure));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(peerId));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(profile.userId));\n"
@@ -195,15 +195,24 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    int statusCode = connection.getResponseCode();\n"
                   + "    Log.w(\"TAG\", \"HTTP status=\" + statusCode);\n"
                   + "    Log.w(\"TAG\", tracker.getSummary());\n"
-                  + "    String safeOperation = redactOperationName(alias);\n"
-                  + "    Log.w(\"TAG\", safeOperation);\n"
-                  + "    int lockStatus = postDuressLock(alias);\n"
-                  + "    Log.w(\"TAG\", \"lock HTTP status=\" + lockStatus);\n"
+                  + "    Log.w(\"TAG\", \"OkHttp status=\" + httpResult.code());\n"
                   + "  }\n"
+                  + "}\n"
+                  + "class B2StorageHelper {\n"
+                  + "  String redactOperationName(String value) { return \"download:\" + LogRedact.metadata(value); }\n"
+                  + "  void logAlias(String alias) { String safeOperation = redactOperationName(alias); Log.w(\"TAG\", safeOperation); }\n"
+                  + "}\n"
+                  + "class LegacyPlaintextMigrator {\n"
+                  + "  int copyInto(Object target, Map<String, Object> legacy) { return legacy.size(); }\n"
+                  + "  void logMigration(Profile profile) { Map<String, Object> legacy = new HashMap<>(); legacy.put(\"peer\", profile.getUserId()); int migrated = copyInto(null, legacy); Log.w(\"TAG\", \"migrated=\" + migrated); }\n"
+                  + "}\n"
+                  + "class DuressManager {\n"
+                  + "  int postDuressLock(String nonce) { return 200; }\n"
+                  + "  void logLock(String token) { int lockStatus = postDuressLock(token); Log.w(\"TAG\", \"lock HTTP status=\" + lockStatus); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 17) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 19) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -605,7 +614,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     String receiver = receiverName(node);
                     if ((("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
                             && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")))
-                            || "redactOperationName".equals(method)
+                            || isRedactedOperationName(node)
                             || isSafeOperationalProjection(node)) {
                         return null;
                     }
