@@ -75,36 +75,38 @@ public class TurnBandwidthTracker {
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Records estimated billable egress bytes (TURN server → this client)
-     * consumed by a completed call.
-     *
-     * <p>Thread-safe; can be called from any thread.
-     *
-     * @param bytes estimated relay egress bytes received by this client
+     * Records an egress delta as soon as a WebRTC stats sample arrives.
+     * Persisting each sample means a process death loses at most one polling
+     * interval instead of the entire call's usage.
      */
+    public synchronized void recordEgressBytes(long bytes) {
+        recordBytes(bytes, false);
+    }
+
+    /** Records a completed-call total for callers that report only once. */
     public synchronized void recordCallBytes(long bytes) {
+        recordBytes(bytes, true);
+    }
+
+    private void recordBytes(long bytes, boolean completedCall) {
         if (bytes <= 0) return;
         rollMonthIfNeeded();
 
         long current = prefs.getLong(KEY_BYTES, 0L);
-        int  calls   = prefs.getInt(KEY_CALLS, 0);
         long updated = Long.MAX_VALUE - current < bytes ? Long.MAX_VALUE : current + bytes;
-
-        prefs.edit()
-             .putLong(KEY_BYTES, updated)
-             .putInt(KEY_CALLS, calls == Integer.MAX_VALUE ? calls : calls + 1)
-             .apply();
-
-        Log.i(TAG, String.format(Locale.US,
-                "TURN egress estimate recorded: +%s this call | month total: %s / %s GB",
-                humanBytes(bytes), humanBytes(updated), humanBytes(MONTHLY_LIMIT_BYTES)));
+        SharedPreferences.Editor editor = prefs.edit().putLong(KEY_BYTES, updated);
+        if (completedCall) {
+            int calls = prefs.getInt(KEY_CALLS, 0);
+            editor.putInt(KEY_CALLS, calls == Integer.MAX_VALUE ? calls : calls + 1);
+        }
+        editor.apply();
 
         if (updated >= MONTHLY_LIMIT_BYTES) {
             Log.e(TAG, "TURN local monthly egress budget reached — TURN disabled until next month.");
         } else if (updated >= WARNING_THRESHOLD_BYTES) {
             Log.w(TAG, String.format(Locale.US,
                     "TURN egress warning: %.1f GB of 80 GB local budget used this month.",
-                    updated / (1024.0 * 1024.0 * 1024.0)));
+                    updated / 1_000_000_000.0));
         }
     }
 
@@ -153,7 +155,7 @@ public class TurnBandwidthTracker {
     /** 0–100 integer percentage of the monthly cap consumed. */
     public synchronized int getUsedPercent() {
         long used = getUsedBytes();
-        return (int) Math.min(100L, used * 100L / MONTHLY_LIMIT_BYTES);
+        return (int) Math.min(100.0, (used * 100.0) / MONTHLY_LIMIT_BYTES);
     }
 
     /** Returns the current month key (YYYY-MM). */
