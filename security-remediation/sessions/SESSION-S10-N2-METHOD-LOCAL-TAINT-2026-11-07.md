@@ -74,3 +74,35 @@ On exact code head `d676fb0e028fb578cbb2d8aa83d2bb0f3afe8f4b`:
 This implementation is syntax-only and method-local. It is not symbol-resolved whole-program taint analysis and does not prove arbitrary cross-method return/field/global flows, reflection, aliasing through unknown external libraries or third-party callback internals safe. Sticky taint can create false positives; the projection allow-list must remain small, source-backed and owner/type-scoped.
 
 Keep S10-N2 **Partial** until residual source review and post-feature-complete physical release-logcat QA are accepted. Do not claim production acceptance from static analysis or green CI. Keep `security-remediation/FINAL_SIGNOFF.md` **PENDING**.
+
+
+## PR #251 extension and merged evidence — 2026-11-07
+
+**Status:** the bounded interprocedural code extension is merged to `main`; S10-N2 remains **Partial** pending residual source review and feature-complete physical release-logcat acceptance.
+
+- PR: https://github.com/kumarclaude4-hash/DuoFatass/pull/251
+- Tested PR head: `d6041db2033b1950cdf006b900ef5cd8f2d95eba`
+- Merge commit: `fc3dcd948a2410887c23ff8c29913c6c5d92604a`
+- CI: [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588), **10/10 jobs passed**.
+- Security Scan: [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447), **3/3 jobs passed**.
+
+### Interprocedural extension
+
+PR #251 extends the PR #248 method-local guard with bounded fixed-point summaries for uniquely resolvable app-owned Java helpers:
+
+- Sensitive values propagate through helper return values and parameter pass-through.
+- Same-class field writes and subsequent reads are tracked, including helper-mediated writes.
+- An explicit redaction boundary is safe only when the analyzed source proves the helper returns the redacted value.
+- Ambiguous same-name/same-arity overloads and unresolved/external/virtual dispatch are not guessed; existing conservative taint behavior remains.
+- Recursive and mutually recursive summaries use iterative bounded analysis rather than analyzer recursion. If the bound is exhausted, value-returning summaries fail closed as tainted.
+- Regression fixtures cover sensitive helper return, parameter pass-through, sanitized return, self-recursive tainted/safe helpers, ambiguous overloads and helper-mediated field write/read.
+
+The production scan found **204 Java files and 414 `Log.w/e/wtf` calls, with zero policy violations**. The final CI also passed Android unit tests, lint, debug APK, minified R8 (mapping verified and uploaded), Server/Worker tests, libsignal and Gradle wrapper integrity, Espresso (**4 tests executed**), and API 35 predictive-back (**1 focused test executed**). CodeQL, Gitleaks, SBOM, Cloudflare Worker build validation and Vercel preview status passed. Emulator startup had brief ADB-offline retries; both instrumentation jobs recovered and completed the expected test count.
+
+The same PR reduced `DeviceSecurityGate` diagnostics so storage-tier detail is not interpolated into warning or info logs.
+
+### Limitations and acceptance boundary
+
+This remains a syntax-only analyzer, not a symbol-resolved whole-program data-flow engine. It does not establish safety for arbitrary inheritance/virtual dispatch, reflection, cross-class field aliasing, native methods, unresolved external calls or third-party callback internals. The automated emulator checks are not physical-device release-logcat acceptance.
+
+Keep S10-N2 **Partial** until residual source review is completed and the owner declares the app feature-complete, followed by physical-device release-logcat QA. Do not claim production acceptance or deployment from these CI results. Keep `security-remediation/FINAL_SIGNOFF.md` **PENDING**.
