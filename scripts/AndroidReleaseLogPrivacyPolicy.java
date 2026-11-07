@@ -412,13 +412,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     && ("Log".equals(receiver) || receiver.endsWith(".Log"));
             if (logSink && node.getArguments().size() >= 2) {
                 List<? extends ExpressionTree> args = node.getArguments();
-                if (containsTrackedAlias(args.get(0))) {
+                String tagAliases = trackedReferenceSummary(args.get(0));
+                if (!tagAliases.isEmpty()) {
                     addViolation(node, "method-local sensitive alias/container reaches Log."
-                            + method + " tag");
+                            + method + " tag [" + tagAliases + "]");
                 }
-                if (containsTrackedAlias(args.get(1))) {
+                String messageAliases = trackedReferenceSummary(args.get(1));
+                if (!messageAliases.isEmpty()) {
                     addViolation(node, "method-local sensitive alias/container reaches Log."
-                            + method + " message");
+                            + method + " message [" + messageAliases + "]");
                 }
             }
 
@@ -523,8 +525,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
         }
 
         private boolean containsTrackedAlias(ExpressionTree expression) {
-            if (expression == null) return false;
-            final boolean[] found = {false};
+            return !trackedReferenceSummary(expression).isEmpty();
+        }
+
+        private String trackedReferenceSummary(ExpressionTree expression) {
+            if (expression == null) return "";
+            final Set<String> found = new java.util.TreeSet<>();
             new TreeScanner<Void, Void>() {
                 @Override
                 public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
@@ -542,12 +548,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 public Void visitIdentifier(IdentifierTree node, Void unused) {
                     String name = node.getName().toString();
                     if (taintedLocals.contains(name) || taintedContainers.contains(name)) {
-                        found[0] = true;
+                        found.add(name);
                     }
                     return null;
                 }
             }.scan(expression, null);
-            return found[0];
+            return String.join(",", found);
         }
 
         private void addViolation(com.sun.source.tree.Tree tree, String reason) {
