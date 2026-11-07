@@ -479,10 +479,11 @@ async function reserveDailyMediaMutation(env, cors, operation, holder) {
   if (operation !== 'upload' && operation !== 'delete') {
     return json({ error: 'Invalid media mutation operation' }, 400, cors);
   }
+  const defaultLimit = operation === 'upload' ? 120 : 80;
   const configuredLimit = operation === 'upload'
-    ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS || '120', 120)
-    : safeInt(env.MAX_DAILY_MEDIA_DELETES || '120', 120);
-  const limit = configuredLimit >= 1 && configuredLimit <= 10_000 ? configuredLimit : 120;
+    ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS || String(defaultLimit), defaultLimit)
+    : safeInt(env.MAX_DAILY_MEDIA_DELETES || String(defaultLimit), defaultLimit);
+  const limit = configuredLimit >= 1 && configuredLimit <= 10_000 ? configuredLimit : defaultLimit;
   const configuredHolderLimit = operation === 'upload'
     ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER || '20', 20)
     : safeInt(env.MAX_DAILY_MEDIA_DELETES_PER_HOLDER || '20', 20);
