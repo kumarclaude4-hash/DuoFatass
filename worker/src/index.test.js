@@ -1161,3 +1161,46 @@ test('S10-N3: a failed compensating B2 DELETE is observable without logging the 
   assert.ok(errorLogs.some((line) => line.includes('compensating B2 DELETE failed')),
     'the compensation failure must remain visible even though the key is redacted');
 });
+
+
+test('free-tier guard: B2 at its safety cap retains aged media in R2 without uploading', async () => {
+  const key = `media/${CHAT_ID}/b2-full.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const req = input instanceof Request ? input : new Request(input, init);
+    calls.push(req.method);
+    if (req.method === 'PUT') return new Response(null, { status: 200 });
+    return new Response('<ListBucketResult><Contents><Size>10200547328</Size></Contents></ListBucketResult>', { status: 200 });
+  };
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(calls.includes('PUT'), false, 'B2 cap must be checked before any cold-tier upload');
+  assert.ok(await bucket.head(key), 'the hot source must remain available for a later retry');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), '100');
+});
+
+test('free-tier guard: failed B2 preflight reconciliation fails closed and skips migration', async () => {
+  const key = `media/${CHAT_ID}/b2-unavailable.jpg`;
+  const bucket = makeMigrationBucket([
+    { key, size: 100, customMetadata: { uploadedAt: FORTY_DAYS_AGO, uploader: 'user-alice' } },
+  ]);
+  const env = makeEnv({ HOT_BUCKET: bucket });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('unavailable', { status: 503 });
+  try {
+    await worker.scheduled({}, env, ctx);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.ok(await bucket.head(key), 'uncertain B2 usage must never cause the hot source to be deleted');
+  assert.equal(env.RATE_KV.store.get('global:storage:r2'), undefined,
+    'the scheduled job exits before changing storage accounting');
+});
