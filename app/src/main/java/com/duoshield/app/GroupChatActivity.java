@@ -369,7 +369,7 @@ public class GroupChatActivity extends BaseActivity {
      */
     private void fetchGroupKey() {
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canRead(1)) {
+        if (!guard.reserveRead(1)) {
             runOnUiThread(() ->
                 Toast.makeText(this, "Read quota reached — try again tomorrow",
                         Toast.LENGTH_LONG).show());
@@ -379,7 +379,6 @@ public class GroupChatActivity extends BaseActivity {
           .collection("keys").document(myUid)
           .get()
           .addOnSuccessListener(snap -> {
-              guard.recordReads(1);
               if (!snap.exists()) {
                   Toast.makeText(this, "Group key not found — ask the creator to re-add you",
                           Toast.LENGTH_LONG).show();
@@ -678,7 +677,7 @@ public class GroupChatActivity extends BaseActivity {
             doc.put("aadV1",       true);
 
             FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-            if (!guard.canWrite(1)) {
+            if (!guard.reserveWrite(1)) {
                 runOnUiThread(() -> Toast.makeText(this,
                         "Write quota reached — try again tomorrow", Toast.LENGTH_LONG).show());
                 return;
@@ -687,7 +686,6 @@ public class GroupChatActivity extends BaseActivity {
               .collection("messages").document(msgId)
               .set(doc)
               .addOnSuccessListener(v -> {
-                  guard.recordWrites(1);
                   adapter.updateMessage(msgId, m -> m.setStatus("sent"));
 
                   // Persist to Room
@@ -1218,7 +1216,7 @@ public class GroupChatActivity extends BaseActivity {
         if (sealedThumb != null && !sealedThumb.isEmpty()) doc.put("thumb", sealedThumb);
 
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canWrite(1)) {
+        if (!guard.reserveWrite(1)) {
             runOnUiThread(() -> Toast.makeText(this,
                     "Write quota reached — try again tomorrow", Toast.LENGTH_LONG).show());
             return;
@@ -1227,7 +1225,6 @@ public class GroupChatActivity extends BaseActivity {
           .collection("messages").document(msgId)
           .set(doc)
           .addOnSuccessListener(v -> {
-              guard.recordWrites(1);
               adapter.updateMessage(msgId, m -> m.setStatus("sent"));
               // Persist to Room
               Message stored = new Message(msgId, groupId, myUid, "", now, false, storagePath, mediaType);
@@ -1303,7 +1300,7 @@ public class GroupChatActivity extends BaseActivity {
         if (caption != null && !caption.isEmpty()) doc.put("caption", caption);
 
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
-        if (!guard.canWrite(1)) {
+        if (!guard.reserveWrite(1)) {
             adapter.updateMessage(msgId, m -> m.setStatus("failed"));
             return;
         }
@@ -1311,7 +1308,6 @@ public class GroupChatActivity extends BaseActivity {
                 .collection("messages").document(msgId)
                 .set(doc)
                 .addOnSuccessListener(v -> {
-                    guard.recordWrites(1);
                     adapter.updateMessage(msgId, m -> m.setStatus("sent"));
                     Message stored = new Message(msgId, groupId, myUid, "", now, false,
                             null, "album");
@@ -1546,7 +1542,7 @@ public class GroupChatActivity extends BaseActivity {
                     kd.put("encryptedKey", r.ciphertextB64);
                     kd.put("sigType",      r.sigType);
                     kd.put("senderUid",    myUid);
-                    if (guard.canWrite(1)) {
+                    if (guard.reserveWrite(1)) {
                         db.collection("groups").document(groupId)
                           .collection("keys").document(uid)
                           .set(kd)
