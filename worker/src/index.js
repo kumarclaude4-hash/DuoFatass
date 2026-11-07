@@ -486,7 +486,7 @@ async function reserveDailyMediaMutation(env, cors, operation, holder) {
   const limit = configuredLimit >= 1 && configuredLimit <= 10_000 ? configuredLimit : defaultLimit;
   const configuredHolderLimit = operation === 'upload'
     ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER || '20', 20)
-    : safeInt(env.MAX_DAILY_MEDIA_DELETES_PER_HOLDER || '20', 20);
+    : safeInt(env.MAX_DAILY_MEDIA_DELETES_PER_HOLDER || '60', 60);
   const holderLimit = configuredHolderLimit >= 1 && configuredHolderLimit <= limit
     ? configuredHolderLimit : Math.min(20, limit);
   if (typeof holder !== 'string' || !holder) {
