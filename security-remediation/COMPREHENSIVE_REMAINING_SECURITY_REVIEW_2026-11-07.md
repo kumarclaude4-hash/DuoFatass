@@ -28,22 +28,33 @@ Return a finding-by-finding disposition (confirmed remaining / newer evidence sa
 
 ---
 
-## 1. Baseline and already-completed work
+## 1. Current baseline and already-completed work
 
-PR #248 merged at `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101`: https://github.com/kumarclaude4-hash/DuoFatass/pull/248
+**Current main:** `98f76cdf374eeaf5c8144befad068ef05805a20b` (2026-11-07).  
+**Main CI:** [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) — passed.  
+**Main Security Scan:** [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) — passed.
 
-Exact PR head `787ed4a70008d61f819cd65a8c6424573d7f064f` passed:
-- CI [42331424519](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42331424519): **10/10 jobs**.
-- Security Scan [42331424496](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42331424496): **3/3 jobs**.
-- Android release-log AST self-test/full scan: **204 production Java files, 407 release-surviving Log.w/e/wtf calls, zero violations**.
+This report was initially prepared against the earlier `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` baseline. The current mainline includes the subsequent merges below; follow the current tracker and addenda rather than treating the original line-by-line review as current after those changes.
 
-PR #248 enhanced `scripts/AndroidReleaseLogPrivacyPolicy.java` with conservative method-local tracking: local aliases/reassignment, concatenation, StringBuilder/StringBuffer, common Map/Bundle/JSON/builder flows, both log tag and message sinks, and positive/negative fixtures. This is **not** symbol-resolved whole-program/interprocedural taint analysis. See [S10-N2 tracker row](../BUG_TRACKER.md) and [session report](sessions/SESSION-S10-N2-METHOD-LOCAL-TAINT-2026-11-07.md).
+Relevant merged work:
+- PR #251: bounded interprocedural extension to the Android release-log analyzer; S10-N2 remains Partial.
+- PR #255: invite redemption UID pseudonymization and dry-run-first legacy cleanup utility; S05-H2 remains Partial.
+- PR #256: valid single-range GETs cost half a request unit in the shared per-holder minute bucket to support chunked encrypted-video playback; global daily request and mutation budgets remain unchanged.
+- PR #257: documentation-only S05-H2 privacy closeout.
 
-Other relevant merged work includes PRs #222, #225–#228, #231, #236–#243, #244, #246 and #248. Consult the relevant tracker rows before touching those areas. Do not reimplement merged fixes.
+Current main CI and Security Scan passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server/Worker tests, release-log AST, Cloudflare Worker build validation, CodeQL, Gitleaks, SBOM and dependency-integrity checks.
 
-A merge and green CI do **not** prove: production deployment, live Firebase/Render/Cloudflare configuration, credential rotation, live R2/B2 cron migration, physical-device acceptance, owner risk acceptance, governance enforcement or production sign-off.
+### Open PRs requiring follow-up
 
----
+| PR | Exact head | Base / merge state | Current checks and next action |
+|---|---|---|---|
+| [#253](https://github.com/kumarclaude4-hash/DuoFatass/pull/253) | `231af6f3a499b60286d567a6628876abfb5d6d31` | Based on `3d41501`; GitHub reports dirty/non-mergeable | CI 10/10, Security 3/3 and Firestore Rules/server transactions passed. Rebase/resolve against current main and rerun before merge. |
+| [#254](https://github.com/kumarclaude4-hash/DuoFatass/pull/254) | `1d5583584572859bcb07b39bba0628c554226c84` | Based on `3d41501`; GitHub reports dirty/non-mergeable | CI 10/10 and Security 3/3 passed. Rebase/resolve against current main and rerun before merge. |
+| [#258](https://github.com/kumarclaude4-hash/DuoFatass/pull/258) | `b20a5bf628c2a58b29b41f5cf71668d88d445b0d` | Based on `89ac44c`; mergeable but unstable | CI passed; Gitleaks flagged a synthetic PEM-shaped test fixture; one Firestore mintToken integration test failed because the invite expiry elapsed across the 1-hour minimum boundary. Replace the fixture and make the clock deterministic, then rerun all required checks. |
+
+PR #253/#254 checks were run against their older merge bases. Their passing historical checks do not validate the exact current-main merge result. PR #258 evidence: CI [42387218211](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218211), Security [42387218255](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218255), Firestore Rules/server transactions [42387218230](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218230).
+
+A merge and green CI do **not** prove production deployment, live Firebase/Render/Cloudflare configuration, credential rotation, live R2/B2 cron migration, physical-device acceptance, owner risk acceptance, governance enforcement or production sign-off.
 
 ## 2. Executive inventory
 
@@ -51,7 +62,7 @@ A merge and green CI do **not** prove: production deployment, live Firebase/Rend
 |---|---|---|
 | S03-M3 | Partial | Owner risk decision or versioned protocol |
 | S05-M3 | Partial | Multi-instance staging + Firestore rules/index/TTL read-back |
-| S05-H2 | Partial | Product-contract confirmation; authorized legacy UID cleanup; full staging onboarding |
+| S05-H2 | Partial | Product contract; staging lifecycle/onboarding; authorized legacy UID cleanup; validate PR #253 and #258 after rebase/fix |
 | S06-L4 | Partial | Staging retry/recovery race + Firestore config + deferred device matrix |
 | S07-L2 | Partial | Supported deterministic native-key destruction or approved residual |
 | S08-H2 | Partial | Screenshot/recording/recents device acceptance |
@@ -60,13 +71,15 @@ A merge and green CI do **not** prove: production deployment, live Firebase/Rend
 | S08-L3 | Partial | 4/5/6-digit keypad, debounce, backspace and duress device acceptance |
 | S08-L4 | Partial | Lock-cover visual/touch/unlock/sign-out device acceptance |
 | S10-N1 | Partial | App Check monitoring, staged rules and controlled enforcement |
-| S10-N2 | Partial | Interprocedural residual review + release-logcat acceptance |
+| S10-N2 | Partial | Syntax-only analysis residual review + feature-complete physical release-logcat acceptance |
 | S10-N3 | Partial | Isolated live Worker/R2/B2 scheduled migration acceptance |
 | S11-H1 | Partial | Real predictive-back edge gesture and OEM matrix |
 | S11-M1 | Partial | Call minimize/timeout/notification-return lock acceptance |
 | S02-I2 | Partial | Render/Worker secret pairing read-back + Durable Object proof |
 | S02-I3 | Partial | Firebase revoked-token integration across all 12 routes |
 | SC-12 | Open | Required checks/reviews/tags/production environment governance |
+| S06-H4 | Fixed | The arming UI now checks the boolean result of `DuressManager.setDuressPin()`; a failed write is surfaced generically, while only success reports “Code saved.” and exits. The setter accepts the supported 4–6 digit range. A focused false/true UI test would improve coverage. |
+| S06-H5 | Partial | Wrong-PIN exponential backoff and exact/prefix collision checks exist, but `SecurityPrivacySettingsActivity.doSavePin()` still emits a distinguishable collision outcome. A person who knows the current primary PIN can repeatedly rotate through candidate values; successful changes do not consume the wrong-PIN counter. A non-oracular PIN-change contract and throttle are still required. |
 
 S07-M1 and S08-H5 concern the same legacy migration stream from separate classifications. Coordinate them together but preserve both finding IDs/statuses. The tracker is authoritative if any narrative document differs.
 
@@ -139,6 +152,14 @@ Exact PR head `af8f676c6bdbeb125eb46c01e4aa2b56af30c4f0` passed CI [42385827187]
 
 **Not complete:** historical Firestore rows may still contain raw UID fields. No live migration was run. The operator must execute a staging dry-run, review aggregate counts, explicitly approve `--apply`, then repeat dry-run and confirm zero candidates. The product owner must confirm invite-only onboarding and complete synthetic staging/Android onboarding acceptance. Keep S05-H2 Partial.
  
+
+### Subsequent invite lifecycle work — PRs #253 and #258 are not yet accepted
+
+PR #253 adds an explicit active-state/future-expiry requirement and classifies unknown/missing/malformed stored states as invalid; its admin list/count/filter and audited revoke path are extended accordingly. Its tests and originally observed checks passed on its head, but the branch is behind current main and GitHub reports a dirty merge state. Rebase against current main and rerun before merge.
+
+PR #258 normalizes escaped PEM newlines in the migration utility. Its regular CI passed, but Gitleaks flagged the synthetic private-key-shaped test literal and the Firestore integration workflow failed one invite-expiry scenario with `Expiry must be between 1 hour and 90 days from now`. The likely test fix is to use clearly non-PEM placeholder strings and a deterministic injected clock or a wider expiry margin. Do not run the migration in staging/production until the PR passes all gates and an authorized operator approves a dry-run.
+
+
 ## 3.4 S06-L4 — Account-lock worker retry/recovery
 
 **Status:** Partial; implementation and emulator/JVM regressions merged, live acceptance pending.  
@@ -232,17 +253,19 @@ App Check is defense in depth, not a trust boundary against compromised clients.
 
 ## 3.11 S10-N2 — Release-log data-flow residual
 
-**Status:** Partial; PR #248 method-local analyzer merged; interprocedural residual and logcat acceptance remain.  
+**Status:** Partial; bounded interprocedural extension merged, syntax-only and physical logcat residuals remain.  
 **Code:** `scripts/AndroidReleaseLogPrivacyPolicy.java`, release-log workflow and production Java logging sites.  
-**Evidence:** CI [42331424519](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42331424519), Security [42331424496](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42331424496), [session record](sessions/SESSION-S10-N2-METHOD-LOCAL-TAINT-2026-11-07.md).
+**Code PR:** [#251](https://github.com/kumarclaude4-hash/DuoFatass/pull/251), merged at `fc3dcd948a2410887c23ff8c29913c6c5d92604a`.
 
-Current analyzer tracks local aliases/reassignment, concatenation, StringBuilder/StringBuffer, common Map/Bundle/JSON/builder patterns and both tag/message sinks. Sanitizers/projections are narrow and owner/type scoped.
+The merged analyzer includes:
+- PR #244 compiler-AST guard and PR #246 sensitive identifier/tag/message coverage.
+- PR #248 method-local aliases, sticky reassignment, concatenation, builders and common Map/Bundle/JSON/container flow.
+- PR #251 bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through and same-class field writes/reads, including helper-mediated writes.
+- Explicit redaction boundaries only when source analysis proves the returned value is redacted; ambiguous same-name/same-arity overloads and unresolved/external dispatch remain conservative. Recursive summaries are bounded and fail closed if they do not converge.
 
-**Remaining codeable work:** assess bounded method summaries for app-owned helpers; resolve owner/signature rather than method-name-only assumptions; simple fields only where reliable; fixtures for tainted parameter pass-through, sanitized helper return, tainted helper return, overloads, recursion limits and simple fields. Explicitly document reflection/native/unknown callback/third-party flows. Keep allow-lists exact and source-backed. Do not claim whole-program analysis.
+**Exact PR #251 evidence:** head `d6041db2033b1950cdf006b900ef5cd8f2d95eba`; CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588) **10/10**; Security [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447) **3/3**. AST scanned **204 production Java files / 414 Log.w/e/wtf calls / zero violations**. Espresso 4 tests and API 35 predictive-back 1 test passed.
 
-**After feature-complete:** build release/minified APK, exercise identity/media/call/lock/migration/error flows, capture sanitized logcat and inspect for raw UID, peer identifiers, device fingerprint, tokens, media keys, user metadata and exception payloads.
-
-**Acceptance:** fixtures + workflow evidence + residual review + post-feature-complete logcat. Keep Partial.
+**Remaining limitations:** syntax-only analysis is not symbol-resolved whole-program data-flow proof. Inheritance/virtual dispatch, reflection, cross-class field aliasing, native methods, unresolved external calls and third-party callback internals remain outside its guarantee. Complete residual source review. After the owner declares feature-complete, build the release/minified APK, exercise identity/media/call/lock/migration/error flows and inspect sanitized release logcat for raw UID, peer identifiers, device fingerprint, tokens, media keys, user metadata and exception payloads. Keep Partial until this acceptance; CI alone is not production sign-off.
 
 ## 3.12 S10-N3 — R2-to-B2 cold-tier migration race
 
@@ -312,6 +335,12 @@ Twelve routes use SHA-256 namespaced UID+endpoint keys through Cloudflare Durabl
 
 ---
 
+## 3.18 S06-H4 / S06-H5 — Duress-code arming and Settings oracle
+
+**S06-H4 — Fixed on current source.** `DuressManager.setDuressPin()` now accepts the supported 4–6 digit range and returns false when the identity-scoped keys are unavailable or the encrypted-preference write fails. `ManageUnlockCodesActivity.onConfirmExplain()` checks the result: failure produces a generic retry message and does not finish the flow; only success reports “Code saved.” and exits. This closes the original false-success behavior. Current main CI is green; a focused false/true UI regression remains a desirable coverage improvement.
+
+**S06-H5 — Partial.** `PinManager` now persists wrong-PIN failures and applies exponential backoff after five failures, and primary-PIN changes reject exact duress matches and duress-code prefixes. But `SecurityPrivacySettingsActivity.doSavePin()` presents a distinct collision result. A person who knows the current primary PIN can repeatedly try candidate replacements; successful changes rotate the primary PIN without consuming the wrong-PIN counter. The Settings route therefore remains a candidate oracle. Implement a non-oracular contract and durable throttling across successful and failed PIN changes, with regressions proving repeated probing cannot distinguish the protected code. Keep Partial.
+
 ## 4. Coordinated physical-device matrix — strictly deferred
 
 Do not begin until owner declares app feature-complete. Then perform one planned pass:
@@ -359,11 +388,13 @@ Inspect [`migration/MIGRATION_PLAN.md`](migration/MIGRATION_PLAN.md) and related
 4. Confirm feature-complete milestone before device acceptance.
 
 ### Phase B — codeable agent work
-1. S10-N2: assess bounded method summaries for app-owned helpers; implement only if symbol/owner resolution is reliable and tests prove behavior. Otherwise document technical limit/residual.
-2. S10-N1: prepare staged rules/test diff, but do not deploy/enforce.
-3. S05-M3/S05-H2/S06-L4: add missing deterministic harness/tests only where source review proves a gap.
-4. S10-N3: improve deterministic tests/observability only for concrete gaps.
-5. Update tracker/session/handoff in the same PR as each change.
+1. Rebase/resolve PR #253 (invite lifecycle invalid-state guard) and PR #254 (range-aware Worker allowance) against current main; rerun all checks on the updated heads.
+2. Fix PR #258's synthetic PEM fixture Gitleaks hit and nondeterministic Firestore expiry test; rerun Gitleaks and Firestore integration.
+3. Design/implement S06-H5's non-oracular PIN-change contract and durable throttle with focused regressions.
+4. Add a focused S06-H4 false/true arming UI regression if source/test seams permit without device acceptance.
+5. S10-N1: prepare staged rules/test diff, but do not deploy/enforce.
+6. Add missing S05-M3/S05-H2/S06-L4 deterministic harnesses only where fresh source review proves a gap.
+7. Update tracker/session/handoff in the same PR as each change.
 
 ### Phase C — isolated staging/operator
 S02-I2 and S02-I3; S05-M3; S05-H2 after contract approval; S06-L4; S10-N1 controlled rollout; S10-N3 isolated Worker/R2/B2; credential rotation in runbook order.
