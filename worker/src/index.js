@@ -526,18 +526,13 @@ async function checkDailyRequestLimit(env, cors) {
 // (typically minutes to hours on a given Cloudflare edge node).
 //
 // This is advisory — it is not globally consistent across edge locations — but
-// it prevents burst abuse within a single PoP without consuming any KV writes.
-// KV-based rate limiting is ineffective on the free tier anyway (KV writes have
-// ~60s eventual consistency, making cross-PoP enforcement impossible without
-// Durable Objects, which require a paid plan).
+// it prevents burst abuse within a single PoP without consuming KV writes.
+// Cross-location mutation volume is separately bounded by the atomic
+// MediaMutationBudget Durable Object on the Workers Free plan.
 //
-// The bucket key is derived from a SHA-256 truncation of the Authorization
-// header value, NOT from the client-supplied X-Client-ID header.
-// Using X-Client-ID let any client:
-//   (a) bypass the limit by cycling through arbitrary header values, or
-//   (b) exhaust another client's quota by sending that client's known ID.
-// The credential hash is non-spoofable (only the authorized app knows the
-// WORKER_SECRET) and stable within a session.
+// The bucket key is derived from the verified capability holder's UID and
+// hashed before being kept in memory. Client-controlled IDs and per-operation
+// capability-token strings are never used as the rate-limit identity.
 const perUserCounts = new Map();
 
 async function holderBucketKey(holder) {
@@ -553,7 +548,7 @@ async function holderBucketKey(holder) {
     .join('');
 }
 
-async function checkPerUserRateLimit(request, env, cors, holder) {
+async function checkPerUserRateLimit(env, cors, holder) {
   const limit     = rateLimit(env);
   const bucketId  = await holderBucketKey(holder);
   const minuteKey = `${bucketId}:${Math.floor(Date.now() / 60_000)}`;
@@ -820,7 +815,7 @@ export default {
     if (dailyLimited) return dailyLimited;
 
     // ── Per-isolate rate limit ────────────────────────────────────────────────
-    const rateLimited = await checkPerUserRateLimit(request, env, cors, cap.holder);
+    const rateLimited = await checkPerUserRateLimit(env, cors, cap.holder);
     if (rateLimited) return rateLimited;
 
     // ── UPLOAD ────────────────────────────────────────────────────────────────
