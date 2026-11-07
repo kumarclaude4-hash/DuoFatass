@@ -1713,10 +1713,10 @@ public class CallManager {
         // all historical transport bytes as a new delta (overcounting relay use).
         final long stoppingGeneration = ++statsGeneration;
         if (peerConnection == null) {
-            finishStatsPollingStop(stoppingGeneration);
+            mainHandler.post(() -> finishStatsPollingStop(stoppingGeneration));
             return;
         }
-        collectStats(() -> finishStatsPollingStop(stoppingGeneration));
+        collectStats(() -> mainHandler.post(() -> finishStatsPollingStop(stoppingGeneration)));
     }
 
     private void finishStatsPollingStop(long stoppingGeneration) {
