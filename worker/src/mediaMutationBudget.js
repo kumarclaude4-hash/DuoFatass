@@ -12,7 +12,9 @@
 
 const STORAGE_KEY = "daily-media-mutations";
 const DEFAULT_DAILY_UPLOAD_LIMIT = 120;
-const DEFAULT_DAILY_DELETE_LIMIT = 120;
+const DEFAULT_DAILY_DELETE_LIMIT = 80;
+const DEFAULT_PER_HOLDER_DAILY_LIMIT = 20;
+const MAX_HOLDER_ENTRIES_PER_DAY = 500;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -55,42 +57,68 @@ export class MediaMutationBudget {
     const defaultLimit = operation === "upload"
       ? DEFAULT_DAILY_UPLOAD_LIMIT : DEFAULT_DAILY_DELETE_LIMIT;
     const limit = body.limit === undefined ? defaultLimit : body.limit;
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000) {
-      return json({ error: "Invalid daily media operation limit" }, 400);
+    const holderKey = body.holderKey;
+    const holderLimit = body.holderLimit === undefined
+      ? DEFAULT_PER_HOLDER_DAILY_LIMIT : body.holderLimit;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000
+        || typeof holderKey !== "string" || !/^[a-f0-9]{16}$/.test(holderKey)
+        || !Number.isSafeInteger(holderLimit) || holderLimit < 1 || holderLimit > limit) {
+      return json({ error: "Invalid daily media operation limit or holder key" }, 400);
     }
 
     const { dayKey, resetAt } = utcDayAndReset(this.now());
     // Durable Object input/output gating serializes requests for this one
-    // named instance. Separate buckets mean upload volume cannot consume the
-    // allowance reserved for privacy and expiry cleanup.
+    // named instance. Global and per-holder counters are updated together,
+    // so one account cannot consume the entire app's shared mutation budget.
     const existing = await this.state.storage.get(STORAGE_KEY);
     const legacyCount = existing?.dayKey === dayKey && Number.isSafeInteger(existing.count)
       ? Math.max(0, existing.count) : 0;
-    const current = existing?.dayKey === dayKey ? existing : { dayKey, uploads: 0, deletes: 0 };
+    const current = existing?.dayKey === dayKey
+      ? existing : { dayKey, uploads: 0, deletes: 0, holders: {} };
     const countKey = operation === "upload" ? "uploads" : "deletes";
     const count = Number.isSafeInteger(current[countKey]) && current[countKey] >= 0
       ? current[countKey] : legacyCount;
+    const holders = current.holders && typeof current.holders === "object"
+      ? current.holders : {};
+    const holderCounterKey = `${operation}:${holderKey}`;
+    const holderCount = Number.isSafeInteger(holders[holderCounterKey]) && holders[holderCounterKey] >= 0
+      ? holders[holderCounterKey] : 0;
 
     if (count >= limit) {
-      return json({ allowed: false, operation, count, limit, resetAt }, 429);
+      return json({ allowed: false, operation, scope: "global", count, limit, resetAt }, 429);
+    }
+    if (holderCount >= holderLimit) {
+      return json({
+        allowed: false, operation, scope: "holder",
+        count: holderCount, limit: holderLimit, resetAt,
+      }, 429);
+    }
+    if (!Object.prototype.hasOwnProperty.call(holders, holderCounterKey)
+        && Object.keys(holders).length >= MAX_HOLDER_ENTRIES_PER_DAY) {
+      return json({ error: "Daily media holder budget capacity reached" }, 503);
     }
 
     const nextCount = count + 1;
+    const nextHolders = { ...holders, [holderCounterKey]: holderCount + 1 };
     const next = {
       dayKey,
       uploads: countKey === "uploads" ? nextCount : (current.uploads || legacyCount),
       deletes: countKey === "deletes" ? nextCount : (current.deletes || legacyCount),
+      holders: nextHolders,
     };
     await this.state.storage.put(STORAGE_KEY, next);
     return json({
       allowed: true,
       operation,
+      scope: "global",
       count: nextCount,
       limit,
+      holderCount: holderCount + 1,
+      holderLimit,
       remaining: limit - nextCount,
       resetAt,
     });
   }
 }
 
-export { DEFAULT_DAILY_UPLOAD_LIMIT, DEFAULT_DAILY_DELETE_LIMIT };
+export { DEFAULT_DAILY_UPLOAD_LIMIT, DEFAULT_DAILY_DELETE_LIMIT, DEFAULT_PER_HOLDER_DAILY_LIMIT };
