@@ -283,13 +283,20 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void overloadHelper(Profile profile) { String x = overloaded(profile.getUserId()); Log.w(\"TAG\", x); }\n"
                   + "  void safeRecursionHelper() { String x = safeRecursive(true); Log.w(\"TAG\", x); }\n"
                   + "  void fieldHelper(Profile profile) { saveField(profile); String x = readField(); Log.w(\"TAG\", x); }\n"
-                  + "}\n", StandardCharsets.UTF_8);
+                  + "  void operationalScalars() { boolean available = SecurePrefs.isAvailable(); SecurityTier tier = SecurePrefs.getTier(); boolean due = PendingLockStore.isRotationDue(null); int keyId = SignalKeyManager.getCurrentKyberPreKeyId(null); Log.w(\"TAG\", \"ops=\" + available + \"/\" + tier + \"/\" + due + \"/\" + keyId); }\n"
+                  + "  void unrelatedSameName(Profile profile) { Log.w(\"TAG\", UnsafeOther.isAvailable(profile.getUserId())); }\n"
+                  + "}\n"
+                  + "class SecurityTier { boolean isDurable() { return true; } }\n"
+                  + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
+                  + "class PendingLockStore { static boolean isRotationDue(Object context) { return true; } }\n"
+                  + "class SignalKeyManager { static int getCurrentKyberPreKeyId(Object context) { return 1; } }\n"
+                  + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 7
-                    || interproceduralResult.violations.size() != 5) {
+            if (interproceduralResult.inspectedCalls != 9
+                    || interproceduralResult.violations.size() != 6) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "5 unsafe helper flows and 2 safe helper flows, got "
+                        + "6 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -526,6 +533,23 @@ public final class AndroidReleaseLogPrivacyPolicy {
             ClassSummary info = classes.get(owner);
             return info != null && !ambiguousClasses.contains(owner)
                     && info.sensitiveFields.contains(name);
+        }
+
+        /**
+         * Exact source-backed scalar projections that return operational state
+         * rather than the underlying stored secret/material. The class and method
+         * signature must resolve uniquely; similarly named methods on any other
+         * owner receive no exemption.
+         */
+        boolean isSafeOperationalHelper(String callerOwner, MethodInvocationTree invocation,
+                                        Map<String, String> localTypes) {
+            MethodDefinition target = resolveDefinition(callerOwner, invocation, localTypes);
+            if (target == null) return false;
+            String signature = target.key;
+            return "SecurePrefs#isAvailable/0".equals(signature)
+                    || "SecurePrefs#getTier/0".equals(signature)
+                    || "PendingLockStore#isRotationDue/1".equals(signature)
+                    || "SignalKeyManager#getCurrentKyberPreKeyId/1".equals(signature);
         }
 
         private static String methodKey(String owner, MethodTree method) {
@@ -825,7 +849,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         String name = methodName(node);
                         String receiver = receiverName(node);
                         if (isRedactionCall(definition.owner, node)
-                                || isSafeOperationalProjection(definition.owner, node, localTypes)) {
+                                || isSafeOperationalProjection(definition.owner, node, localTypes)
+                                || index.isSafeOperationalHelper(definition.owner, node, localTypes)) {
                             return null;
                         }
                         if (SENSITIVE_ACCESSOR.matcher(name).matches()
@@ -1144,7 +1169,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             || isSafeOperationalProjection(node)) {
                         return null; // Exact redaction/projection boundary; do not inspect its receiver/arguments.
                     }
-                    if (isSafeThrowableClassNameCall(node)) {
+                    if (isSafeThrowableClassNameCall(node)
+                            || returnSummaries.isSafeOperationalHelper(ownerClass, node, localTypes)) {
                         return null;
                     }
                     // Source-backed sensitive accessors are an unconditional taint
@@ -1233,7 +1259,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             || isSafeOperationalProjection(node)) {
                         return null;
                     }
-                    if (isSafeThrowableClassNameCall(node)) return null;
+                    if (isSafeThrowableClassNameCall(node)
+                            || returnSummaries.isSafeOperationalHelper(ownerClass, node, localTypes)) return null;
                     MethodReturnSummaryIndex.MethodSummary helperSummary =
                             returnSummaries.resolve(ownerClass, node, localTypes);
                     if (helperSummary != null) {
