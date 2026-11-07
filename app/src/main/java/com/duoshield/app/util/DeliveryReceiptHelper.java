@@ -1,6 +1,9 @@
 package com.duoshield.app.util;
 
+import android.content.Context;
+
 import com.duoshield.app.models.Message;
+import com.duoshield.app.util.FirebaseCostGuard;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.SetOptions;
@@ -31,8 +34,15 @@ public class DeliveryReceiptHelper {
      * Used when the app is in the <em>background</em> and only the FCM
      * notification woke it; the foreground path uses {@link #markRead} directly.
      */
-    public static void markDelivered(String convId, List<Message> messages, String myUid) {
-        if (messages == null || messages.isEmpty()) return;
+    public static void markDelivered(Context context, String convId, List<Message> messages, String myUid) {
+        if (context == null || messages == null || messages.isEmpty()) return;
+        int expectedWrites = 0;
+        for (Message message : messages) {
+            if (!myUid.equals(message.getSender())
+                    && !"delivered".equals(message.getStatus())
+                    && !"read".equals(message.getStatus())) expectedWrites++;
+        }
+        if (expectedWrites == 0 || !FirebaseCostGuard.getInstance(context).reserveWrite(expectedWrites)) return;
         FirebaseFirestore db = FirebaseFirestore.getInstance();
         WriteBatch batch = db.batch();
         int count = 0;
@@ -60,8 +70,11 @@ public class DeliveryReceiptHelper {
      * so we know they received our previous messages. Writes to Firestore so the status
      * persists across app restarts.
      */
-    public static void markDeliveredByIds(String convId, List<String> messageIds) {
-        if (convId == null || messageIds == null || messageIds.isEmpty()) return;
+    public static void markDeliveredByIds(Context context, String convId, List<String> messageIds) {
+        if (context == null || convId == null || messageIds == null || messageIds.isEmpty()) return;
+        int expectedWrites = 0;
+        for (String id : messageIds) if (id != null) expectedWrites++;
+        if (expectedWrites == 0 || !FirebaseCostGuard.getInstance(context).reserveWrite(expectedWrites)) return;
         FirebaseFirestore db = FirebaseFirestore.getInstance();
         WriteBatch batch = db.batch();
         int count = 0;
@@ -87,8 +100,13 @@ public class DeliveryReceiptHelper {
      * user can see the messages. The sender will see the tick turn teal (✓✓ blue).
      * Messages already {@code read} are skipped to avoid unnecessary writes.
      */
-    public static void markRead(String convId, List<Message> messages, String myUid) {
-        if (messages == null || messages.isEmpty()) return;
+    public static void markRead(Context context, String convId, List<Message> messages, String myUid) {
+        if (context == null || messages == null || messages.isEmpty()) return;
+        int expectedWrites = 1; // includes last_read_<uid> conversation signal
+        for (Message message : messages) {
+            if (!myUid.equals(message.getSender()) && !"read".equals(message.getStatus())) expectedWrites++;
+        }
+        if (!FirebaseCostGuard.getInstance(context).reserveWrite(expectedWrites)) return;
         FirebaseFirestore db = FirebaseFirestore.getInstance();
         WriteBatch batch = db.batch();
         int count = 0;
@@ -120,9 +138,12 @@ public class DeliveryReceiptHelper {
         db.collection("chats").document(convId)
           .update(readSignal)
           .addOnFailureListener(e -> {
-              // Conv doc may not exist yet; use set with merge as fallback
-              db.collection("chats").document(convId)
-                .set(readSignal, com.google.firebase.firestore.SetOptions.merge());
+              // Conv doc may not exist yet; use set with merge as fallback.
+              // Reserve separately because this second write only occurs on failure.
+              if (FirebaseCostGuard.getInstance(context).reserveWrite(1)) {
+                  db.collection("chats").document(convId)
+                    .set(readSignal, com.google.firebase.firestore.SetOptions.merge());
+              }
           });
     }
 }
