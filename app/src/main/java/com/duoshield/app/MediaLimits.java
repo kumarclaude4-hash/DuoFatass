@@ -10,7 +10,7 @@ import java.io.File;
 /**
  * Single source of truth for outbound media size limits.
  *
- * <p>Before this class existed the 500 MB cap was enforced on the single
+ * <p>Before this class existed the upload-size cap was enforced on the single
  * photo/video path and the album path only. Documents and voice notes had no
  * cap at all, so an arbitrarily large file could be read fully into memory,
  * encrypted, and pushed at the upload endpoint — which then failed with an
