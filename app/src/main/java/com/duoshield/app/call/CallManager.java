@@ -441,7 +441,7 @@ public class CallManager {
         DevicePerformanceTier.get(this.context); // Resolve once for non-sensitive diagnostics.
         this.qualityCeiling = LADDER_HIGH_START;
         this.qualityStep = LADDER_HIGH_START;
-        this.repo = new CallSignalRepository();
+        this.repo = new CallSignalRepository(this.context);
     }
 
     public void setListener(CallListener listener) {
