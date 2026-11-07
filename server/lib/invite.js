@@ -41,10 +41,22 @@ function timestampMs(value) {
 }
 
 function inviteStatus(data, nowMs = Date.now()) {
-  if (!data || data.status === "revoked") return "revoked";
+  // Eligibility is fail-closed: only an explicitly active record with a
+  // finite, future expiry may authorize onboarding. Unknown/missing states
+  // are surfaced as invalid rather than silently inheriting active status.
+  if (!data || typeof data !== "object") return "invalid";
+  if (data.status === "revoked") return "revoked";
   if (data.status === "used") return "used";
-  if (timestampMs(data.expiresAt) <= nowMs) return "expired";
-  return "active";
+  if (data.status !== "active") return "invalid";
+
+  let expiresAtMs;
+  try {
+    expiresAtMs = timestampMs(data.expiresAt);
+  } catch {
+    return "invalid";
+  }
+  if (!Number.isFinite(nowMs) || !Number.isFinite(expiresAtMs)) return "invalid";
+  return expiresAtMs <= nowMs ? "expired" : "active";
 }
 
 function validateCreateInput(input, nowMs = Date.now()) {
