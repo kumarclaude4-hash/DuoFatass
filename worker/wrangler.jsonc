@@ -53,8 +53,8 @@
     // Objects move from R2 → B2 after this many days.
     "HOT_TIER_DAYS": "30",
 
-    // Per-isolate rate limit: max requests per minute per X-Client-ID header.
-    // Advisory only on the free tier (not globally consistent across edge PoPs).
+    // Per-isolate rate limit: max requests per minute per verified capability holder.
+    // Advisory across edge locations; the daily mutation budgets are global.
     "RATE_LIMIT_PER_MIN": "120",
 
     // S03-H3: per-holder storage quota in bytes (1 GB default). Keeps one
