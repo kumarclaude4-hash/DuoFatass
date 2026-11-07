@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Security
+- **Invite redemption account linkage is now pseudonymized** (S05-H2, PR #255): new invite records persist a short keyed UID tag rather than the raw seed-derived UID; the admin list masks legacy values and the UI displays only the tag. A dry-run-first migration script is available for authorized staging cleanup.
 - **Call screens were outside the app lock** (`BUG_TRACKER` `S11-M1`): the lock timer ran for the whole call and returning to a minimised call was never lock-checked. The call screens now count as foreground activities (without overwriting a pending background timestamp), the call screen checks the lock on *return* (never on first start) and raises the lock over the call, and a successful unlock returns to the call
 - **App-lock bypass on Android 13+** — `LockScreenActivity` blocked the back button by overriding `onBackPressed()`, which predictive back (`enableOnBackInvokedCallback="true"`) bypasses. Back could finish the lock screen without unlocking, and because `BaseActivity.lockScreenActive` stayed `true` the lock was never re-shown. The same bypass affected the device-PIN gate, PIN setup, forced PIN/duress rotation screens, permissions onboarding and the offline screen. All seven now use `BackPressGuard` (an `OnBackPressedCallback`); a regression test fails if an `onBackPressed()` override is reintroduced. Tracked as `S11-H1` in `BUG_TRACKER.md`
 

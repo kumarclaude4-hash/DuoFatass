@@ -2,13 +2,15 @@
 
 Repository: kumarclaude4-hash/DuoFatass
 Base branch: main
-Latest merged mainline: PR #251 at `fc3dcd948a2410887c23ff8c29913c6c5d92604a`.
-Current security work: S10-N2 bounded interprocedural release-log taint extension — code merged in PR #251; finding remains **Partial**.
-PR #251: https://github.com/kumarclaude4-hash/DuoFatass/pull/251
-Tested PR head: `d6041db2033b1950cdf006b900ef5cd8f2d95eba`.
-Post-merge evidence: CI [42363163588](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163588) 10/10 jobs; Security Scan [42363163447](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42363163447) 3/3 jobs. AST: 204 production Java files, 414 warning/error/fatal log calls, zero violations; Espresso 4 tests and API 35 predictive-back 1 test executed and passed.
-The interprocedural pass adds bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through and same-class field write/read flows. It preserves conservative behavior for ambiguous overloads and unresolved dispatch; recursive summaries are bounded and fail closed. See the updated S10-N2 tracker row and session addendum for exact scope and limitations.
+Latest merged mainline: PR #255 at `89ac44cf85df1c90530196fdbb01bf93ff2e8994`.
+Latest merged security work: PR #251 (S10-N2 interprocedural release-log taint guard) and PR #255 (S05-H2 invite redemption UID pseudonymization).
+PR #255: https://github.com/kumarclaude4-hash/DuoFatass/pull/255
+Tested PR #255 head: `af8f676c6bdbeb125eb46c01e4aa2b56af30c4f0`; merge: `89ac44cf85df1c90530196fdbb01bf93ff2e8994`.
+PR #255 evidence: CI [42385827187](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827187) 10/10 jobs; Security Scan [42385827198](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827198) 3/3 jobs. Firestore invite/mintToken integration, Server/Worker tests, Android unit/lint/debug/R8 passed; Espresso 4 tests and API 35 predictive-back 1 test passed. AST: 204 production Java files, 414 warning/error/fatal log calls, zero violations.
+PR #255 ensures new invite redemptions persist only a 12-hex pseudonymous UID tag; the admin API masks legacy raw UID fields. A dry-run-first Firestore cleanup script is available, but no staging/production migration was executed. S05-H2 remains Partial pending product-contract confirmation, approved legacy-data migration and staging/Android onboarding acceptance.
 S10-N2 remains Partial: syntax-only analysis is not whole-program proof, and physical-device release-logcat acceptance is deferred until feature-complete. `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
+
+Current open code work: PR #256 — weighted rate accounting for chunked video range GETs. See its PR checks before merging.
 
 This is the current execution handoff for the next coding agent. Start from the latest main on a fresh branch. Continue source-level and authorized staging work only; physical-device acceptance must wait until the owner declares the app feature-complete.
 
@@ -96,9 +98,13 @@ All protected verifyIdToken call sites pass checkRevoked=true and the static rou
 
 Review of migration callers, rollback paths and recovery routes is source-complete for the current code. Existing regressions cover unverified schema types, conflicting destination values, retry and preservation of original data. PR #243 added deterministic one-shot fault injection for failed encrypted destination commit, post-write read-back exception, and failed plaintext cleanup commit; retry behavior is covered. The merged PR #243 head `a98d79e46919fa4c472b36a9ec33075d09479a2a` passed CI run `42185303041` (9/9 jobs, including Android unit tests, Espresso, predictive-back and minified R8) plus security run `42185303045`. Do not delete retained legacy data before exact encrypted destination read-back is proven. S08-H5/S07-M1 remain Partial until the real Android Keystore/EncryptedSharedPreferences upgrade/recovery flow and a verified support/recovery path for un-migratable installs are accepted on physical devices after app feature completion.
 
-### I. S05-H2 — invite-only backend contract
+### I. S05-H2 — invite-only backend contract and redemption privacy (core code merged)
 
-Review invite create/list/revoke/validate and mint-token/nonce replay paths, including transaction boundaries, rate limits and fail-closed behavior. Maintain backend HTTP and Firestore emulator tests. Prepare the staging test matrix and onboarding contract, but do not perform Android device onboarding until the app is feature-complete.
+PRs #226/#227 provide the opaque invite lifecycle, production-shared HTTP handlers and real Firestore transaction coverage. PR #255 (merged at `89ac44cf85df1c90530196fdbb01bf93ff2e8994`) corrected the redemption-linkage privacy gap: new invites persist only `usedByUserIdTag`; list responses mask legacy `usedByUserId` values; the admin UI renders only the pseudonymous tag. Exact PR #255 head passed CI [42385827187](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827187) 10/10 and Security [42385827198](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827198) 3/3, including Firestore invite/mintToken integrations, Server/Worker tests, Android unit/lint/build/R8, Espresso (4) and API 35 predictive-back (1).
+
+A dry-run-first cleanup script at `server/scripts/pseudonymizeInviteRedemptionUids.js` is available for historical invite documents. It has not been run against any live project. An authorized operator must run `--dry-run` in the intended staging project, review aggregate counts, obtain approval before `--apply`, then repeat dry-run and require zero candidates.
+
+**Remaining:** product owner confirmation that invite-only onboarding is intended; authorized staging create/list/search/paginate/revoke/expiry/validation and one-time redemption; synthetic Android new-user onboarding and existing-account restore after feature completion. Keep S05-H2 Partial until those gates pass.
 
 ## 4. Physical-device acceptance — explicitly deferred
 

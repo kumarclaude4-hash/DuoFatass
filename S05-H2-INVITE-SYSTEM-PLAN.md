@@ -29,5 +29,15 @@ Stop creating legacy waitlist documents immediately. Keep a narrowly scoped `/mi
 ## Verification
 Add pure invite-domain tests and source/contract tests proving hash-only storage, generic invalid responses, auth-before-body admin mutations, transactional single-use redemption, expiry/revocation enforcement, audit coverage, retired public waitlist routes, Android non-persistence, and legacy-approved-only migration. Run server tests and available Gradle checks, then manually exercise creation, filtering, pagination, revocation, expiration, concurrent redemption, new-account enrollment, and existing-account restore.
 
+## Security closeout update — 2026-11-07
+
+PR #255 is merged at 89ac44cf85df1c90530196fdbb01bf93ff2e8994. On exact tested head af8f676c6bdbeb125eb46c01e4aa2b56af30c4f0, CI [42385827187](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827187) passed **10/10 jobs** and Security Scan [42385827198](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42385827198) passed **3/3 jobs**. The AST privacy gate scanned 204 production Java files and 414 Log.w/e/wtf calls with zero violations. Server/Worker tests and Firestore invite/mintToken transaction integration passed; Android unit tests, lint, debug APK, minified R8 (453,152-line mapping artifact uploaded), Espresso (**4 tests**) and API 35 predictive-back (**1 test**) passed.
+
+The merge corrected a source/data discrepancy: new redemptions persist only usedByUserIdTag, not the raw seed-derived UID. The admin list API never returns a raw legacy usedByUserId value; it returns a tag derived with the configured UID pseudonymizer. The admin UI labels and renders this field as a pseudonymous tag.
+
+Historical documents may still have the legacy raw field. The migration script is server/scripts/pseudonymizeInviteRedemptionUids.js. Run node scripts/pseudonymizeInviteRedemptionUids.js --dry-run from server/ in the intended staging project first. Review only the aggregate candidate/scanned counts. Use --apply only after explicit operator approval; it tags and deletes the legacy raw UID field in batches, prints counts only, and preserves any already-valid tag. Re-run dry-run and require zero candidates. No live Firestore migration has been performed by this PR.
+
+S05-H2 remains **Partial** until the owner confirms the invite-only product contract and authorized staging/Android onboarding acceptance is recorded. Never use real user seeds, identities or invite tokens in test evidence.
+
 ## Completion criteria
 S05-H2 is closed when anonymous queue flooding is impossible; admins can issue, identify, search, page, expire, revoke, and audit invitations; public responses expose no lifecycle oracle; tokens are hash-only at rest and single-use under concurrency; Android does not persist bearer tokens; and all automated/manual checks pass.
