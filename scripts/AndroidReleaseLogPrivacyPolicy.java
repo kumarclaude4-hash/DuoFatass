@@ -53,7 +53,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             "(?i).*(uid|account|caller|sender|recipient|peer|address|conversation|convId|"
           + "chatId|callId|messageId|msgId|mediaPath|storagePath|b2Path|filePath|uriStr|"
           + "uri|url|token|seed|pin|displayName|phone|email|contact|groupId|groupName|"
-          + "zipFile|fileName|file|body|message|text|avatar|userId|secret|password|reason|"
+          + "zipFile|fileName|file|objectKey|objectName|opName|body|message|text|avatar|userId|secret|password|reason|"
           + "error|payload|content|input|output|query|request|response|session|cookie|"
           + "authorization|header|subject|title|username|profile|deviceId|passphrase|"
           + "throwable|exception|cause|failure|stacktrace).*");
@@ -191,6 +191,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void getter(Profile profile) { Log.e(\"TAG\", \"uid=\" + profile.getUserId()); }\n"
                   + "  void field(Profile profile) { Log.e(\"TAG\", \"uid=\" + profile.userId); }\n"
                   + "  void constant() { Log.e(\"TAG\", \"uid=\" + Config.ACCOUNT_ID); }\n"
+                  + "  void messageAlias(Exception e) { String detail = e.getMessage(); Log.e(\"TAG\", detail); }\n"
+                  + "  void helperParameter(String opName) { Log.w(\"TAG\", opName); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
@@ -198,7 +200,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(unsafeResult.violations, "stack-trace");
             requireViolation(unsafeResult.violations, "sensitive accessor");
             requireViolation(unsafeResult.violations, "raw sensitive member");
-            if (unsafeResult.violations.size() < 7) {
+            requireViolation(unsafeResult.violations, "raw sensitive identifier 'detail'");
+            requireViolation(unsafeResult.violations, "raw sensitive identifier 'opName'");
+            if (unsafeResult.violations.size() < 9) {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
             }
