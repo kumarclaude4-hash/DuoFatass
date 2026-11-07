@@ -101,7 +101,8 @@ function makeHotBucket() {
 function makeR2BudgetNamespace(initial = {}) {
   const state = { monthKey: initial.monthKey || '', classA: initial.classA || 0 };
   const stub = {
-    async fetch(request) {
+    async fetch(input, init) {
+      const request = input instanceof Request ? input : new Request(input, init);
       const body = await request.json();
       if (body.action !== 'reserveR2ClassA'
           || !/^\d{4}-(0[1-9]|1[0-2])$/.test(body.monthKey || '')
@@ -130,7 +131,8 @@ function makeDailyMediaQuotaNamespace(initialCounts = {}) {
   const holderCounts = { ...(initialCounts.holders || {}) };
   let dayKey = new Date().toISOString().slice(0, 10);
   const stub = {
-    async fetch(request) {
+    async fetch(input, init) {
+      const request = input instanceof Request ? input : new Request(input, init);
       const body = await request.json();
       if (body.action !== 'reserve'
           || !['upload', 'delete'].includes(body.operation)
