@@ -79,7 +79,7 @@ No servers read your messages. No metadata sold. No backdoors.
 - **WebRTC E2EE voice + video** — DTLS-SRTP, TURN via Cloudflare
 - **Reliable call flow** — standard voice/video calls no longer depend on the removed recording flow that caused false “partner refused recording” failures
 - **Adaptive bitrate** — Bandwidth Estimation on 64-bit devices
-- **100 GB/user/month** TURN relay; usage shown in Settings
+- **80 GB/device/month** local TURN egress budget; usage is estimated locally and shown in Settings
 
 ### 🔑 Account & Recovery
 - **24-word seed phrase** — entire identity derived deterministically
