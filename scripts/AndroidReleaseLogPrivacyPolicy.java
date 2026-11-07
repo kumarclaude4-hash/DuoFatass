@@ -1180,7 +1180,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 @Override
                 public Void visitIdentifier(IdentifierTree node, Void unused) {
                     String name = node.getName().toString();
-                    if (taintedLocals.contains(name)
+                    if (taintedLocals.contains(name) || returnSummaries.isSensitiveField(ownerClass, name)
                             || (SENSITIVE_IDENTIFIER.matcher(name).matches()
                             && !SAFE_OPERATIONAL_COUNTERS.contains(name))
                             || throwableLocals.contains(name)) {
@@ -1258,7 +1258,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 @Override
                 public Void visitIdentifier(IdentifierTree node, Void unused) {
                     String name = node.getName().toString();
-                    if (taintedLocals.contains(name) || taintedContainers.contains(name)) {
+                    if (taintedLocals.contains(name) || taintedContainers.contains(name)
+                            || returnSummaries.isSensitiveField(ownerClass, name)) {
                         found.add(name);
                     }
                     return null;
