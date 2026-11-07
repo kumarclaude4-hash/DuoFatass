@@ -4,7 +4,33 @@
 > Updated 2026-11-04 after the remediation merge batch and verification of the resulting
 > `main` workflows. This document is the release/sign-off gate, not a progress claim.
 
-## Current evidence snapshot
+## Current evidence snapshot — 2026-11-07
+
+The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its current row-level roll-up is
+**116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27;
+Low 31; Informational 23). The two previously omitted Session 06 high-severity rows S06-H4
+(Fixed) and S06-H5 (Partial) have been restored. S06-H5 remains Partial because the
+Settings-based PIN-change candidate oracle is still observable.
+
+Current `main`: `98f76cdf374eeaf5c8144befad068ef05805a20b`.
+- Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365): passed.
+- Main Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135): passed.
+
+Recent merged work:
+- PR #251 — bounded interprocedural release-log taint summaries; S10-N2 remains Partial for syntax-only analysis limits and deferred physical release-logcat acceptance.
+- PR #255 — invite redemption UID pseudonymization and dry-run-first cleanup utility; no Firestore migration was run.
+- PR #256 — range-aware per-holder request accounting for valid single-range media GETs; global daily request/mutation guards remain unchanged.
+- PR #257 — documentation reconciliation for the S05-H2 privacy correction.
+
+Open code PRs at the current snapshot:
+- #253: invite lifecycle invalid-state guard; its original CI 10/10, Security 3/3 and Firestore tests passed, but GitHub reports dirty/non-mergeable against an older base. Rebase and rerun.
+- #254: range-read Worker allowance; its original CI 10/10 and Security 3/3 passed, but GitHub reports dirty/non-mergeable against an older base. Rebase and rerun.
+- #258: migration utility credential-newline normalization; regular CI passed, but Gitleaks flagged a synthetic PEM-shaped test fixture and the Firestore integration run failed one invite-expiry test at the exact one-hour boundary. Fix both and rerun.
+
+This evidence snapshot is not production sign-off. No live production deployment, credential rotation, provider-console read-back, legacy Firestore migration or physical-device acceptance is claimed here.
+
+
+## Historical evidence snapshot — 2026-11-04
 
 The canonical finding register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up
 was independently recounted on 2026-11-04: **116 findings: 74 Fixed, 29 Partial, 1 Open,
@@ -116,3 +142,17 @@ The new S10-N3 tests passed: changed ETag, transient post-PUT R2 HEAD failure, B
 The Cloudflare Workers integration reported a successful deployment/build for `duoshield-storage` on this PR head. This is not evidence of the R2/B2 scheduled migration or its failure/retry behavior in the live environment; an authorized operator must confirm the deployed Worker version and runtime configuration. Vercel separately reported the free-tier daily deployment quota (`api-deployments-free-per-day`) for preview attempts; that provider status is not one of the 14 GitHub check runs and is not an application-test failure.
 
 The tracker remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. No owner risk decision is inferred. Physical-device/manual app-flow testing remains deferred until the owner declares the app feature-complete. Production security sign-off remains **PENDING**; CI and PR merge are not release approval.
+
+## Current-main reconciliation addendum — 2026-11-07
+
+- Current main HEAD: `98f76cdf374eeaf5c8144befad068ef05805a20b`.
+- Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) both passed on that exact SHA.
+- PR #251 interprocedural log-taint extension and PR #255 invite UID pseudonymization are merged and reflected in the tracker. PR #256 range-aware Worker rate accounting is also merged; the 80K/day global request guard and global daily mutation budgets remain intact. PR #257 refreshed S05-H2 privacy documentation.
+- Tracker rows are reconciled to 116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted. S06-H4 and S06-H5 were restored from the Session 06 audit: H4 is Fixed on current source; H5 remains Partial because Settings-based candidate probing is still distinguishable.
+- PRs #253, #254 and #258 are not merged. #253/#254 require rebase/merge-conflict resolution against current main and fresh checks. #258 requires correction of a Gitleaks fixture false positive and a flaky Firestore invite-expiry integration fixture.
+- S05-H2 still needs invite-only product-contract confirmation, authorized staging lifecycle/onboarding, and review/execution of the legacy UID migration dry-run/approved apply/follow-up dry-run.
+- S10-N2 remains Partial for syntax-only data-flow limitations and feature-complete physical release-logcat acceptance. S10-N3 requires isolated live Worker/R2/B2 cron acceptance; S02-I2 requires Render/Worker secret-pair read-back; S02-I3 requires Firebase revoked-token staging verification; S05-M3/S06-L4 require their staging/configuration matrices; S10-N1 requires controlled App Check rollout; SC-12 remains Open pending required reviews/checks/tags/release-environment read-back.
+- No production deployment, credential rotation, Firestore rules/TTL change, provider-console mutation, historical UID migration or physical-device testing was performed as part of this documentation update.
+
+All sign-off criteria remain unchecked until the described evidence exists or the owner formally approves a residual-risk disposition. Keep **PENDING**.
+
