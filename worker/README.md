@@ -135,21 +135,27 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 | Resource              | Free limit        | Guard                              |
 |-----------------------|-------------------|------------------------------------|
 | R2 storage            | 10 GB             | Hard cap at 9.5 GB (95%)          |
-| R2 Class A ops (PUT)  | 1 M/month         | No explicit guard — monitor usage  |
-| R2 Class B ops (GET)  | 10 M/month        | No explicit guard — monitor usage  |
+| R2 Class A ops         | 1 M/month         | Atomic monthly cap at 850K, including uploads and list pages |
+| R2 Class B ops         | 10 M/month        | 80K Worker requests/day; up to 2 Class B calls/request (~4.8M/30 days) |
 | B2 storage            | 10 GB             | Hard migration stop at 9 GB; preflight and postflight reconciliation |
 | B2 → CF egress        | Free (Bandwidth Alliance) | —                        |
-| Worker requests       | 100 K/day         | Hard gate at 90 K/day (90%)       |
+| Worker requests       | 100 K/day         | Conservative daily gate at 80 K/day (80%) |
 | KV reads              | 100 K/day         | ~2 reads/request; comfortable     |
-| KV writes             | 1 K/day           | Minimised via sampling + in-memory rate limiting |
+| KV writes              | 1 K/day           | ~160 sampled writes/day + bounded storage accounting |
 
-**Estimated monthly cost for ~50 users: $0.**
+**Target profile: 10 active users with bounded media mutations and usage; not unlimited traffic.**
 
-> **Note on KV writes:** The free tier allows 1,000 KV writes/day. The Worker
-> minimises this by using sampled request counting (~0.1 writes/request) and
-> in-memory rate limiting (0 KV writes). Storage counter writes happen only on
-> PUT/DELETE (~1 write each). For Durable Objects-grade global consistency on
-> rate limiting, upgrade to Workers Paid ($5/month).
+> **Note on free-tier request accounting:** Workers KV allows 1,000 writes/day.
+> Request counting samples 1 in 500 requests (~160 writes/day at the 80K request
+> ceiling). PUT/DELETE attempts are globally capped at 160/day by the SQLite-backed
+> `MediaMutationBudget` Durable Object. This bounds per-object storage-counter
+> writes and delete replay-protection writes. If the quota DO is unavailable or
+> unconfigured, media mutations fail closed. A separate atomic monthly counter
+> reserves R2 Class A operations before each upload and each R2 inventory-list page,
+> with an 850K ceiling below the 1M free allowance. Both quota DOs use SQLite-backed
+> Durable Objects available on the Workers Free plan; no paid upgrade is required.
+> These are application safeguards, not protection against direct bucket writes or
+> usage outside this Worker.
 
 ---
 
