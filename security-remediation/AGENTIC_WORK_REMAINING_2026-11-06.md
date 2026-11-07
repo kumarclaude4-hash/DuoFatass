@@ -3,8 +3,8 @@
 Repository: kumarclaude4-hash/DuoFatass
 Base branch: main
 Latest merged mainline: PR #245 at 738a8e118b84f6e4c1c9bb1f0a9b05e49c472b4a (CI, Firestore emulator tests and security scan passed).
-Current work branch: security/release-log-privacy-ast-guard-2026-11-06 (PR #244; head b0308437613ecc449dea7aa3e523f65651ac0848).
-Status: PR #244 CI passed 10/10 jobs (run 42315880847); security scan passed 3/3 (run 42315880789). Source-level guard work is verified; production sign-off is not approved.
+Current work branch: security/release-log-privacy-ast-guard-2026-11-06 (PR #244; latest follow-up head pending workflow completion).
+Status: Previous PR #244 head passed CI 10/10 (run 42316536143) and Security Scan 3/3 (run 42316536352). The 2026-11-07 S10-N2 follow-up additionally removes exception-message alias logging in ChatMediaActivity, redacts B2StorageHelper retry operation parameters and adds regression coverage; fresh CI/Security workflows are running on the newest head. Source-level security sign-off remains pending their results and residual audit.
 
 This is the current execution handoff for the next coding agent. It supersedes the task ordering in older agent handoff notes. Finish the source-level, JVM, backend and isolated-emulator work while the app is being completed. Physical-device acceptance must happen only after the owner declares the app feature-complete.
 
@@ -47,7 +47,9 @@ PR #244 adds `scripts/AndroidReleaseLogPrivacyPolicy.java`, a JDK compiler-AST p
 
 **Executed evidence:** PR #244 head `b0308437613ecc449dea7aa3e523f65651ac0848` passed CI run `42315880847` (10/10 jobs) and Security scan `42315880789` (3/3 jobs). The AST job passed its positive/negative self-tests and scanned **204 production Java files and 407 `Log.w` / `Log.e` / `Log.wtf` calls**, with zero policy violations. The same CI run passed Server + Worker tests, Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, vendored libsignal integrity and Gradle wrapper validation.
 
-**Remaining:** the guard is a conservative syntactic tripwire, not whole-program taint analysis. Manual review is still needed for aliases, builders, maps, reflection, opaque helper returns, unrecognized field names and indirect/dynamic data flow. Physical-device logcat acceptance is deferred until the owner declares the app feature-complete. Keep S10-N2 Partial until the manual audit and release QA residuals are accepted; do not treat CI success as production sign-off.
+**Follow-up implementation (2026-11-07):** the manual review found two source leaks not caught by the original syntactic scanner. ChatMediaActivity logged an aliased exception message from B2 media loading; B2StorageHelper.withRetry logged an operation parameter populated with raw object keys. Both paths are now fixed: UI detail remains UI-only, error logs show exception class only, and storage retry diagnostics retain the operation prefix while pseudonymising the full suffix (including compound range labels). Regression tests cover both source paths and actual metadata-redaction behavior. New workflow results must be green before promoting the tracker row.
+
+**Remaining:** inspect builder/map/reflection/opaque-helper-return and external-library exception paths beyond the confirmed fixes; the AST scanner is still a syntactic tripwire, not whole-program taint analysis. Review direct/indirect data sources for any remaining user, conversation, content, path, capability or credential values. Physical-device release-logcat acceptance is deferred until the owner declares the app feature-complete. Keep S10-N2 Partial until the manual audit and release QA residuals are accepted; do not treat CI success as production sign-off.
 
 ### B. S03-M3 — decide the media capability-token residual
 
