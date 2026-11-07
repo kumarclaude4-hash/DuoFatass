@@ -2389,10 +2389,10 @@ public final class B2StorageHelper {
      * Worker is the production path, and teaching the other two to range-read would mean
      * signing range headers and re-deriving presign scopes for no user-visible benefit today.
      *
-     * <p>TODO: a 200 MB video is ~200 range requests, which approaches the Worker's
-     * {@code RATE_LIMIT_PER_MIN} of 120 requests/minute per user when it is watched straight
-     * through. Not addressed here on purpose — the fix belongs on the server side (a higher or
-     * range-aware ceiling), not in a larger chunk size chosen to dodge a limit.
+     * <p>The Worker counts valid single-range GETs at half a normal request unit, so
+     * the default 120-unit per-holder ceiling permits up to 240 chunk reads/minute.
+     * The global daily request guard still counts every actual request; this does not
+     * increase the Worker or storage-provider daily budget.
      *
      * @param endInclusive last byte offset to fetch, inclusive (HTTP {@code Range} semantics).
      */

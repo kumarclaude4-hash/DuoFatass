@@ -89,10 +89,18 @@ function makeHotBucket() {
       if (!o) return null;
       return { size: o.size, customMetadata: o.customMetadata, httpMetadata: o.httpMetadata, httpEtag: o.httpEtag };
     },
-    async get(key) {
+    async get(key, options = {}) {
       const o = objects.get(key);
       if (!o) return null;
-      return { ...o, body: new Uint8Array(o.size), arrayBuffer: async () => new ArrayBuffer(o.size) };
+      const offset = options?.range?.offset ?? 0;
+      const length = options?.range?.length ?? o.size;
+      const body = new Uint8Array(Math.max(0, Math.min(length, o.size - offset)));
+      return {
+        ...o,
+        size: body.byteLength,
+        body,
+        arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+      };
     },
     async delete(key) { objects.delete(key); },
   };
@@ -207,6 +215,55 @@ function makeEnv(overrides = {}) {
 }
 
 const ctx = { waitUntil: async (p) => { await p; } };
+
+test('range-aware rate limiting supports chunked playback without adding a second quota bucket', async () => {
+  const env = makeEnv({ RATE_LIMIT_PER_MIN: '2' });
+  const key = `media/${CHAT_ID}/range-rate-limit.jpg`;
+  await env.HOT_BUCKET.put(key, new Uint8Array([1, 2, 3, 4]));
+
+  async function request(holder, range) {
+    const token = await mintToken('read', key, holder);
+    const headers = { Authorization: `Bearer ${token}` };
+    if (range !== undefined) headers.Range = range;
+    return worker.fetch(new Request(`https://worker.example/${key}`, {
+      method: 'GET',
+      headers,
+    }), env, ctx);
+  }
+
+  // Ordinary requests retain the configured two-request ceiling.
+  assert.equal((await request('range-limit-ordinary-user', undefined)).status, 200);
+  assert.equal((await request('range-limit-ordinary-user', undefined)).status, 200);
+  assert.equal((await request('range-limit-ordinary-user', undefined)).status, 429);
+
+  // Valid 1-byte range requests cost half a unit, allowing four range reads
+  // under the same two-unit ceiling.
+  for (let i = 0; i < 4; i++) {
+    const response = await request('range-limit-video-user', 'bytes=0-0');
+    assert.equal(response.status, 206, await response.clone().text());
+    assert.equal(response.headers.get('Content-Length'), '1');
+    assert.equal((await response.arrayBuffer()).byteLength, 1);
+  }
+  assert.equal((await request('range-limit-video-user', 'bytes=0-0')).status, 429);
+
+  // Mixed traffic shares one bucket: one full GET (1.0) plus two range GETs
+  // (0.5 each) exactly consumes the two-unit budget; it is not additive.
+  assert.equal((await request('range-limit-mixed-user', undefined)).status, 200);
+  assert.equal((await request('range-limit-mixed-user', 'bytes=0-0')).status, 206);
+  assert.equal((await request('range-limit-mixed-user', 'bytes=0-0')).status, 206);
+  assert.equal((await request('range-limit-mixed-user', 'bytes=0-0')).status, 429);
+
+  // Invalid suffix, descending and unsafe-integer ranges are not discounted;
+  // malformed requests cannot buy cheaper rate-limit cost by supplying Range.
+  for (let i = 0; i < 2; i++) {
+    assert.equal((await request('range-limit-invalid-user', 'bytes=-1')).status, 416);
+    assert.equal((await request('range-limit-descending-user', 'bytes=2-1')).status, 416);
+    assert.equal((await request('range-limit-unsafe-user', 'bytes=999999999999999999999-')).status, 416);
+  }
+  assert.equal((await request('range-limit-invalid-user', 'bytes=-1')).status, 429);
+  assert.equal((await request('range-limit-descending-user', 'bytes=2-1')).status, 429);
+  assert.equal((await request('range-limit-unsafe-user', 'bytes=999999999999999999999-')).status, 429);
+});
 
 // ─── S03-L4: rejections must carry CORS headers ───────────────────────────
 test('S03-L4: a 400 (invalid key format) rejection carries the CORS headers, not just success responses', async () => {

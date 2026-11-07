@@ -53,8 +53,9 @@
     // Objects move from R2 → B2 after this many days.
     "HOT_TIER_DAYS": "30",
 
-    // Per-isolate rate limit: max requests per minute per verified capability holder.
-    // Advisory across edge locations; the daily mutation budgets are global.
+    // Per-isolate rate limit: max request units/min per verified capability holder.
+    // Valid single-range GETs count as 0.5 units; other requests count as 1.
+    // Advisory across edge locations; the daily request/mutation budgets remain global.
     "RATE_LIMIT_PER_MIN": "120",
 
     // S03-H3: per-holder storage quota in bytes (1 GB default). Keeps one
