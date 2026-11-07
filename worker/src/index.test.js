@@ -125,12 +125,39 @@ function makeR2BudgetNamespace(initial = {}) {
   };
 }
 
+function makeDailyMediaQuotaNamespace(initialCount = 0) {
+  let count = initialCount;
+  let dayKey = new Date().toISOString().slice(0, 10);
+  const stub = {
+    async fetch(request) {
+      const body = await request.json();
+      if (body.action !== 'reserve' || !Number.isSafeInteger(body.limit) || body.limit < 1) {
+        return new Response(JSON.stringify({ error: 'invalid request' }), { status: 400 });
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      if (today !== dayKey) {
+        dayKey = today;
+        count = 0;
+      }
+      const resetAt = Date.now();
+      if (count >= body.limit) {
+        return new Response(JSON.stringify({ allowed: false, count, limit: body.limit, resetAt }), { status: 429 });
+      }
+      count += 1;
+      return new Response(JSON.stringify({ allowed: true, count, limit: body.limit, remaining: body.limit - count, resetAt }), { status: 200 });
+    },
+  };
+  return { idFromName: (name) => name, get: () => stub };
+}
+
 function makeEnv(overrides = {}) {
   return {
     MEDIA_TOKEN_SECRET,
     RATE_KV: makeKv(),
     HOT_BUCKET: makeHotBucket(),
     ADMIN_LOCKOUT_DO: makeR2BudgetNamespace(),
+    MEDIA_QUOTA_DO: makeDailyMediaQuotaNamespace(),
+    MAX_DAILY_MEDIA_MUTATIONS: '160',
     MAX_FILE_SIZE: '524288000',
     // getB2Client() constructs an AwsClient unconditionally on every DELETE
     // that finds the object still in R2 (the migration race-guard fires a
@@ -1265,4 +1292,19 @@ test('R2 Class A monthly guard fails closed when the Durable Object budget servi
   assert.equal(response.status, 503);
   assert.equal(env.HOT_BUCKET.objects.has(key), false,
     'the Worker must not write R2 objects when it cannot enforce the monthly operation budget');
+});
+
+
+test('free-tier guard: write fails closed when the global media mutation budget binding is missing', async () => {
+  const key = `media/${CHAT_ID}/missing-media-budget.jpg`;
+  const token = await mintToken('write', key, 'user-alice');
+  const env = makeEnv({ MEDIA_QUOTA_DO: null });
+  const response = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Length': '1' },
+    body: new Uint8Array([1]),
+  }), env, ctx);
+  assert.equal(response.status, 503);
+  assert.equal(await env.HOT_BUCKET.head(key), null,
+    'storage must not be mutated without the global free-tier quota ledger');
 });
