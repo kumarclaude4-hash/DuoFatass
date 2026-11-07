@@ -72,13 +72,15 @@ function makeKv() {
 }
 
 function makeHotBucket() {
-  const objects = new Map(); // key -> { body, size, customMetadata, httpMetadata, httpEtag }
+  const objects = new Map(); // key -> { bytes, size, customMetadata, httpMetadata, httpEtag }
   return {
     objects,
     async put(key, body, opts) {
       const buf = body instanceof ArrayBuffer ? body : await new Response(body).arrayBuffer();
+      const bytes = new Uint8Array(buf);
       objects.set(key, {
-        size: buf.byteLength,
+        bytes,
+        size: bytes.byteLength,
         customMetadata: opts?.customMetadata ?? {},
         httpMetadata: opts?.httpMetadata ?? {},
         httpEtag: `"etag-${key}"`,
@@ -89,10 +91,18 @@ function makeHotBucket() {
       if (!o) return null;
       return { size: o.size, customMetadata: o.customMetadata, httpMetadata: o.httpMetadata, httpEtag: o.httpEtag };
     },
-    async get(key) {
+    async get(key, options = {}) {
       const o = objects.get(key);
       if (!o) return null;
-      return { ...o, body: new Uint8Array(o.size), arrayBuffer: async () => new ArrayBuffer(o.size) };
+      const bytes = options.range
+        ? o.bytes.slice(options.range.offset, options.range.offset + options.range.length)
+        : o.bytes.slice();
+      return {
+        ...o,
+        size: bytes.byteLength,
+        body: bytes,
+        arrayBuffer: async () => bytes.slice().buffer,
+      };
     },
     async delete(key) { objects.delete(key); },
   };
@@ -271,6 +281,68 @@ test('S08-I3: with no CORS_ALLOWED_ORIGINS configured, ACAO is omitted entirely 
 
 // ─── S03-H3: per-user storage quota ────────────────────────────────────────
 const CHAT_ID = 'a'.repeat(20); // satisfies KEY_FORMAT's 16-80 char id segment
+
+test('range-aware limiter: verified single-range GETs get a higher bounded class but share one per-user ceiling', async () => {
+  const env = makeEnv({
+    RATE_LIMIT_PER_MIN: '2',
+    RANGE_RATE_LIMIT_PER_MIN: '4',
+  });
+  const key = `media/${CHAT_ID}/rate-range.mp4`;
+  const bytes = new Uint8Array([11, 22, 33, 44]);
+  await env.HOT_BUCKET.put(key, bytes);
+  const holder = 'range-holder-test';
+  const token = await mintToken('read', key, holder);
+
+  const rangeRequest = () => worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}`, Range: 'bytes=0-0' },
+  }), env, ctx);
+
+  for (let i = 0; i < 4; i++) {
+    const response = await rangeRequest();
+    assert.equal(response.status, 206, await response.clone().text());
+    assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [11]);
+  }
+  const rangeBlocked = await rangeRequest();
+  assert.equal(rangeBlocked.status, 429, await rangeBlocked.clone().text(),
+    'the fifth range request must hit the explicit range limit');
+
+  const normalAfterRanges = await worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  }), env, ctx);
+  assert.equal(normalAfterRanges.status, 429,
+    'range requests must share an aggregate ceiling with ordinary requests');
+
+  const normalHolder = 'normal-holder-test';
+  const normalToken = await mintToken('read', key, normalHolder);
+  const normalRequest = () => worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${normalToken}` },
+  }), env, ctx);
+  assert.equal((await normalRequest()).status, 200);
+  assert.equal((await normalRequest()).status, 200);
+  assert.equal((await normalRequest()).status, 429,
+    'the existing normal request ceiling must remain unchanged');
+
+  const mixedHolder = 'mixed-holder-test';
+  const mixedToken = await mintToken('read', key, mixedHolder);
+  const mixedNormal = () => worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${mixedToken}` },
+  }), env, ctx);
+  const mixedRange = () => worker.fetch(new Request(`https://worker.example/${key}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${mixedToken}`, Range: 'bytes=0-0' },
+  }), env, ctx);
+
+  assert.equal((await mixedNormal()).status, 200);
+  assert.equal((await mixedNormal()).status, 200);
+  assert.equal((await mixedRange()).status, 206);
+  assert.equal((await mixedRange()).status, 206);
+  assert.equal((await mixedRange()).status, 429,
+    'normal and range traffic must share the same aggregate per-user cap');
+});
 
 test('S03-H3: a single holder is rejected with 507 once their per-user quota is exhausted, even though the global R2 cap is nowhere close', async () => {
   const env = makeEnv({ MAX_USER_BYTES: '1000' }); // tiny quota to make the test fast
