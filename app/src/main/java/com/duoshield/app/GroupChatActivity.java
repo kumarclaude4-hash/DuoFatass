@@ -678,8 +678,14 @@ public class GroupChatActivity extends BaseActivity {
 
             FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
             if (!guard.reserveWrite(1)) {
-                runOnUiThread(() -> Toast.makeText(this,
-                        "Write quota reached — try again tomorrow", Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> {
+                    optimistic.setStatus("failed");
+                    adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+                    executor.execute(() -> localDb.messageDao().insert(optimistic));
+                    Toast.makeText(this,
+                            "Daily write budget reached — try again after the quota reset.",
+                            Toast.LENGTH_LONG).show();
+                });
                 return;
             }
             db.collection("groups").document(groupId)
@@ -1217,8 +1223,20 @@ public class GroupChatActivity extends BaseActivity {
 
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
         if (!guard.reserveWrite(1)) {
-            runOnUiThread(() -> Toast.makeText(this,
-                    "Write quota reached — try again tomorrow", Toast.LENGTH_LONG).show());
+            runOnUiThread(() -> {
+                optimistic.setStatus("failed");
+                adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+                executor.execute(() -> localDb.messageDao().insert(optimistic));
+                Toast.makeText(this,
+                        "Daily write budget reached — media is saved locally. Try again after the quota reset.",
+                        Toast.LENGTH_LONG).show();
+            });
+            if (B2StorageHelper.isB2Path(storagePath)) {
+                executor.execute(() -> {
+                    try { B2StorageHelper.deleteFile(storagePath); }
+                    catch (Exception ignored) {}
+                });
+            }
             return;
         }
         db.collection("groups").document(groupId)
@@ -1301,7 +1319,23 @@ public class GroupChatActivity extends BaseActivity {
 
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
         if (!guard.reserveWrite(1)) {
+            optimistic.setStatus("failed");
             adapter.updateMessage(msgId, m -> m.setStatus("failed"));
+            executor.execute(() -> localDb.messageDao().insert(optimistic));
+            // These media objects were uploaded before the album metadata write.
+            // Remove them when the local Firestore budget prevents publishing the album.
+            for (String[] item : items) {
+                if (item != null && item.length > 0 && B2StorageHelper.isB2Path(item[0])) {
+                    String orphanedPath = item[0];
+                    executor.execute(() -> {
+                        try { B2StorageHelper.deleteFile(orphanedPath); }
+                        catch (Exception ignored) {}
+                    });
+                }
+            }
+            Toast.makeText(this,
+                    "Daily write budget reached — album not sent. Try again after the quota reset.",
+                    Toast.LENGTH_LONG).show();
             return;
         }
         db.collection("groups").document(groupId)
@@ -1477,6 +1511,23 @@ public class GroupChatActivity extends BaseActivity {
         if (myUid == null || !myUid.equals(creatorUid)) return;
 
         executor.execute(() -> {
+            // Reserve the complete key-distribution write set before removing
+            // the member on the server. A partial reservation after removal can
+            // strand remaining members without the newly rotated group key.
+            List<String> remaining = new ArrayList<>(memberUids);
+            remaining.remove(memberUid);
+            int keyDistributionWrites = 0;
+            for (String uid : remaining) {
+                if (!myUid.equals(uid)) keyDistributionWrites++;
+            }
+            FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
+            if (keyDistributionWrites > 0 && !guard.reserveWrite(keyDistributionWrites)) {
+                runOnUiThread(() -> Toast.makeText(this,
+                        "Not enough daily write budget to rotate the group key safely. Try after the quota reset.",
+                        Toast.LENGTH_LONG).show());
+                return;
+            }
+
             // ── Step 1: server call ────────────────────────────────────────
             try {
                 com.google.firebase.auth.FirebaseUser user =
@@ -1529,10 +1580,6 @@ public class GroupChatActivity extends BaseActivity {
                 return;
             }
 
-            List<String> remaining = new ArrayList<>(memberUids);
-            remaining.remove(memberUid);
-
-            FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
             for (String uid : remaining) {
                 if (myUid.equals(uid)) continue; // own key stored locally below
                 try {
@@ -1542,11 +1589,9 @@ public class GroupChatActivity extends BaseActivity {
                     kd.put("encryptedKey", r.ciphertextB64);
                     kd.put("sigType",      r.sigType);
                     kd.put("senderUid",    myUid);
-                    if (guard.reserveWrite(1)) {
-                        db.collection("groups").document(groupId)
-                          .collection("keys").document(uid)
-                          .set(kd);
-                    }
+                    db.collection("groups").document(groupId)
+                      .collection("keys").document(uid)
+                      .set(kd);
                 } catch (Exception e) {
                     Log.w(TAG, "Key dist failed for " + LogRedact.uid(uid) + ": " + com.duoshield.app.util.LogRedact.error(e));
                 }
