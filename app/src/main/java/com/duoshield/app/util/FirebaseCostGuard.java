@@ -36,9 +36,13 @@ import java.util.TimeZone;
 public class FirebaseCostGuard {
 
     private static final String PREFS       = "duoshield_cost_guard";
-    private static final int    MAX_READS   = 40_000;
-    private static final int    MAX_WRITES  = 16_000;
-    private static final int    MAX_DELETES = 16_000;
+    // Allocate 80% of each project-wide Spark quota evenly across 10 active
+    // installations, leaving 20% project headroom for uninstrumented SDK work,
+    // retries, other devices, and operational variance. These remain local,
+    // best-effort limits — they are not a project-wide billing firewall.
+    private static final int    MAX_READS   = 4_000;
+    private static final int    MAX_WRITES  = 1_600;
+    private static final int    MAX_DELETES = 1_600;
     private static final float  WARN_PCT    = 0.80f;
     private static final String QUOTA_TIME_ZONE = "America/Los_Angeles";
 
