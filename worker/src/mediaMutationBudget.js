@@ -11,7 +11,7 @@
 // replay protection. The default is sized for the 10-user free-tier profile.
 
 const STORAGE_KEY = "daily-media-mutations";
-const DEFAULT_DAILY_LIMIT = 200;
+const DEFAULT_DAILY_LIMIT = 160;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
