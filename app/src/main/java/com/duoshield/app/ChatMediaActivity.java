@@ -1437,7 +1437,9 @@ public class ChatMediaActivity extends BaseActivity {
                 }
                 @Override public void onError(Exception e) {
                     String detail = e != null && e.getMessage() != null ? e.getMessage() : "unknown error";
-                    Log.e(TAG, "Voice note B2 load failed: " + detail + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                    // Exception messages may contain object keys or remote response data.
+                    // Keep the user-facing detail, but never copy it to release logcat.
+                    Log.e(TAG, "Voice note B2 load failed (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                     runOnUiThread(() -> {
                         Toast.makeText(ChatMediaActivity.this,
                                 "Couldn't load voice note: " + detail, Toast.LENGTH_LONG).show();
