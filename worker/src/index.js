@@ -508,7 +508,9 @@ async function reserveDailyMediaMutation(env, cors, operation) {
 }
 
 async function checkDailyRequestLimit(env, cors) {
-  if (!env.RATE_KV) return null;
+  if (!env.RATE_KV) {
+    return json({ error: 'Daily usage counter unavailable' }, 503, cors);
+  }
   const key   = dayKey();
   const count = safeInt(await kvGet(env, key));
   if (count >= MAX_DAILY_REQUESTS) {
@@ -585,11 +587,9 @@ async function adjustR2(env, deltaBytes) {
   const next = Math.max(0, cur + deltaBytes);
   await kvSet(env, 'global:storage:r2', next);
   // Best-effort observability only: concurrent uploads can both pass the
-  // pre-check in the PUT handler and land here before either write is
-  // visible, so this counter is not a hard reservation (true atomicity
-  // would need Durable Objects, not provisioned for this project). Log
-  // loudly if we drift past the cap so it's visible in Worker logs rather
-  // than silently over-accepting indefinitely.
+  // pre-check in the PUT handler and land here before either write is visible.
+  // The operation-count Durable Object does not make this byte counter atomic;
+  // this remains a best-effort KV delta reconciled by the nightly bucket scan.
   if (next > MAX_R2_BYTES) {
     console.warn(`R2 usage (${next} B) exceeds cap (${MAX_R2_BYTES} B) — likely concurrent uploads racing the pre-check`);
   }
@@ -604,8 +604,8 @@ async function adjustR2(env, deltaBytes) {
 // is checked in the PUT path *before* `HOT_BUCKET.put`, alongside the
 // existing global check, not instead of it.
 //
-// Same non-atomic, best-effort accounting model as `adjustR2` above (no
-// Durable Objects on this tier — see S03-I2) — concurrent uploads from the
+// Same non-atomic, best-effort KV accounting model as `adjustR2` above.
+// The Durable Object protects mutation counts, not exact byte reservations — concurrent uploads from the
 // same holder can overshoot slightly, but the exhaustion attack this closes
 // needs dozens of sequential uploads, not a tight race.
 function maxUserBytes(env) { return safeInt(env.MAX_USER_BYTES || '1073741824', 1_073_741_824); } // 1 GB default
@@ -711,7 +711,7 @@ export default {
           today_approx:     reqCount,
           limit_per_day:    MAX_DAILY_REQUESTS,
           remaining_approx: Math.max(0, MAX_DAILY_REQUESTS - reqCount),
-          note:             'Sampled counter (±10 accuracy). Resets at midnight UTC.',
+          note:             'Sampled estimate (one request sample per 500 operations); not an exact counter. Resets at midnight UTC.',
         },
       });
     }
