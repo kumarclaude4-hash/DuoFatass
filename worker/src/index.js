@@ -36,6 +36,34 @@ function safeInt(val, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// Reserve one R2 Class A operation in the existing SQLite Durable Object.
+// The stable global object ID makes monthly reservations atomic across edge
+// locations and all app users. Fail closed if the budget service is unavailable.
+async function reserveR2ClassA(env) {
+  if (!env.ADMIN_LOCKOUT_DO) {
+    throw new Error('R2 operation budget Durable Object is not configured');
+  }
+  const id = env.ADMIN_LOCKOUT_DO.idFromName('duoshield-r2-class-a-budget-v1');
+  const stub = env.ADMIN_LOCKOUT_DO.get(id);
+  const response = await stub.fetch('https://r2-budget.internal/reserve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'reserveR2ClassA',
+      monthKey: new Date().toISOString().slice(0, 7),
+      amount: 1,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`R2 operation budget returned HTTP ${response.status}`);
+  }
+  const result = await response.json();
+  if (!result || typeof result.allowed !== 'boolean') {
+    throw new Error('R2 operation budget returned a malformed response');
+  }
+  return result;
+}
+
 // ─── B2 S3-compatible client ──────────────────────────────────────────────────
 function getB2Client(env) {
   return new AwsClient({
@@ -878,6 +906,25 @@ export default {
       const mutationLimited = await reserveDailyMediaMutation(env, cors);
       if (mutationLimited) return mutationLimited;
 
+      // Cloudflare R2 PutObject is a Class A operation. Reserve before
+      // touching storage so concurrent clients cannot overspend the shared
+      // monthly free allowance. An unavailable budget service fails closed.
+      let r2Budget;
+      try {
+        r2Budget = await reserveR2ClassA(env);
+      } catch (err) {
+        console.error('R2 Class A budget unavailable — rejecting upload:', err?.message || 'unknown error');
+        return respond({ error: 'Storage operation budget temporarily unavailable. Retry later.' }, 503);
+      }
+      if (!r2Budget.allowed) {
+        return respond({
+          error: 'Monthly R2 Class A free-tier safety budget reached. New uploads are paused until next month.',
+          used: r2Budget.used,
+          limit: r2Budget.limit,
+          month: r2Budget.monthKey,
+        }, 429);
+      }
+
       await env.HOT_BUCKET.put(key, request.body, {
         httpMetadata:   { contentType },
         // `uploader` records cap.holder for two purposes: storage-quota
@@ -1224,6 +1271,20 @@ export default {
     // ── Step 1: Scan R2 ─────────────────────────��──────────────────────────────
     let cursor;
     do {
+      // R2 ListObjects is also Class A. Reserve before every page scan;
+      // if the budget is exhausted, leave remaining objects in R2 and retry
+      // on the next month instead of crossing the shared free allowance.
+      let listBudget;
+      try {
+        listBudget = await reserveR2ClassA(env);
+      } catch (err) {
+        console.error('R2 Class A budget unavailable — pausing scheduled tiering:', err?.message || 'unknown error');
+        return;
+      }
+      if (!listBudget.allowed) {
+        console.warn('R2 Class A monthly safety budget reached — scheduled tiering paused');
+        return;
+      }
       const list = await env.HOT_BUCKET.list({
         cursor,
         include: ['httpMetadata', 'customMetadata'],
