@@ -970,11 +970,6 @@ public final class B2StorageHelper {
     // ── Delete ────────────────────────────────────────────────────────────────
 
     /**
-     * Synchronously deletes the object at {@code b2Path} using S3 DeleteObject + AWS SigV4.
-     * Retries on transient network errors. 404 is treated as success (already gone).
-     * Call from a background thread.
-     */
-    /**
      * Schedules deletion of an unpublished B2 object on the process-wide media
      * pool. Unlike an Activity-owned executor, this remains available when the
      * screen that initiated an upload is destroyed before its Firestore callback.
@@ -991,6 +986,11 @@ public final class B2StorageHelper {
         });
     }
 
+    /**
+     * Synchronously deletes the object at {@code b2Path} using S3 DeleteObject + AWS SigV4.
+     * Retries on transient network errors. 404 is treated as success (already gone).
+     * Call from a background thread.
+     */
     public static void deleteFile(String b2Path) throws Exception {
         if (b2Path == null || b2Path.isEmpty()) return;
         // Tiered-storage Worker path (highest priority)
