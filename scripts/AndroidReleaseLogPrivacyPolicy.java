@@ -261,26 +261,26 @@ public final class AndroidReleaseLogPrivacyPolicy {
             }
             Path interprocedural = Files.createDirectories(root.resolve("interprocedural"));
             Files.writeString(interprocedural.resolve("HelperFlow.java"),
-                    "class Profile { String getUserId() { return \\"uid\\"; } }\\n"
-                  + "class HelperFlow {\\n"
-                  + "  String cached;\\n"
-                  + "  String direct(Profile profile) { return profile.getUserId(); }\\n"
-                  + "  String pass(String value) { return value; }\\n"
-                  + "  String sanitized(Profile profile) { return LogRedact.uid(profile.getUserId()); }\\n"
-                  + "  String recursive(Profile profile, boolean recurse) { if (recurse) return profile.getUserId(); return recursive(profile, true); }\\n"
-                  + "  String safeRecursive(boolean again) { if (again) return safeRecursive(false); return \\"safe\\"; }\\n"
-                  + "  String overloaded(String value) { return \\"safe\\"; }\\n"
-                  + "  String overloaded(int value) { return \\"safe\\"; }\\n"
-                  + "  void saveField(Profile profile) { this.cached = profile.getUserId(); }\\n"
-                  + "  String readField() { return this.cached; }\\n"
-                  + "  void directHelper(Profile profile) { String x = direct(profile); Log.w(\\"TAG\\", x); }\\n"
-                  + "  void passThrough(Profile profile) { String x = pass(profile.getUserId()); Log.w(\\"TAG\\", x); }\\n"
-                  + "  void sanitizedHelper(Profile profile) { String x = sanitized(profile); Log.w(\\"TAG\\", x); }\\n"
-                  + "  void recursiveHelper(Profile profile) { String x = recursive(profile, true); Log.w(\\"TAG\\", x); }\\n"
-                  + "  void overloadHelper(Profile profile) { String x = overloaded(profile.getUserId()); Log.w(\\"TAG\\", x); }\\n"
-                  + "  void safeRecursionHelper() { String x = safeRecursive(true); Log.w(\\"TAG\\", x); }\\n"
-                  + "  void fieldHelper(Profile profile) { saveField(profile); String x = readField(); Log.w(\\"TAG\\", x); }\\n"
-                  + "}\\n", StandardCharsets.UTF_8);
+                    "class Profile { String getUserId() { return \"uid\"; } }\n"
+                  + "class HelperFlow {\n"
+                  + "  String cached;\n"
+                  + "  String direct(Profile profile) { return profile.getUserId(); }\n"
+                  + "  String pass(String value) { return value; }\n"
+                  + "  String sanitized(Profile profile) { return LogRedact.uid(profile.getUserId()); }\n"
+                  + "  String recursive(Profile profile, boolean recurse) { if (recurse) return profile.getUserId(); return recursive(profile, true); }\n"
+                  + "  String safeRecursive(boolean again) { if (again) return safeRecursive(false); return \"safe\"; }\n"
+                  + "  String overloaded(String value) { return \"safe\"; }\n"
+                  + "  String overloaded(int value) { return \"safe\"; }\n"
+                  + "  void saveField(Profile profile) { this.cached = profile.getUserId(); }\n"
+                  + "  String readField() { return this.cached; }\n"
+                  + "  void directHelper(Profile profile) { String x = direct(profile); Log.w(\"TAG\", x); }\n"
+                  + "  void passThrough(Profile profile) { String x = pass(profile.getUserId()); Log.w(\"TAG\", x); }\n"
+                  + "  void sanitizedHelper(Profile profile) { String x = sanitized(profile); Log.w(\"TAG\", x); }\n"
+                  + "  void recursiveHelper(Profile profile) { String x = recursive(profile, true); Log.w(\"TAG\", x); }\n"
+                  + "  void overloadHelper(Profile profile) { String x = overloaded(profile.getUserId()); Log.w(\"TAG\", x); }\n"
+                  + "  void safeRecursionHelper() { String x = safeRecursive(true); Log.w(\"TAG\", x); }\n"
+                  + "  void fieldHelper(Profile profile) { saveField(profile); String x = readField(); Log.w(\"TAG\", x); }\n"
+                  + "}\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
             if (interproceduralResult.inspectedCalls != 7
