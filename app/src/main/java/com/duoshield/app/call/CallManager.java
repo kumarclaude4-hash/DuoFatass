@@ -1745,8 +1745,9 @@ public class CallManager {
      * Requests a WebRTC stats snapshot.  Two things happen on each poll:
      *
      * <ol>
-     *   <li><b>Bandwidth accounting</b> — transport-level bytes delta is accumulated
-     *       into {@link #sessionEgressBytesTotal} and later flushed to {@link TurnBandwidthTracker}.</li>
+     *   <li><b>Bandwidth accounting</b> — relayed transport receive-byte deltas are
+     *       accumulated into {@link #sessionEgressBytesTotal} and persisted to
+     *       {@link TurnBandwidthTracker} on each stats sample.</li>
      *   <li><b>Thermal watchdog (32-bit only)</b> — the outbound-rtp {@code framesEncoded}
      *       counter is compared with the previous snapshot to derive actual encoder FPS.
      *       If it falls below {@link #THERMAL_FPS_THRESHOLD} (12 fps), the camera
