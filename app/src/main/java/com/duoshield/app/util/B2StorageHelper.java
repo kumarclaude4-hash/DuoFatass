@@ -288,6 +288,8 @@ public final class B2StorageHelper {
         }
         String prefix = operation.substring(0, separator + 1);
         String sensitiveSuffix = operation.substring(separator + 1);
+        // Range requests append extra colon-delimited fields; redact the complete
+        // suffix as one value so neither object keys nor ranges survive in logcat.
         return prefix + com.duoshield.app.util.LogRedact.metadata(sensitiveSuffix);
     }
 
