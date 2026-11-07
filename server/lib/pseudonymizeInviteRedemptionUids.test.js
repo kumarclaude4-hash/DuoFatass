@@ -23,7 +23,7 @@ test("service-account private-key escaped newlines normalize without mutating in
 });
 
 test("service-account private-key already-normalized newlines remain unchanged", () => {
-  const value = "-----BEGIN PRIVATE KEY-----\nsynthetic-line\n-----END PRIVATE KEY-----\n";
+  const value = "synthetic-line-one\nsynthetic-line-two\nsynthetic-line-three\n";
   const normalized = normalizeServiceAccountPrivateKey({ private_key: value });
   assert.equal(normalized.private_key, value);
 });
