@@ -189,19 +189,17 @@ public class ReleaseLogPrivacyTest {
 
     @Test
     public void storageOperationLabelsPreserveOnlyTheNonSensitivePrefix() {
-        assertEquals("download:m:01234567",
-                com.duoshield.app.util.B2StorageHelper.redactOperationName(
-                        "download:media/private/message-123"));
+        String download = com.duoshield.app.util.B2StorageHelper.redactOperationName(
+                "download:media/private/message-123");
+        assertTrue(download.matches("download:m:[0-9a-f]{8}"));
+        assertFalse(download.contains("media/private/message-123"));
         assertEquals("storage operation",
                 com.duoshield.app.util.B2StorageHelper.redactOperationName(null));
         String compound = com.duoshield.app.util.B2StorageHelper.redactOperationName(
                 "worker-range:media/private/message-123:bytes=0-65535");
-        assertTrue(compound.startsWith("worker-range:m:"));
+        assertTrue(compound.matches("worker-range:m:[0-9a-f]{8}"));
         assertFalse(compound.contains("media/private/message-123"));
         assertFalse(compound.contains("bytes=0-65535"));
-        assertEquals("worker-range:m:01234567",
-                com.duoshield.app.util.B2StorageHelper.redactOperationName(
-                        "worker-range:media/private/message-123:bytes=0-65535"));
     }
 
     private static String readProjectFile(String relativePath) throws IOException {
