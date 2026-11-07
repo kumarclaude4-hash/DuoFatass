@@ -137,7 +137,7 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 | R2 storage            | 10 GB-month        | Hard cap at 9.0 decimal GB (90%)   |
 | R2 Class A ops         | 1 M/month         | Atomic monthly cap at 850K, including uploads and list pages |
 | R2 Class B ops         | 10 M/month        | 80K Worker requests/day; up to 2 Class B calls/request (~4.8M/30 days) |
-| B2 storage            | 10 GB             | Hard migration stop at 9 GB; preflight and postflight reconciliation |
+| B2 storage            | 10 GB             | Hard migration stop at 9 GB; bounded preflight + projected writes |
 | B2 → CF egress        | Free (Bandwidth Alliance) | —                        |
 | Worker requests       | 100 K/day         | Conservative daily gate at 80 K/day (80%) |
 | KV reads              | 100 K/day         | Daily gate reads + bounded mutation lookups; keep under 100K/day |
@@ -172,10 +172,13 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 
 **B2 has no automatic expiry.** Files remain in cold storage until the application
 explicitly deletes them (disappearing-message sweep, manual delete, etc.).
-The nightly cron reconciles B2 storage bytes via `ListObjectsV2` before and after
-tiering. It stops migrating when projected B2 usage would exceed 9 GB (a 10% safety
-margin below the 10 GB free allowance). If the preflight listing fails, tiering fails
-closed and leaves media in R2 for a later retry. It never auto-deletes anything from B2.
+The nightly cron reconciles B2 storage bytes with a bounded preflight `ListObjectsV2` scan,
+then adds only successful B2 writes to a conservative in-run projection. It caps the
+inventory scan at 10 pages and tiering at 15 objects per run to keep the preflight,
+B2 uploads, and worst-case compensating deletes below Workers Free's 50 external
+subrequests per invocation. If the inventory cannot be completed within that page
+budget or any page fails, tiering fails closed and leaves media in R2. The next night's
+preflight corrects projected-counter drift. B2 objects are never auto-deleted.
 
 ---
 
