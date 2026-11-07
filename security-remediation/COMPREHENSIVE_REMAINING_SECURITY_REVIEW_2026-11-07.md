@@ -129,7 +129,7 @@ A stolen live HttpOnly cookie remains a bearer credential until logout/global re
 
 **Status:** Partial; code and emulator coverage now include fail-closed unknown-state handling; product contract and staging remain pending.  
 **Code:** `server/lib/invite.js`, `inviteStore.js`, `inviteRoutes.js`, `identityClaim.js`, `mintTokenRoute.js`, invite UI in `server/index.js`.  
-**Evidence:** PRs #226/#227 (invite lifecycle and proof-of-possession HTTP/Firestore integration), plus PR #253 tested head `62da24d98705a91d11d7a9b926c71fe02b2eeb9a`: CI 10/10, Security Scan 3/3, Firestore Rules/server transactions (201 rules tests, 3 static App Check checks, 6 transaction tests); 4 Espresso and 1 API 35 predictive-back test passed.
+**Evidence:** PRs #226/#227 (invite lifecycle and proof-of-possession HTTP/Firestore integration), plus PR #253 tested head `62da24d98705a91d11d7a9b926c71fe02b2eeb9a`: CI 10/10, Security Scan 3/3, Firestore Rules/server transactions (3 Firestore/App Check emulator suites, 201 tests total, 6 transaction tests); 4 Espresso and 1 API 35 predictive-back test passed.
 
 Implemented: 256-bit opaque invite tokens; only hashes/fingerprints persisted; create/redeem/revoke audit writes coupled to transactions; bounded cursor listing; pseudonymized linkage; signature-proof-gated mintToken; existing-identity restore remains independent of new invite issuance. PR #253 additionally requires explicit active state + finite future expiry, treats unknown/missing status as invalid, blocks redemption, exposes invalid entries in admin list and supports audited cleanup.
 
