@@ -137,7 +137,15 @@ if (!emulatorHost) {
 
     const consumed = await dbB.collection(invitesCollection).doc(created.id).get();
     assert.equal(consumed.data().status, "used");
-    assert.ok(["seed-derived-user-a", "seed-derived-user-b"].includes(consumed.data().usedByUserId));
+    const redeemedUserId = consumed.data().usedByUserIdTag;
+    assert.match(redeemedUserId, /^[0-9a-f]{12}$/);
+    assert.equal(Object.prototype.hasOwnProperty.call(consumed.data(), "usedByUserId"), false,
+      "new redemption records must not persist the raw seed-derived UID");
+    const usedListing = await storeA.list({ status: "used", search: "concurrent redemption" });
+    assert.equal(usedListing.items.length, 1);
+    assert.equal(usedListing.items[0].usedByUserIdTag, redeemedUserId);
+    assert.equal(Object.prototype.hasOwnProperty.call(usedListing.items[0], "usedByUserId"), false,
+      "admin list projections must never expose the legacy raw UID property");
 
     const usedAudit = await dbB.collection(auditCollection).where("action", "==", "invite_redeemed").get();
     assert.equal(usedAudit.size, 1, "the successful redemption and its audit row commit together");
@@ -201,6 +209,25 @@ if (!emulatorHost) {
       current: "revoked",
     });
     assert.equal((await dbB.collection(auditCollection).where("action", "==", "invite_revoked").get()).size, 1);
+
+    // Existing legacy records can still be listed, but their raw UID is
+    // transformed to a pseudonymous tag and omitted from the API projection.
+    const legacyUid = "legacy-seed-derived-user";
+    await dbA.collection(invitesCollection).doc("legacy_invite_record_123").set({
+      tokenHash: "f".repeat(64),
+      tokenFingerprint: "legacy000001",
+      status: "used",
+      label: "Legacy invite",
+      createdAt: Timestamp.fromMillis(clock.now),
+      expiresAt: Timestamp.fromMillis(clock.now + 60 * 60 * 1000),
+      usedAt: FieldValue.serverTimestamp(),
+      usedByUserId: legacyUid,
+    });
+    const legacyListing = await storeA.list({ status: "used", search: "legacy invite" });
+    assert.equal(legacyListing.items.length, 1);
+    assert.match(legacyListing.items[0].usedByUserIdTag, /^[0-9a-f]{12}$/);
+    assert.equal(JSON.stringify(legacyListing.items[0]).includes(legacyUid), false,
+      "legacy UID data must be masked from the admin list response");
 
     const missing = await storeA.revoke("missing_invite_123", "not found", requestContext);
     assert.deepEqual(missing, { status: "missing" });
