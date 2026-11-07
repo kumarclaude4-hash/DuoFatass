@@ -48,9 +48,12 @@ import javax.tools.ToolProvider;
  * needed. The policy deliberately rejects ambiguous exception diagnostics and
  * sensitive getters unless the value is passed through LogRedact.
  *
- * This includes a conservative method-local alias pass, but is not whole-program
- * taint analysis. Keep the finding Partial until interprocedural data flow and
- * runtime logcat are separately reviewed and accepted.
+ * This includes a conservative method-local alias pass plus bounded summaries for
+ * uniquely resolvable app-owned helper returns and same-class field writes/reads.
+ * It is still syntax-only, not symbol-resolved whole-program analysis: ambiguous
+ * overloads, unresolved virtual dispatch, reflection and third-party internals are
+ * not guessed. Keep the finding Partial until residual source review and runtime
+ * logcat are separately reviewed and accepted.
  */
 public final class AndroidReleaseLogPrivacyPolicy {
     private static final Pattern SENSITIVE_IDENTIFIER = Pattern.compile(
@@ -101,7 +104,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             for (String violation : result.violations) System.err.println(" - " + violation);
             System.exit(1);
         }
-        System.out.println("PASS: no raw sensitive interpolation, method-local tainted aliases, or Throwable stack traces found.");
+        System.out.println("PASS: no raw sensitive interpolation, method-local/interprocedural taint, or Throwable stack traces found.");
     }
 
     private static ScanResult scan(Path sourceRoot) throws IOException {
