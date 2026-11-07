@@ -1216,10 +1216,10 @@ public class ChatMediaActivity extends BaseActivity {
             MessageOutboxWorker.enqueue(ChatMediaActivity.this);
         });
 
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) return;
         db.collection("chats").document(conversationId)
           .collection("messages").document(msgId).set(doc)
           .addOnSuccessListener(v -> {
-              FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
               dbExecutor.execute(() -> AppDatabase.getInstance(ChatMediaActivity.this)
                       .outboxDao().delete(msgId));
               voiceMessage.setStatus("sent");
@@ -3200,10 +3200,15 @@ public class ChatMediaActivity extends BaseActivity {
         doc.put("timestamp", FieldValue.serverTimestamp());
         doc.put("status", "sent");
 
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+            m.setStatus("failed");
+            adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+            saveToRoom(m);
+            return;
+        }
         db.collection("chats").document(conversationId)
           .collection("messages").document(msgId).set(doc)
           .addOnSuccessListener(v -> {
-              FirebaseCostGuard.getInstance(this).recordWrites(1);
               m.setStatus("sent");
               adapter.updateMessage(msgId, msg -> msg.setStatus("sent"));
               saveToRoom(m);
@@ -3670,11 +3675,11 @@ public class ChatMediaActivity extends BaseActivity {
             MessageOutboxWorker.enqueue(ChatMediaActivity.this);
         });
 
+        if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) return;
         db.collection("chats").document(conversationId)
 
           .collection("messages").document(msgId).set(doc)
           .addOnSuccessListener(v -> {
-              FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
               dbExecutor.execute(() -> AppDatabase.getInstance(ChatMediaActivity.this)
                       .outboxDao().delete(msgId));
               m.setStatus("sent");
@@ -3730,10 +3735,15 @@ public class ChatMediaActivity extends BaseActivity {
                 doc.put("isEncrypted", true); doc.put("sigType", r.sigType);
                 doc.put("timestamp", FieldValue.serverTimestamp());
 
+                if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
+                    m.setStatus("failed");
+                    adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
+                    saveToRoom(m);
+                    return;
+                }
                 db.collection("chats").document(conversationId)
                   .collection("messages").document(msgId).set(doc)
                   .addOnSuccessListener(v -> {
-                      FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
                       m.setStatus("sent");
                       adapter.updateMessage(msgId, msg -> msg.setStatus("sent"));
                       saveToRoom(m);  // stores plaintext in Room for local display
@@ -3882,12 +3892,12 @@ public class ChatMediaActivity extends BaseActivity {
                                 r.ciphertextB64, r.sigType, "text", finalRId, finalRPrv, exp, now));
                 MessageOutboxWorker.enqueue(ChatMediaActivity.this);
 
+                if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) return;
                 db.collection("chats").document(conversationId)
 
                   .collection("messages").document(msgId).set(doc)
                   .addOnSuccessListener(v -> {
                       runOnUiThread(() -> { if (sendButton != null) sendButton.setEnabled(true); });
-                      FirebaseCostGuard.getInstance(ChatMediaActivity.this).recordWrites(1);
                       dbExecutor.execute(() -> AppDatabase.getInstance(ChatMediaActivity.this)
                               .outboxDao().delete(msgId));
                       adapter.updateMessage(msgId, m -> m.setStatus("sent"));
