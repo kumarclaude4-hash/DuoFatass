@@ -709,7 +709,7 @@ public class ChatMediaActivity extends BaseActivity {
         // message listener only after the session is ready so messages can be decrypted.
         ensureSignalSession();
 
-        typingThrottle = new PresenceThrottle(conversationId, myUid);
+        typingThrottle = new PresenceThrottle(ChatMediaActivity.this, conversationId, myUid);
 
         ButtonPressAnimator.attach(sendButton);
         sendButton.setOnClickListener(v -> {
@@ -2243,7 +2243,7 @@ public class ChatMediaActivity extends BaseActivity {
                     // batchUpdateStatus: single notifyItemChanged per row vs N adapter.updateMessage() calls.
                     adapter.batchUpdateStatus(sentIds, "delivered");
                     // Persist to Firestore so ticks survive app restarts
-                    DeliveryReceiptHelper.markDeliveredByIds(conversationId, sentIds);
+                    DeliveryReceiptHelper.markDeliveredByIds(ChatMediaActivity.this, conversationId, sentIds);
                 }
             }
         });
@@ -4033,7 +4033,7 @@ public class ChatMediaActivity extends BaseActivity {
 
         // Bug B fix: reset the unread counter so the badge clears when chat is opened.
         // UnreadCountHelper.reset() sets unread_<myUid> to 0 on the conversation doc.
-        com.duoshield.app.util.UnreadCountHelper.reset(conversationId, myUid);
+        com.duoshield.app.util.UnreadCountHelper.reset(ChatMediaActivity.this, conversationId, myUid);
 
         if (partnerUid == null) return;
 
