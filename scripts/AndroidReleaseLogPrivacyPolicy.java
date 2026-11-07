@@ -1,8 +1,10 @@
 import com.sun.source.tree.CatchTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.VariableTree;
@@ -20,7 +22,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -44,9 +48,9 @@ import javax.tools.ToolProvider;
  * needed. The policy deliberately rejects ambiguous exception diagnostics and
  * sensitive getters unless the value is passed through LogRedact.
  *
- * This is a source-policy tripwire, not whole-program taint analysis. Keep the
- * finding Partial until indirect data flow and runtime logcat are separately
- * reviewed and accepted.
+ * This includes a conservative method-local alias pass, but is not whole-program
+ * taint analysis. Keep the finding Partial until interprocedural data flow and
+ * runtime logcat are separately reviewed and accepted.
  */
 public final class AndroidReleaseLogPrivacyPolicy {
     private static final Pattern SENSITIVE_IDENTIFIER = Pattern.compile(
@@ -59,10 +63,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
           + "alias|keyAlias|keystoreAlias|manufacturer|model|deviceManufacturer|deviceModel|"
           + "throwable|exception|cause|failure|stacktrace).*");
 
-    // Explicitly safe numeric operational metrics. Keep this allow-list narrow:
-    // these values reveal aggregate counts, not user identifiers or content.
+    // Explicitly safe numeric/operational identifiers. Keep this allow-list narrow:
+    // these are aggregate counters or fixed numeric protocol constants, not user data.
     private static final Set<String> SAFE_OPERATIONAL_COUNTERS =
-            Collections.unmodifiableSet(new HashSet<>(Collections.singletonList("checksumFailures")));
+            Collections.unmodifiableSet(new HashSet<>(java.util.Arrays.asList(
+                    "checksumFailures", "CHUNK_PLAINTEXT_SIZE")));
 
     private static final Pattern SENSITIVE_ACCESSOR = Pattern.compile(
             "(?i)(get|is|to)(uid|userId|accountId|callerId|senderId|recipientId|peerId|"
@@ -96,7 +101,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             for (String violation : result.violations) System.err.println(" - " + violation);
             System.exit(1);
         }
-        System.out.println("PASS: no raw sensitive interpolation or Throwable stack traces found.");
+        System.out.println("PASS: no raw sensitive interpolation, method-local tainted aliases, or Throwable stack traces found.");
     }
 
     private static ScanResult scan(Path sourceRoot) throws IOException {
@@ -166,7 +171,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             Path safe = Files.createDirectories(root.resolve("safe"));
             Files.writeString(safe.resolve("SafeFixture.java"),
                     "class SafeFixture {\n"
-                  + "  void log(Throwable failure, String peerId, Profile profile, String alias) {\n"
+                  + "  void log(Throwable failure, String peerId, Profile profile, String alias, HttpURLConnection connection, TurnBandwidthTracker tracker, Response httpResult) {\n"
                   + "    Log.w(\"TAG\", \"request failed: \" + LogRedact.error(failure));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(peerId));\n"
                   + "    Log.e(\"TAG\", \"peer=\" + LogRedact.uid(profile.userId));\n"
@@ -177,11 +182,37 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"alias=\" + LogRedact.metadata(alias));\n"
                   + "    Log.w(\"TAG\", \"device=\" + LogRedact.metadata(Build.MODEL) + \"/\" + LogRedact.metadata(Build.MANUFACTURER));\n"
                   + "    Log.w(LogRedact.uid(peerId), \"redacted tag is safe\");\n"
+                  + "    String safeValue = LogRedact.metadata(alias);\n"
+                  + "    Log.w(\"TAG\", safeValue);\n"
+                  + "    StringBuilder safeBuilder = new StringBuilder();\n"
+                  + "    safeBuilder.append(LogRedact.uid(peerId));\n"
+                  + "    Log.w(\"TAG\", safeBuilder.toString());\n"
+                  + "    Map<String, Object> safeFields = new HashMap<>();\n"
+                  + "    safeFields.put(\"peer\", LogRedact.uid(peerId));\n"
+                  + "    Log.w(\"TAG\", safeFields.toString());\n"
+                  + "    int safeCount = safeFields.size();\n"
+                  + "    Log.w(\"TAG\", \"record count=\" + safeCount);\n"
+                  + "    int statusCode = connection.getResponseCode();\n"
+                  + "    Log.w(\"TAG\", \"HTTP status=\" + statusCode);\n"
+                  + "    Log.w(\"TAG\", tracker.getSummary());\n"
+                  + "    Log.w(\"TAG\", \"OkHttp status=\" + httpResult.code());\n"
                   + "  }\n"
+                  + "}\n"
+                  + "class B2StorageHelper {\n"
+                  + "  String redactOperationName(String value) { return \"download:\" + LogRedact.metadata(value); }\n"
+                  + "  void logAlias(String alias) { String safeOperation = redactOperationName(alias); Log.w(\"TAG\", safeOperation); }\n"
+                  + "}\n"
+                  + "class LegacyPlaintextMigrator {\n"
+                  + "  int copyInto(Object target, Map<String, Object> legacy) { return legacy.size(); }\n"
+                  + "  void logMigration(Profile profile) { Map<String, Object> legacy = new HashMap<>(); legacy.put(\"peer\", profile.getUserId()); int migrated = copyInto(null, legacy); Log.w(\"TAG\", \"migrated=\" + migrated); }\n"
+                  + "}\n"
+                  + "class DuressManager {\n"
+                  + "  int postDuressLock(String nonce) { return 200; }\n"
+                  + "  void logLock(String token) { int lockStatus = postDuressLock(token); Log.w(\"TAG\", \"lock HTTP status=\" + lockStatus); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 9) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 19) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -200,6 +231,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void rawAlias(String alias) { Log.w(\"TAG\", \"alias=\" + alias); }\n"
                   + "  void rawDeviceModel() { Log.w(\"TAG\", \"device=\" + Build.MODEL + \"/\" + Build.MANUFACTURER); }\n"
                   + "  void rawTag(String uid) { Log.w(uid, \"static message\"); }\n"
+                  + "  void localAlias(Profile profile) { String value = profile.getUserId(); Log.e(\"TAG\", value); }\n"
+                  + "  void reassignedAlias(Profile profile) { String value = \"ready\"; value = profile.getUserId(); Log.w(\"TAG\", value); }\n"
+                  + "  void builderAlias(Profile profile) { StringBuilder builder = new StringBuilder(); builder.append(profile.getUserId()); Log.e(\"TAG\", builder.toString()); }\n"
+                  + "  void mapAlias(Profile profile) { Map<String, Object> fields = new HashMap<>(); fields.put(\"peer\", profile.getUserId()); Log.w(\"TAG\", fields.toString()); }\n"
+                  + "  void mapReadAlias(Profile profile) { Map<String, Object> fields = new HashMap<>(); fields.put(\"peer\", profile.getUserId()); String value = (String) fields.get(\"peer\"); Log.e(\"TAG\", value); }\n"
+                  + "  void concatenatedAlias(Profile profile) { String value = profile.getUserId(); Log.w(\"TAG\", \"peer=\" + value); }\n"
+                  + "  void opaqueCallArgumentAlias(Profile profile) { String value = identityEcho(profile.getUserId()); Log.e(\"TAG\", value); }\n"
+                  + "  void messageLengthStillSensitive(String message) { int length = message.length(); Log.w(\"TAG\", \"message length=\" + length); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
@@ -213,6 +252,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(unsafeResult.violations, "raw sensitive member 'MODEL'");
             requireViolation(unsafeResult.violations, "raw sensitive member 'MANUFACTURER'");
             requireViolation(unsafeResult.violations, "raw sensitive identifier 'uid'");
+            requireViolation(unsafeResult.violations, "method-local sensitive alias/container reaches Log.e message");
+            requireViolation(unsafeResult.violations, "method-local sensitive alias/container reaches Log.w message");
             if (unsafeResult.violations.size() < 13) {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
@@ -287,6 +328,360 @@ public final class AndroidReleaseLogPrivacyPolicy {
         }
     }
 
+    /**
+     * Conservative method-local data-flow pass for release-log sinks.
+     *
+     * <p>Tracks sensitive values through local declarations, reassignment,
+     * concatenated expressions, StringBuilder/StringBuffer operations, and
+     * common map/bundle/JSON/builder insertion and retrieval patterns. Taint is
+     * sticky for the remainder of a method: this deliberately prefers a false
+     * positive over clearing a value after a branch or a reassignment that the
+     * syntax-only pass cannot prove dominates every path.
+     *
+     * <p>This is not symbol-resolved or interprocedural analysis. It does not
+     * prove arbitrary helper return values, reflection or third-party internals.
+     */
+    private static final class MethodLocalTaintScanner extends TreeScanner<Void, Void> {
+        private static final Pattern CONTAINER_TYPE = Pattern.compile(
+                "(?i).*(stringbuilder|stringbuffer|stringjoiner|map|bundle|intent|"
+              + "jsonobject|jsonarray|contentvalues|list|set|collection|builder|values).*");
+        private static final Pattern MUTATOR = Pattern.compile(
+                "(?i)(append|add|put|set|with|addProperty|addField|putExtra|putString|"
+              + "putSerializable|putParcelable|putInt|putLong|putBoolean).*");
+
+        private final CompilationUnitTree unit;
+        private final SourcePositions positions;
+        private final List<String> violations;
+        private final String ownerClass;
+        private final Map<String, String> localTypes = new HashMap<>();
+        private final Set<String> taintedLocals = new HashSet<>();
+        private final Set<String> taintedContainers = new HashSet<>();
+        private final Set<String> containerLocals = new HashSet<>();
+        private final Set<String> throwableLocals = new HashSet<>();
+
+        MethodLocalTaintScanner(CompilationUnitTree unit, SourcePositions positions,
+                                List<String> violations, String ownerClass) {
+            this.unit = unit;
+            this.positions = positions;
+            this.violations = violations;
+            this.ownerClass = ownerClass == null ? "" : ownerClass;
+        }
+
+        @Override
+        public Void visitMethod(MethodTree node, Void unused) {
+            // A fresh pass is created for each method. Do not cross method or
+            // nested-type boundaries with a name-only environment.
+            for (VariableTree parameter : node.getParameters()) {
+                String name = parameter.getName().toString();
+                String type = parameter.getType() == null ? "" : parameter.getType().toString();
+                localTypes.put(name, type);
+                if (CONTAINER_TYPE.matcher(type).matches()) containerLocals.add(name);
+                if (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                        && !SAFE_OPERATIONAL_COUNTERS.contains(name)) taintedLocals.add(name);
+                if (isThrowableType(type)) {
+                    throwableLocals.add(name);
+                    taintedLocals.add(name);
+                }
+            }
+            scan(node.getBody(), null);
+            return null;
+        }
+
+        @Override
+        public Void visitClass(com.sun.source.tree.ClassTree node, Void unused) {
+            // Anonymous/local class methods are analyzed independently when the
+            // outer LogCallScanner reaches them.
+            return null;
+        }
+
+        @Override
+        public Void visitVariable(VariableTree node, Void unused) {
+            String name = node.getName().toString();
+            String type = node.getType() == null ? "" : node.getType().toString();
+            localTypes.put(name, type);
+            ExpressionTree initializer = node.getInitializer();
+            if (CONTAINER_TYPE.matcher(type).matches()
+                    || isContainerConstruction(initializer)) {
+                containerLocals.add(name);
+            }
+            if ((SENSITIVE_IDENTIFIER.matcher(name).matches()
+                    && !SAFE_OPERATIONAL_COUNTERS.contains(name)
+                    && (initializer == null || !isRedactedExpression(initializer)))
+                    || (initializer != null && (hasSensitiveSource(initializer)
+                    || containsTrackedAlias(initializer)))) {
+                taintedLocals.add(name);
+            }
+            if (containerLocals.contains(name) && initializer != null
+                    && (hasSensitiveSource(initializer) || containsTrackedAlias(initializer))) {
+                taintedContainers.add(name);
+            }
+            if (isThrowableType(type)) {
+                throwableLocals.add(name);
+                taintedLocals.add(name);
+            }
+            return super.visitVariable(node, unused);
+        }
+
+        @Override
+        public Void visitAssignment(com.sun.source.tree.AssignmentTree node, Void unused) {
+            String target = node.getVariable() instanceof IdentifierTree
+                    ? ((IdentifierTree) node.getVariable()).getName().toString() : null;
+            if (target != null && (hasSensitiveSource(node.getExpression())
+                    || containsTrackedAlias(node.getExpression()))) {
+                taintedLocals.add(target);
+                if (containerLocals.contains(target)) taintedContainers.add(target);
+            }
+            return super.visitAssignment(node, unused);
+        }
+
+        @Override
+        public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+            String method = methodName(node);
+            String receiver = receiverName(node);
+            boolean logSink = ("w".equals(method) || "e".equals(method) || "wtf".equals(method))
+                    && ("Log".equals(receiver) || receiver.endsWith(".Log"));
+            if (logSink && node.getArguments().size() >= 2) {
+                List<? extends ExpressionTree> args = node.getArguments();
+                String tagAliases = trackedReferenceSummary(args.get(0));
+                if (!tagAliases.isEmpty()) {
+                    addViolation(node, "method-local sensitive alias/container reaches Log."
+                            + method + " tag [" + tagAliases + "]");
+                }
+                String messageAliases = trackedReferenceSummary(args.get(1));
+                if (!messageAliases.isEmpty()) {
+                    addViolation(node, "method-local sensitive alias/container reaches Log."
+                            + method + " message [" + messageAliases + "]");
+                }
+            }
+
+            if (MUTATOR.matcher(method).matches()) {
+                String root = rootIdentifier(receiverExpression(node));
+                if (root != null && containerLocals.contains(root)
+                        && hasSensitiveArgument(node.getArguments())) {
+                    taintedContainers.add(root);
+                }
+            }
+            return super.visitMethodInvocation(node, unused);
+        }
+
+        private boolean hasSensitiveArgument(List<? extends ExpressionTree> arguments) {
+            for (ExpressionTree argument : arguments) {
+                if (hasSensitiveSource(argument) || containsTrackedAlias(argument)) return true;
+            }
+            return false;
+        }
+
+        private boolean isSafeThrowableClassNameCall(MethodInvocationTree node) {
+            if (!"getSimpleName".equals(methodName(node))) return false;
+            String receiver = receiverName(node);
+            String suffix = ".getClass()";
+            if (!receiver.endsWith(suffix)) return false;
+            String variable = receiver.substring(0, receiver.length() - suffix.length());
+            return variable.matches("[A-Za-z_$][A-Za-z0-9_$]*")
+                    && throwableLocals.contains(variable);
+        }
+
+        private boolean isRedactedExpression(ExpressionTree expression) {
+            if (!(expression instanceof MethodInvocationTree)) return false;
+            MethodInvocationTree invocation = (MethodInvocationTree) expression;
+            String method = methodName(invocation);
+            String receiver = receiverName(invocation);
+            if ("redactOperationName".equals(method)
+                    && "B2StorageHelper".equals(ownerClass)
+                    && (receiver.isEmpty() || receiver.endsWith(".B2StorageHelper"))) return true;
+            return ("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                    && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"));
+        }
+
+        /**
+         * Known projections that intentionally discard sensitive object contents.
+         * These are narrowly enumerated so a numeric status/count/aggregate may be
+         * logged without blessing the object from which it was derived.
+         */
+        private boolean isRedactedOperationName(MethodInvocationTree node) {
+            return "redactOperationName".equals(methodName(node))
+                    && "B2StorageHelper".equals(ownerClass)
+                    && (receiverName(node).isEmpty()
+                    || receiverName(node).endsWith(".B2StorageHelper"));
+        }
+
+        private boolean isSafeOperationalProjection(MethodInvocationTree node) {
+            String method = methodName(node);
+            ExpressionTree receiver = receiverExpression(node);
+            String root = rootIdentifier(receiver);
+            String receiverType = root == null ? "" : localTypes.getOrDefault(root, "");
+            if ("size".equals(method)) {
+                // Only collection/map sizes are treated as aggregate counts. A String
+                // or byte-array length may expose content length and is not exempt.
+                return root != null && containerLocals.contains(root);
+            }
+            if ("code".equals(method)) {
+                return receiverType.endsWith("Response");
+            }
+            if ("getResponseCode".equals(method)) {
+                return receiverType.endsWith("HttpURLConnection");
+            }
+            if ("getSummary".equals(method)) {
+                return receiverType.endsWith("TurnBandwidthTracker");
+            }
+            if ("copyInto".equals(method)) {
+                return "LegacyPlaintextMigrator".equals(ownerClass) && receiver == null;
+            }
+            if ("postDuressLock".equals(method)) {
+                return "DuressManager".equals(ownerClass) && receiver == null;
+            }
+            return false;
+        }
+
+        private boolean isContainerConstruction(ExpressionTree expression) {
+            if (expression instanceof NewClassTree) {
+                return CONTAINER_TYPE.matcher(
+                        ((NewClassTree) expression).getIdentifier().toString()).matches();
+            }
+            return false;
+        }
+
+        private boolean hasSensitiveSource(ExpressionTree expression) {
+            if (expression == null) return false;
+            final boolean[] found = {false};
+            new TreeScanner<Void, Void>() {
+                @Override
+                public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                    String method = methodName(node);
+                    String receiver = receiverName(node);
+                    if ((("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")))
+                            || (isRedactedOperationName(node))
+                            || isSafeOperationalProjection(node)) {
+                        return null; // Exact redaction/projection boundary; do not inspect its receiver/arguments.
+                    }
+                    if (isSafeThrowableClassNameCall(node)) {
+                        return null;
+                    }
+                    if (SENSITIVE_ACCESSOR.matcher(method).matches()
+                            || "getMessage".equals(method) || "getLocalizedMessage".equals(method)
+                            || "getCause".equals(method) || "getException".equals(method)
+                            || "getThrowable".equals(method) || "getFailure".equals(method)
+                            || "getStackTraceString".equals(method)) {
+                        found[0] = true;
+                    }
+                    return found[0] ? null : super.visitMethodInvocation(node, unused);
+                }
+
+                @Override
+                public Void visitIdentifier(IdentifierTree node, Void unused) {
+                    String name = node.getName().toString();
+                    if (taintedLocals.contains(name)
+                            || (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                            && !SAFE_OPERATIONAL_COUNTERS.contains(name))
+                            || throwableLocals.contains(name)) {
+                        found[0] = true;
+                    }
+                    return null;
+                }
+
+                @Override
+                public Void visitMemberSelect(MemberSelectTree node, Void unused) {
+                    String name = node.getIdentifier().toString();
+                    if (!SAFE_OPERATIONAL_COUNTERS.contains(name)
+                            && (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                            || SENSITIVE_ACCESSOR.matcher(name).matches())) {
+                        found[0] = true;
+                    }
+                    return found[0] ? null : super.visitMemberSelect(node, unused);
+                }
+
+                @Override
+                public Void visitNewClass(NewClassTree node, Void unused) {
+                    if (isThrowableType(node.getIdentifier().toString())) found[0] = true;
+                    return found[0] ? null : super.visitNewClass(node, unused);
+                }
+            }.scan(expression, null);
+            return found[0];
+        }
+
+        private boolean containsTrackedAlias(ExpressionTree expression) {
+            return !trackedReferenceSummary(expression).isEmpty();
+        }
+
+        private String trackedReferenceSummary(ExpressionTree expression) {
+            if (expression == null) return "";
+            final Set<String> found = new java.util.TreeSet<>();
+            new TreeScanner<Void, Void>() {
+                @Override
+                public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                    String method = methodName(node);
+                    String receiver = receiverName(node);
+                    if ((("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")))
+                            || isRedactedOperationName(node)
+                            || isSafeOperationalProjection(node)) {
+                        return null;
+                    }
+                    if (isSafeThrowableClassNameCall(node)) return null;
+                    return super.visitMethodInvocation(node, unused);
+                }
+
+                @Override
+                public Void visitIdentifier(IdentifierTree node, Void unused) {
+                    String name = node.getName().toString();
+                    if (taintedLocals.contains(name) || taintedContainers.contains(name)) {
+                        found.add(name);
+                    }
+                    return null;
+                }
+            }.scan(expression, null);
+            return String.join(",", found);
+        }
+
+        private void addViolation(com.sun.source.tree.Tree tree, String reason) {
+            long position = positions.getStartPosition(unit, tree);
+            long line = position < 0 ? -1 : unit.getLineMap().getLineNumber(position);
+            String violation = unit.getSourceFile().getName() + ":" + line + ": " + reason;
+            if (!violations.contains(violation)) violations.add(violation);
+        }
+
+        private static boolean isThrowableType(String type) {
+            String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
+            return normalized.contains("throwable")
+                    || normalized.contains("exception")
+                    || normalized.contains("error");
+        }
+
+        private static String methodName(MethodInvocationTree node) {
+            if (node.getMethodSelect() instanceof MemberSelectTree) {
+                return ((MemberSelectTree) node.getMethodSelect()).getIdentifier().toString();
+            }
+            if (node.getMethodSelect() instanceof IdentifierTree) {
+                return ((IdentifierTree) node.getMethodSelect()).getName().toString();
+            }
+            return "";
+        }
+
+        private static String receiverName(MethodInvocationTree node) {
+            ExpressionTree receiver = receiverExpression(node);
+            return receiver == null ? "" : receiver.toString();
+        }
+
+        private static ExpressionTree receiverExpression(MethodInvocationTree node) {
+            return node.getMethodSelect() instanceof MemberSelectTree
+                    ? ((MemberSelectTree) node.getMethodSelect()).getExpression() : null;
+        }
+
+        private static String rootIdentifier(ExpressionTree expression) {
+            if (expression instanceof IdentifierTree) {
+                return ((IdentifierTree) expression).getName().toString();
+            }
+            if (expression instanceof MemberSelectTree) {
+                return rootIdentifier(((MemberSelectTree) expression).getExpression());
+            }
+            if (expression instanceof MethodInvocationTree) {
+                return rootIdentifier(receiverExpression((MethodInvocationTree) expression));
+            }
+            return null;
+        }
+    }
+
     private static final class LogCallScanner extends TreePathScanner<Void, Void> {
         private final CompilationUnitTree unit;
         private final SourcePositions positions;
@@ -302,6 +697,20 @@ public final class AndroidReleaseLogPrivacyPolicy {
             this.inspectedCalls = inspectedCalls;
             this.violations = violations;
             this.throwableVariables = throwableVariables;
+        }
+
+        @Override
+        public Void visitMethod(MethodTree node, Void unused) {
+            if (node.getBody() != null) {
+                String ownerClass = "";
+                com.sun.source.util.TreePath parent = getCurrentPath().getParentPath();
+                if (parent != null && parent.getLeaf() instanceof ClassTree) {
+                    ownerClass = ((ClassTree) parent.getLeaf()).getSimpleName().toString();
+                }
+                new MethodLocalTaintScanner(unit, positions, violations, ownerClass)
+                        .scan(node, null);
+            }
+            return super.visitMethod(node, unused);
         }
 
         @Override
