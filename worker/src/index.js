@@ -465,7 +465,7 @@ async function kvSet(env, key, value, opts = {}) {
 // 80K/day; sampled telemetry is approximate and Cloudflare's own hard limit
 // remains authoritative. Request counts sample 1 in 500 and add 500, using
 // about 160 KV writes/day at the 80K target (sampling error can be up to 499).
-async function reserveDailyMediaMutation(env, cors, operation) {
+async function reserveDailyMediaMutation(env, cors, operation, holder) {
   // A global SQLite-backed Durable Object serializes mutation reservations
   // across all Worker locations. KV cannot safely do this: it is eventually
   // consistent and its free tier permits only 1K writes/day.
@@ -480,20 +480,32 @@ async function reserveDailyMediaMutation(env, cors, operation) {
     ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS || '120', 120)
     : safeInt(env.MAX_DAILY_MEDIA_DELETES || '120', 120);
   const limit = configuredLimit >= 1 && configuredLimit <= 10_000 ? configuredLimit : 120;
+  const configuredHolderLimit = operation === 'upload'
+    ? safeInt(env.MAX_DAILY_MEDIA_UPLOADS_PER_HOLDER || '20', 20)
+    : safeInt(env.MAX_DAILY_MEDIA_DELETES_PER_HOLDER || '20', 20);
+  const holderLimit = configuredHolderLimit >= 1 && configuredHolderLimit <= limit
+    ? configuredHolderLimit : Math.min(20, limit);
+  if (typeof holder !== 'string' || !holder) {
+    return json({ error: 'Media quota identity unavailable' }, 503, cors);
+  }
+  const holderKey = await holderBucketKey(holder);
   try {
     const id = env.MEDIA_QUOTA_DO.idFromName('duoshield-global-daily-media-mutations');
     const stub = env.MEDIA_QUOTA_DO.get(id);
     const response = await stub.fetch('https://media-quota.internal/reserve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reserve', operation, limit }),
+      body: JSON.stringify({ action: 'reserve', operation, limit, holderKey, holderLimit }),
     });
     let result;
     try { result = await response.json(); } catch { result = null; }
     if (response.status === 429 && result?.allowed === false) {
       return json({
-        error: `Daily media ${operation} budget reached. Try again after the UTC reset.`,
+        error: result.scope === 'holder'
+          ? `This account reached its daily media ${operation} budget. Try again after the UTC reset.`
+          : `Daily media ${operation} budget reached. Try again after the UTC reset.`,
         operation: result.operation,
+        scope: result.scope,
         count: result.count,
         limit: result.limit,
         reset_at: result.resetAt,
@@ -912,7 +924,7 @@ export default {
 
       // Bound KV-backed storage-accounting writes globally. Failed attempts
       // consume a slot deliberately so retries cannot bypass the daily budget.
-      const mutationLimited = await reserveDailyMediaMutation(env, cors, 'upload');
+      const mutationLimited = await reserveDailyMediaMutation(env, cors, 'upload', cap.holder);
       if (mutationLimited) return mutationLimited;
 
       // Cloudflare R2 PutObject is a Class A operation. Reserve before
@@ -1152,7 +1164,7 @@ export default {
       }
       // Reserve before consuming the one-shot token: quota exhaustion must
       // leave the caller's capability retryable after the daily reset.
-      const mutationLimited = await reserveDailyMediaMutation(env, cors, 'delete');
+      const mutationLimited = await reserveDailyMediaMutation(env, cors, 'delete', cap.holder);
       if (mutationLimited) return mutationLimited;
 
       const remainingTtlSeconds = Math.ceil(Math.max(0, cap.expiresAt - Date.now()) / 1000);
