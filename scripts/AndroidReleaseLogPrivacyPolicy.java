@@ -284,7 +284,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void safeRecursionHelper() { String x = safeRecursive(true); Log.w(\"TAG\", x); }\n"
                   + "  void fieldHelper(Profile profile) { saveField(profile); String x = readField(); Log.w(\"TAG\", x); }\n"
                   + "  void operationalScalars() { boolean available = SecurePrefs.isAvailable(); SecurityTier tier = SecurePrefs.getTier(); boolean due = PendingLockStore.isRotationDue(null); int keyId = SignalKeyManager.getCurrentKyberPreKeyId(null); Log.w(\"TAG\", \"ops=\" + available + \"/\" + tier + \"/\" + due + \"/\" + keyId); }\n"
-                  + "  void unrelatedSameName(Profile profile) { Log.w(\"TAG\", UnsafeOther.isAvailable(profile.getUserId())); }\n"
+                  + "  void unrelatedSameName(Profile profile) { String x = UnsafeOther.isAvailable(profile.getUserId()); Log.w(\"TAG\", x); }\n"
                   + "}\n"
                   + "class SecurityTier { boolean isDurable() { return true; } }\n"
                   + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
