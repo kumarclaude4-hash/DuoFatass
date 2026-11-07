@@ -14,8 +14,9 @@ const MAX_R2_BYTES = 9.5 * 1024 * 1024 * 1024; // 9.5 GB
 // Workers free tier: 100,000 requests/day (not per month). Enforce at 90% = 90K/day.
 const MAX_DAILY_REQUESTS = 90_000;
 
-// B2 free tier: 10 GB — tracked for informational use only, no hard cap enforced.
-const MAX_B2_BYTES = 10 * 1024 * 1024 * 1024;
+// B2 free tier: 10 GB. Keep a 5% safety margin for accounting drift and
+// objects written outside this Worker. Tiering stops before this ceiling.
+const MAX_B2_BYTES = 9.5 * 1024 * 1024 * 1024;
 
 // Maximum objects migrated per cron run. 3 subrequests per migration (get + put + delete)
 // plus list overhead keeps total well under the 1,000 subrequest-per-invocation limit.
@@ -500,8 +501,8 @@ async function checkPerUserRateLimit(request, env, cors) {
 // ─── R2 storage tracking ──────────────────────────────────────────────────────
 // Authoritative R2 bytes are written by the nightly cron (full object scan).
 // Per-request writes keep the counter timely between cron runs.
-// B2 bytes are reconciled exclusively by the cron via B2 ListObjectsV2 —
-// never tracked per-request to conserve KV write quota.
+// B2 bytes are reconciled by the scheduled job before and after tiering.
+// The cron tracks projected bytes in memory to preserve the free KV write budget.
 async function getR2Bytes(env) {
   return safeInt(await kvGet(env, 'global:storage:r2'));
 }
@@ -1155,6 +1156,17 @@ export default {
     let moved        = 0;
     let r2TotalBytes = 0;
 
+    // Reconcile cold-tier usage BEFORE migrating anything. If listing fails,
+    // fail closed: leave objects in R2 rather than assume B2 is empty.
+    let b2ProjectedBytes = await getB2TotalBytes(b2, env);
+    if (b2ProjectedBytes === null) {
+      console.error('B2 pre-migration reconciliation failed — skipping tiering to protect the free-tier cap');
+      return;
+    }
+    if (b2ProjectedBytes > MAX_B2_BYTES) {
+      console.warn(`B2 is already above the safety cap (${b2ProjectedBytes} B / ${MAX_B2_BYTES} B); tiering paused`);
+    }
+
     // ── Step 1: Scan R2 ─────────────────────────��──────────────────────────────
     let cursor;
     do {
@@ -1179,6 +1191,15 @@ export default {
           // Count the object as still in R2 so the cap check stays conservative.
           // It will be retried tomorrow.
           r2TotalBytes += obj.size ?? 0;
+          continue;
+        }
+
+        // Enforce the B2 budget before uploading. If the object cannot fit,
+        // retain it in R2 and retry on a later run after cold media is deleted.
+        const objectBytes = obj.size ?? 0;
+        if (b2ProjectedBytes + objectBytes > MAX_B2_BYTES) {
+          r2TotalBytes += objectBytes;
+          console.warn(`B2 safety cap reached; retaining ${objectBytes} B in R2 for a later retry`);
           continue;
         }
 
@@ -1214,6 +1235,10 @@ export default {
         });
 
         if (putResp.ok) {
+          // Track successful writes in this cron invocation before evaluating
+          // the next object; no per-object KV writes are needed.
+          b2ProjectedBytes += body.byteLength;
+
           // Race guard: a client PUT/DELETE could have landed on this key
           // between the get() above and now. Re-HEAD and only delete from R2
           // if the object is unchanged (same etag) — otherwise we'd delete
@@ -1311,8 +1336,11 @@ export default {
     const b2TotalBytes = await getB2TotalBytes(b2, env);
     if (b2TotalBytes !== null) {
       await kvSet(env, 'global:storage:b2', b2TotalBytes);
+      if (b2TotalBytes > MAX_B2_BYTES) {
+        console.error(`B2 usage exceeds safety cap: ${b2TotalBytes} B / ${MAX_B2_BYTES} B`);
+      }
     } else {
-      console.warn('B2 list reconciliation failed — KV b2 counter unchanged this run');
+      console.warn('B2 post-run reconciliation failed — KV counter unchanged; next run will re-check before tiering');
     }
 
     console.log(
