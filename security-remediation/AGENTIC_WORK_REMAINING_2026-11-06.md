@@ -1,13 +1,15 @@
-# Agentic Work Remaining — 2026-11-06
+# Agentic Work Remaining — updated 2026-11-07
 
 Repository: kumarclaude4-hash/DuoFatass
 Base branch: main
-Latest merged mainline: PR #244 at 4fb33fd9978249761ba25f1c3d64f68c534978a4 (CI latest attempt 4: 10/10; Security Scan: 3/3).
-Previous work branch: security/release-log-privacy-ast-guard-2026-11-06 (PR #244, merged).
-Current work branch: security/s10-n2-indirect-release-log-review-2026-11-07 (PR #246 Draft; latest head 2b429653157e9930212b61f52372654eec862086).
-Status: PR #244 is merged. Its current head 328731b948e15bb1cc93ca2e61343be4b2325c75 passed CI run 42325532834 latest attempt 4 (10/10 jobs) and Security Scan 42325532774 (3/3). The new S10-N2 follow-up removes the DeviceSecurityGate manufacturer/model release-log fields and pseudonymises the PinKeyGate Keystore alias diagnostic; it extends the AST identifier inventory/fixtures and adds JVM source regression coverage. The AST policy now inspects both log tag and message arguments, including a redacted-positive/raw-UID-tag-negative fixture. PR #246 is open as Draft; the latest head's CI/security workflows are still pending. Source-level security sign-off remains pending the new workflows, residual indirect-flow review and post-feature-complete device logcat QA.
+Latest merged mainline: PR #246 at 0584823d9d60181802816598c845a50158e86ad8 (CI 10/10; Security Scan 3/3).
+Current security work: PR #248 — https://github.com/kumarclaude4-hash/DuoFatass/pull/248
+Current branch: security/s10-n2-method-local-log-taint-2026-11-07
+Latest verified PR #248 head: d676fb0e028fb578cbb2d8aa83d2bb0f3afe8f4b.
+PR #248 evidence: CI run 42330785500 (10/10 jobs) and Security Scan 42330785396 (3/3 jobs). The method-local AST pass and full production scan passed: 204 Java files, 407 release-surviving Log.w/Log.e/Log.wtf calls, zero violations. This PR adds conservative tracking across local declarations, reassignment, concatenation, StringBuilder, Map/Bundle/JSON/builder patterns, and both Android log tag/message sinks. Owner/type-scoped sanitizers and operational projections are documented in the S10-N2 tracker/session report. The PR has not yet been merged at the time of this handoff update.
+S10-N2 remains Partial because the analyzer is syntax-only and method-local and physical-device release-logcat acceptance is still deferred until feature-complete. FINAL_SIGNOFF.md remains PENDING.
 
-This is the current execution handoff for the next coding agent. It supersedes the task ordering in older agent handoff notes. Finish the source-level, JVM, backend and isolated-emulator work while the app is being completed. Physical-device acceptance must happen only after the owner declares the app feature-complete.
+This is the current execution handoff for the next coding agent. It supersedes the task ordering in older agent handoff notes. Continue repository-side static analysis, source/JVM tests and authorized staging acceptance while the app is being completed. Physical-device acceptance must happen only after the owner declares the app feature-complete.
 
 ## 1. Binding instructions
 
@@ -42,21 +44,29 @@ The row-level tracker recount before this branch's CI is 116 findings: 83 Fixed,
 
 ## 3. Agentic work to do now — no manual device testing
 
-### A. S10-N2 — compiler-AST release-log guard implemented; residual review remains
+### A. S10-N2 — release-log policy guard plus method-local taint analysis
 
-PR #244 adds `scripts/AndroidReleaseLogPrivacyPolicy.java`, a JDK compiler-AST policy guard wired into CI. It scans the complete production Java source tree and checks multiline/concatenated warning/error log expressions without requiring Android app dependencies. It rejects Throwable overloads, exception message/stack-trace extraction, sensitive getters, raw sensitive identifiers and direct sensitive member fields/constants; redaction boundaries through `LogRedact.uid()`, `metadata()` and `error()` are accepted. The self-test fixtures include both unsafe direct fields/constants and a safe redacted member-field case.
+PR #244 added `scripts/AndroidReleaseLogPrivacyPolicy.java`, a JDK compiler-AST policy guard over the full production Android Java tree. It rejects Throwable overloads, exception message/stack-trace extraction, sensitive accessors, raw sensitive identifiers and direct sensitive member fields/constants. PR #246 expanded the sensitive-name list for aliases/device fingerprint fields and treats both log tag and message arguments as disclosure sinks.
 
-**Executed evidence:** PR #244 head `b0308437613ecc449dea7aa3e523f65651ac0848` passed CI run `42315880847` (10/10 jobs) and Security scan `42315880789` (3/3 jobs). The AST job passed its positive/negative self-tests and scanned **204 production Java files and 407 `Log.w` / `Log.e` / `Log.wtf` calls**, with zero policy violations. The same CI run passed Server + Worker tests, Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, vendored libsignal integrity and Gradle wrapper validation.
+PR #248 adds a conservative method-local data-flow pass:
+- Taint propagates through method parameters and local declarations when initialized from sensitive identifiers, member/accessor reads or Throwable data.
+- Reassignment taint is sticky for the rest of the method. This intentionally prefers false positives over an unsafe branch-sensitive clear.
+- Concatenations and nested expressions retain taint.
+- StringBuilder/StringBuffer append and toString paths are tracked.
+- Common Map/Bundle/JSON/ContentValues/builder/list/set insertion patterns taint the container; later container reads or toString use remain tainted.
+- Opaque method calls do not automatically sanitize arguments; sensitive arguments inside a returned expression taint the assigned local.
+- Both `Log.w/e/wtf` tag and message expressions are checked.
+- Sanitization boundaries are explicit: `LogRedact.uid/metadata/error`, plus `B2StorageHelper.redactOperationName` only from its owning helper class.
+- Safe operational projections are narrow: collection sizes from known container locals; `Response.code()` only for Response receiver types; `HttpURLConnection.getResponseCode()` only for HttpURLConnection receiver types; `TurnBandwidthTracker.getSummary()` only for that receiver type; `LegacyPlaintextMigrator.copyInto()` only in that owning class; and `DuressManager.postDuressLock()` only in that owning class. String/byte-array `length()` is not exempt.
 
-**Follow-up implementation (2026-11-07):** the manual review found two source leaks not caught by the original syntactic scanner. ChatMediaActivity logged an aliased exception message from B2 media loading; B2StorageHelper.withRetry logged an operation parameter populated with raw object keys. Both paths are now fixed: UI detail remains UI-only, error logs show exception class only, and storage retry diagnostics retain the operation prefix while pseudonymising the full suffix (including compound range labels). Regression tests cover both source paths and actual metadata-redaction behavior. New workflow results must be green before promoting the tracker row.
+The temporary AST fixtures cover direct sensitive values, raw log tags, local aliases, reassignment, concatenation, builder append, Map put/toString/get, tainted values passed as opaque-call arguments, safe redaction, safe map/builder outputs, safe numeric/aggregate projections and a negative string-length projection. The scanner self-test is run before the full source scan in CI.
 
-**Post-merge manual source review (2026-11-07):** after PR #244 merged, the current warning/error search inventory returned 45 production Java source files; their release-surviving `Log.w`/`Log.e` call sites and the key dynamic helper sources were inspected. The `SignalKeyApi.post()` failure path logs only a path selected from four fixed literal endpoint strings; BackupManager's `event` value is supplied only from fixed event literals; MediaPlayer error fields and Signal key/device IDs in diagnostic output are numeric status/protocol identifiers; all reviewed exception messages are passed through `LogRedact.error()` or reduced to the exception class; reviewed UID, message ID, B2 path, URL and preference-file values are pseudonymised. Release build configuration was checked: release has `minifyEnabled true` and includes `proguard-rules.pro`, which removes `Log.v/d/i`; identity-bearing `Log.i` source statements found by search are not emitted by the minified release variant.
+**Executed evidence — exact PR #248 head `d676fb0e028fb578cbb2d8aa83d2bb0f3afe8f4b`:**
+- CI [42330785500](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42330785500): **10/10 jobs passed** — release-log AST, Server + Worker, Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, libsignal integrity and Gradle wrapper integrity.
+- Security Scan [42330785396](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42330785396): **3/3 jobs passed** — CodeQL, Gitleaks and SBOM.
+- AST job: **204 production Java files; 407 Log.w/Log.e/Log.wtf calls; zero policy violations**.
 
-Two additional direct issues were identified and fixed on this branch: `DeviceSecurityGate.evaluate()` no longer logs `Build.MANUFACTURER` or `Build.MODEL` (unnecessary device-fingerprinting metadata); `PinKeyGate.deleteAlias()` logs only a process-salted metadata pseudonym for the Keystore alias. The AST sensitive-name inventory and positive/negative fixtures now cover `alias`, `MODEL` and `MANUFACTURER`, and `ReleaseLogPrivacyTest` asserts both production boundaries. Branch commits currently include `eacb727`, `1a98953`, `01f196e`, `61bfb47`, `2f910e0`, `a1ad4e3` and the tracker update `898aa7f`; CI has not yet run for this branch.
-
-The source audit is not whole-program taint analysis. It does not prove every builder/map/reflection/opaque helper-return path safe, and no physical logcat evidence is available yet. Keep S10-N2 Partial.
-
-**Remaining:** inspect builder/map/reflection/opaque-helper-return and external-library exception paths beyond the confirmed fixes; the AST scanner is still a syntactic tripwire, not whole-program taint analysis. Review direct/indirect data sources for any remaining user, conversation, content, path, capability or credential values. Physical-device release-logcat acceptance is deferred until the owner declares the app feature-complete. Keep S10-N2 Partial until the manual audit and release QA residuals are accepted; do not treat CI success as production sign-off.
+**Remaining limitations:** this remains syntax-only and method-local, not symbol-resolved whole-program taint analysis. It cannot prove arbitrary cross-method return/field/global flows, reflection, aliasing through unknown external libraries or third-party callback internals. Sticky taint can produce false positives by design. Keep S10-N2 **Partial** until residual source review and post-feature-complete release-logcat acceptance are complete. Do not treat green CI as production sign-off.
 
 ### B. S03-M3 — decide the media capability-token residual
 
