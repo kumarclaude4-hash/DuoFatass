@@ -168,8 +168,7 @@ public class CreateGroupActivity extends BaseActivity {
         FirebaseCostGuard guard = FirebaseCostGuard.getInstance(this);
         if (guard.reserveWrite(1)) {
             db.collection("groups").document(groupId)
-              .set(groupDoc, SetOptions.merge())
-              .addOnSuccessListener(v -> guard.recordWrites(1));
+              .set(groupDoc, SetOptions.merge());
         }
 
         // ── 2. Encrypt group key for each member via Signal + write to Firestore ──
@@ -184,8 +183,7 @@ public class CreateGroupActivity extends BaseActivity {
                 if (guard.reserveWrite(1)) {
                     db.collection("groups").document(groupId)
                       .collection("keys").document(c.uid)
-                      .set(keyDoc)
-                      .addOnSuccessListener(vv -> guard.recordWrites(1));
+                      .set(keyDoc);
                 }
             } catch (Exception e) {
                 android.util.Log.w(TAG, "Failed to encrypt group key for " + LogRedact.uid(c.uid) + " (" + LogRedact.error(e) + ")");
@@ -205,8 +203,7 @@ public class CreateGroupActivity extends BaseActivity {
             if (guard.reserveWrite(1)) {
                 db.collection("groups").document(groupId)
                   .collection("keys").document(myUid)
-                  .set(myKeyDoc)
-                  .addOnSuccessListener(vv -> guard.recordWrites(1));
+                  .set(myKeyDoc);
             }
         } catch (Exception e) {
             android.util.Log.w(TAG, "Failed to encrypt group key for creator " + LogRedact.uid(myUid) + " (" + LogRedact.error(e) + ")");
