@@ -147,7 +147,8 @@ curl "http://localhost:8787/__scheduled?cron=0+2+*+*+*"
 
 > **Note on free-tier request accounting:** Workers KV allows 1,000 writes/day.
 > Request counting samples 1 in 500 requests (~160 writes/day at the 80K request
-> ceiling). PUT and DELETE attempts have separate global caps of 120/day each in the
+> ceiling). Daily media mutation caps leave substantial KV-write headroom even
+> when the scheduled tiering job runs. PUT and DELETE attempts have separate global caps of 120/day each in the
 > SQLite-backed `MediaMutationBudget` Durable Object. This prevents upload traffic
 > from consuming the cleanup allowance used by disappearing messages. At the
 > configured caps, storage accounting and delete replay markers use at most
