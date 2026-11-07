@@ -48,9 +48,12 @@ import javax.tools.ToolProvider;
  * needed. The policy deliberately rejects ambiguous exception diagnostics and
  * sensitive getters unless the value is passed through LogRedact.
  *
- * This includes a conservative method-local alias pass, but is not whole-program
- * taint analysis. Keep the finding Partial until interprocedural data flow and
- * runtime logcat are separately reviewed and accepted.
+ * This includes a conservative method-local alias pass plus bounded summaries for
+ * uniquely resolvable app-owned helper returns and same-class field writes/reads.
+ * It is still syntax-only, not symbol-resolved whole-program analysis: ambiguous
+ * overloads, unresolved virtual dispatch, reflection and third-party internals are
+ * not guessed. Keep the finding Partial until residual source review and runtime
+ * logcat are separately reviewed and accepted.
  */
 public final class AndroidReleaseLogPrivacyPolicy {
     private static final Pattern SENSITIVE_IDENTIFIER = Pattern.compile(
@@ -101,7 +104,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             for (String violation : result.violations) System.err.println(" - " + violation);
             System.exit(1);
         }
-        System.out.println("PASS: no raw sensitive interpolation, method-local tainted aliases, or Throwable stack traces found.");
+        System.out.println("PASS: no raw sensitive interpolation, method-local/interprocedural taint, or Throwable stack traces found.");
     }
 
     private static ScanResult scan(Path sourceRoot) throws IOException {
@@ -150,6 +153,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 throw new IllegalStateException("Java parsing failed:\n" + join(syntaxErrors));
             }
 
+            MethodReturnSummaryIndex returnSummaries = MethodReturnSummaryIndex.build(units);
             List<String> violations = new ArrayList<>();
             int[] inspectedCalls = new int[] {0};
             // Keep inferred Throwable names scoped to one compilation unit. A
@@ -159,7 +163,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 Set<String> throwableVariables = new HashSet<>();
                 new ThrowableVariableCollector(throwableVariables).scan(unit, null);
                 new LogCallScanner(unit, positions, inspectedCalls, violations,
-                        throwableVariables).scan(unit, null);
+                        throwableVariables, returnSummaries).scan(unit, null);
             }
             return new ScanResult(javaFiles.size(), inspectedCalls[0], violations);
         }
@@ -258,6 +262,46 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 throw new IllegalStateException("Unsafe fixture did not exercise every forbidden path: "
                         + join(unsafeResult.violations));
             }
+            Path interprocedural = Files.createDirectories(root.resolve("interprocedural"));
+            Files.writeString(interprocedural.resolve("HelperFlow.java"),
+                    "class Profile { String getUserId() { return \"uid\"; } }\n"
+                  + "class HelperFlow {\n"
+                  + "  String cached;\n"
+                  + "  String direct(Profile profile) { return profile.getUserId(); }\n"
+                  + "  String pass(String value) { return value; }\n"
+                  + "  String sanitized(Profile profile) { return LogRedact.uid(profile.getUserId()); }\n"
+                  + "  String recursive(Profile profile, boolean recurse) { if (recurse) return profile.getUserId(); return recursive(profile, true); }\n"
+                  + "  String safeRecursive(boolean again) { if (again) return safeRecursive(false); return \"safe\"; }\n"
+                  + "  String overloaded(String value) { return \"safe\"; }\n"
+                  + "  String overloaded(int value) { return \"safe\"; }\n"
+                  + "  void saveField(Profile profile) { this.cached = profile.getUserId(); }\n"
+                  + "  String readField() { return this.cached; }\n"
+                  + "  void directHelper(Profile profile) { String x = direct(profile); Log.w(\"TAG\", x); }\n"
+                  + "  void passThrough(Profile profile) { String x = pass(profile.getUserId()); Log.w(\"TAG\", x); }\n"
+                  + "  void sanitizedHelper(Profile profile) { String x = sanitized(profile); Log.w(\"TAG\", x); }\n"
+                  + "  void recursiveHelper(Profile profile) { String x = recursive(profile, true); Log.w(\"TAG\", x); }\n"
+                  + "  void overloadHelper(Profile profile) { String x = overloaded(profile.getUserId()); Log.w(\"TAG\", x); }\n"
+                  + "  void safeRecursionHelper() { String x = safeRecursive(true); Log.w(\"TAG\", x); }\n"
+                  + "  void fieldHelper(Profile profile) { saveField(profile); String x = readField(); Log.w(\"TAG\", x); }\n"
+                  + "  void operationalScalars() { boolean available = SecurePrefs.isAvailable(); SecurityTier tier = SecurePrefs.getTier(); boolean due = PendingLockStore.isRotationDue(null); int keyId = SignalKeyManager.getCurrentKyberPreKeyId(null); Log.w(\"TAG\", \"ops=\" + available + \"/\" + tier + \"/\" + due + \"/\" + keyId); }\n"
+                  + "  void unrelatedSameName(Profile profile) { String x = UnsafeOther.isAvailable(profile.getUserId()); Log.w(\"TAG\", x); }\n"
+                  + "}\n"
+                  + "class SecurityTier { boolean isDurable() { return true; } }\n"
+                  + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
+                  + "class PendingLockStore { static boolean isRotationDue(Object context) { return true; } }\n"
+                  + "class SignalKeyManager { static int getCurrentKyberPreKeyId(Object context) { return 1; } }\n"
+                  + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n", StandardCharsets.UTF_8);
+
+            ScanResult interproceduralResult = scan(interprocedural);
+            if (interproceduralResult.inspectedCalls != 9
+                    || interproceduralResult.violations.size() != 6) {
+                throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
+                        + "6 unsafe helper flows and 3 safe helper flows, got "
+                        + interproceduralResult.violations.size() + " violations:\\n"
+                        + join(interproceduralResult.violations));
+            }
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -329,6 +373,559 @@ public final class AndroidReleaseLogPrivacyPolicy {
     }
 
     /**
+     * Bounded, syntax-only summaries for uniquely resolvable app-owned helper methods.
+     *
+     * <p>Only a method with one same-name/same-arity definition in a uniquely named
+     * source class is summarized. This avoids guessing which overload or virtual
+     * target a call reaches. Unresolved calls retain the older conservative rule:
+     * sensitive arguments make the call result tainted. Resolved helpers propagate
+     * only values that flow to a return, allowing a helper that explicitly returns
+     * LogRedact output to be a real sanitization boundary.
+     *
+     * <p>The fixed-point pass is iterative rather than recursive, so self-recursion
+     * and mutual recursion cannot exhaust the Java stack. If the bounded pass does
+     * not converge, value-returning summaries become unknown/tainted.
+     */
+    private static final class MethodReturnSummaryIndex {
+        private static final int MAX_FIXED_POINT_ROUNDS = 32;
+
+        private final Map<String, ClassSummary> classes = new HashMap<>();
+        private final Set<String> ambiguousClasses = new HashSet<>();
+        private final Map<String, MethodSummary> summaries = new HashMap<>();
+
+        static MethodReturnSummaryIndex build(List<CompilationUnitTree> units) {
+            MethodReturnSummaryIndex index = new MethodReturnSummaryIndex();
+            for (CompilationUnitTree unit : units) {
+                new TreeScanner<Void, Void>() {
+                    @Override
+                    public Void visitClass(ClassTree node, Void unused) {
+                        String owner = node.getSimpleName().toString();
+                        if (!owner.isEmpty()) {
+                            ClassSummary info = new ClassSummary(owner);
+                            Map<String, List<MethodTree>> candidates = new HashMap<>();
+                            for (com.sun.source.tree.Tree member : node.getMembers()) {
+                                if (member instanceof MethodTree) {
+                                    MethodTree method = (MethodTree) member;
+                                    if (method.getBody() == null || method.getReturnType() == null) continue;
+                                    String signature = method.getName() + "/" + method.getParameters().size();
+                                    candidates.computeIfAbsent(signature, ignored -> new ArrayList<>())
+                                            .add(method);
+                                } else if (member instanceof VariableTree) {
+                                    info.fieldNames.add(((VariableTree) member).getName().toString());
+                                }
+                            }
+                            for (Map.Entry<String, List<MethodTree>> entry : candidates.entrySet()) {
+                                if (entry.getValue().size() == 1) {
+                                    MethodTree method = entry.getValue().get(0);
+                                    String key = methodKey(owner, method);
+                                    info.methods.put(entry.getKey(), new MethodDefinition(owner, key, method));
+                                    index.summaries.put(key, new MethodSummary());
+                                } else {
+                                    info.ambiguousMethods.add(entry.getKey());
+                                }
+                            }
+                            for (String field : info.fieldNames) {
+                                if (SENSITIVE_IDENTIFIER.matcher(field).matches()
+                                        && !SAFE_OPERATIONAL_COUNTERS.contains(field)) {
+                                    info.sensitiveFields.add(field);
+                                }
+                            }
+                            if (index.classes.putIfAbsent(owner, info) != null) {
+                                index.ambiguousClasses.add(owner);
+                            }
+                        }
+                        return super.visitClass(node, unused);
+                    }
+                }.scan(unit, null);
+            }
+
+            boolean converged = false;
+            int rounds = Math.min(MAX_FIXED_POINT_ROUNDS,
+                    Math.max(1, index.summaries.size() + 1));
+            for (int round = 0; round < rounds; round++) {
+                Map<String, MethodSummary> previous = copySummaries(index.summaries);
+                boolean changed = false;
+                for (ClassSummary info : index.classes.values()) {
+                    if (index.ambiguousClasses.contains(info.owner)) continue;
+                    for (MethodDefinition definition : info.methods.values()) {
+                        MethodSummary analyzed = new MethodSummaryAnalyzer(
+                                index, info, definition, previous).analyze();
+                        MethodSummary current = index.summaries.get(definition.key);
+                        if (current != null && current.merge(analyzed)) changed = true;
+                        if (current != null) {
+                            int before = info.sensitiveFields.size();
+                            info.sensitiveFields.addAll(current.directFieldWrites);
+                            if (info.sensitiveFields.size() != before) changed = true;
+                        }
+                    }
+                }
+                if (!changed) {
+                    converged = true;
+                    break;
+                }
+            }
+
+            if (!converged) {
+                // A deeply chained or otherwise unstable summary must not become a
+                // false negative. Fail closed for app-owned helper return values.
+                for (MethodDefinition definition : index.allDefinitions()) {
+                    MethodSummary summary = index.summaries.get(definition.key);
+                    if (summary != null && definition.hasValueReturn()) summary.unknownReturn = true;
+                }
+            }
+            return index;
+        }
+
+        private static Map<String, MethodSummary> copySummaries(Map<String, MethodSummary> source) {
+            Map<String, MethodSummary> result = new HashMap<>();
+            for (Map.Entry<String, MethodSummary> entry : source.entrySet()) {
+                result.put(entry.getKey(), new MethodSummary(entry.getValue()));
+            }
+            return result;
+        }
+
+        private List<MethodDefinition> allDefinitions() {
+            List<MethodDefinition> result = new ArrayList<>();
+            for (ClassSummary info : classes.values()) result.addAll(info.methods.values());
+            return result;
+        }
+
+        MethodSummary resolve(String callerOwner, MethodInvocationTree invocation,
+                              Map<String, String> localTypes) {
+            MethodDefinition definition = resolveDefinition(callerOwner, invocation, localTypes);
+            return definition == null ? null : summaries.get(definition.key);
+        }
+
+        private MethodDefinition resolveDefinition(String callerOwner, MethodInvocationTree invocation,
+                                                   Map<String, String> localTypes) {
+            String owner = resolveOwner(callerOwner, invocation, localTypes);
+            if (owner == null || ambiguousClasses.contains(owner)) return null;
+            ClassSummary info = classes.get(owner);
+            if (info == null) return null;
+            String signature = methodName(invocation) + "/" + invocation.getArguments().size();
+            if (info.ambiguousMethods.contains(signature)) return null;
+            return info.methods.get(signature);
+        }
+
+        private String resolveOwner(String callerOwner, MethodInvocationTree invocation,
+                                     Map<String, String> localTypes) {
+            ExpressionTree receiver = receiverExpression(invocation);
+            if (receiver == null) return callerOwner;
+            String receiverText = receiver.toString();
+            if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
+            if ("super".equals(receiverText) || receiverText.endsWith(".super")) return null;
+
+            if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
+                return receiverText; // Explicit app-owned static call.
+            }
+            String root = MethodLocalTaintScanner.rootIdentifier(receiver);
+            if (root == null) return null;
+            String type = localTypes.get(root);
+            if (type == null) return null;
+            String normalized = type.replaceAll("<.*>", "").replace("[]", "").trim();
+            int dot = normalized.lastIndexOf('.');
+            String simple = dot >= 0 ? normalized.substring(dot + 1) : normalized;
+            return classes.containsKey(simple) && !ambiguousClasses.contains(simple)
+                    ? simple : null;
+        }
+
+        boolean isSensitiveField(String owner, String name) {
+            ClassSummary info = classes.get(owner);
+            return info != null && !ambiguousClasses.contains(owner)
+                    && info.sensitiveFields.contains(name);
+        }
+
+        /**
+         * Exact source-backed scalar projections that return operational state
+         * rather than the underlying stored secret/material. The class and method
+         * signature must resolve uniquely; similarly named methods on any other
+         * owner receive no exemption.
+         */
+        boolean isSafeOperationalHelper(String callerOwner, MethodInvocationTree invocation,
+                                        Map<String, String> localTypes) {
+            MethodDefinition target = resolveDefinition(callerOwner, invocation, localTypes);
+            if (target == null) return false;
+            String signature = target.key;
+            return "SecurePrefs#isAvailable/0".equals(signature)
+                    || "SecurePrefs#getTier/0".equals(signature)
+                    || "PendingLockStore#isRotationDue/1".equals(signature)
+                    || "SignalKeyManager#getCurrentKyberPreKeyId/1".equals(signature);
+        }
+
+        private static String methodKey(String owner, MethodTree method) {
+            return owner + "#" + method.getName() + "/" + method.getParameters().size();
+        }
+
+        private static String methodName(MethodInvocationTree node) {
+            if (node.getMethodSelect() instanceof MemberSelectTree) {
+                return ((MemberSelectTree) node.getMethodSelect()).getIdentifier().toString();
+            }
+            if (node.getMethodSelect() instanceof IdentifierTree) {
+                return ((IdentifierTree) node.getMethodSelect()).getName().toString();
+            }
+            return "";
+        }
+
+        private static String receiverName(MethodInvocationTree node) {
+            ExpressionTree receiver = receiverExpression(node);
+            return receiver == null ? "" : receiver.toString();
+        }
+
+        private static ExpressionTree receiverExpression(MethodInvocationTree node) {
+            return node.getMethodSelect() instanceof MemberSelectTree
+                    ? ((MemberSelectTree) node.getMethodSelect()).getExpression() : null;
+        }
+
+        private static final class ClassSummary {
+            final String owner;
+            final Set<String> fieldNames = new HashSet<>();
+            final Set<String> sensitiveFields = new HashSet<>();
+            final Set<String> ambiguousMethods = new HashSet<>();
+            final Map<String, MethodDefinition> methods = new HashMap<>();
+
+            ClassSummary(String owner) {
+                this.owner = owner;
+            }
+        }
+
+        private static final class MethodDefinition {
+            final String owner;
+            final String key;
+            final MethodTree method;
+
+            MethodDefinition(String owner, String key, MethodTree method) {
+                this.owner = owner;
+                this.key = key;
+                this.method = method;
+            }
+
+            boolean hasValueReturn() {
+                final boolean[] found = {false};
+                new TreeScanner<Void, Void>() {
+                    @Override
+                    public Void visitReturn(com.sun.source.tree.ReturnTree node, Void unused) {
+                        if (node.getExpression() != null) found[0] = true;
+                        return super.visitReturn(node, unused);
+                    }
+
+                    @Override
+                    public Void visitClass(ClassTree node, Void unused) {
+                        return null;
+                    }
+                }.scan(method.getBody(), null);
+                return found[0];
+            }
+        }
+
+        private static final class MethodSummary {
+            boolean directSensitiveReturn;
+            boolean unknownReturn;
+            final Set<Integer> returnedParameters = new HashSet<>();
+            final Set<String> directFieldWrites = new HashSet<>();
+            final Map<String, Set<Integer>> fieldWritesFromParameters = new HashMap<>();
+
+            MethodSummary() {}
+
+            MethodSummary(MethodSummary source) {
+                directSensitiveReturn = source.directSensitiveReturn;
+                unknownReturn = source.unknownReturn;
+                returnedParameters.addAll(source.returnedParameters);
+                directFieldWrites.addAll(source.directFieldWrites);
+                for (Map.Entry<String, Set<Integer>> entry : source.fieldWritesFromParameters.entrySet()) {
+                    fieldWritesFromParameters.put(entry.getKey(), new HashSet<>(entry.getValue()));
+                }
+            }
+
+            boolean merge(MethodSummary other) {
+                boolean changed = false;
+                if (other.directSensitiveReturn && !directSensitiveReturn) {
+                    directSensitiveReturn = true;
+                    changed = true;
+                }
+                if (other.unknownReturn && !unknownReturn) {
+                    unknownReturn = true;
+                    changed = true;
+                }
+                if (returnedParameters.addAll(other.returnedParameters)) changed = true;
+                if (directFieldWrites.addAll(other.directFieldWrites)) changed = true;
+                for (Map.Entry<String, Set<Integer>> entry : other.fieldWritesFromParameters.entrySet()) {
+                    Set<Integer> current = fieldWritesFromParameters.computeIfAbsent(
+                            entry.getKey(), ignored -> new HashSet<>());
+                    if (current.addAll(entry.getValue())) changed = true;
+                }
+                return changed;
+            }
+        }
+
+        private static final class ValueTaint {
+            boolean direct;
+            final Set<Integer> parameters = new HashSet<>();
+
+            void merge(ValueTaint other) {
+                if (other == null) return;
+                direct |= other.direct;
+                parameters.addAll(other.parameters);
+            }
+        }
+
+        private static final class MethodSummaryAnalyzer extends TreeScanner<Void, Void> {
+            private final MethodReturnSummaryIndex index;
+            private final ClassSummary classInfo;
+            private final MethodDefinition definition;
+            private final Map<String, MethodSummary> previous;
+            private final Map<String, ValueTaint> locals = new HashMap<>();
+            private final Map<String, String> localTypes = new HashMap<>();
+            private final MethodSummary result = new MethodSummary();
+
+            MethodSummaryAnalyzer(MethodReturnSummaryIndex index, ClassSummary classInfo,
+                                  MethodDefinition definition, Map<String, MethodSummary> previous) {
+                this.index = index;
+                this.classInfo = classInfo;
+                this.definition = definition;
+                this.previous = previous;
+                int parameterIndex = 0;
+                for (VariableTree parameter : definition.method.getParameters()) {
+                    String name = parameter.getName().toString();
+                    String type = parameter.getType() == null ? "" : parameter.getType().toString();
+                    localTypes.put(name, type);
+                    ValueTaint value = new ValueTaint();
+                    value.parameters.add(parameterIndex);
+                    if ((SENSITIVE_IDENTIFIER.matcher(name).matches()
+                            && !SAFE_OPERATIONAL_COUNTERS.contains(name)) || isThrowableType(type)) {
+                        value.direct = true;
+                    }
+                    locals.put(name, value);
+                    parameterIndex++;
+                }
+                if (definition.method.getBody() != null) {
+                    new TreeScanner<Void, Void>() {
+                        @Override
+                        public Void visitVariable(VariableTree node, Void unused) {
+                            if (node.getType() != null) {
+                                localTypes.put(node.getName().toString(), node.getType().toString());
+                            }
+                            return super.visitVariable(node, unused);
+                        }
+
+                        @Override
+                        public Void visitClass(ClassTree node, Void unused) {
+                            return null;
+                        }
+                    }.scan(definition.method.getBody(), null);
+                }
+            }
+
+            MethodSummary analyze() {
+                scan(definition.method.getBody(), null);
+                return result;
+            }
+
+            @Override
+            public Void visitClass(ClassTree node, Void unused) {
+                return null;
+            }
+
+            @Override
+            public Void visitVariable(VariableTree node, Void unused) {
+                String name = node.getName().toString();
+                if (node.getInitializer() != null) {
+                    ValueTaint value = evaluate(node.getInitializer());
+                    ValueTaint existing = locals.computeIfAbsent(name, ignored -> new ValueTaint());
+                    existing.merge(value);
+                } else {
+                    locals.putIfAbsent(name, new ValueTaint());
+                }
+                return super.visitVariable(node, unused);
+            }
+
+            @Override
+            public Void visitAssignment(com.sun.source.tree.AssignmentTree node, Void unused) {
+                ValueTaint value = evaluate(node.getExpression());
+                String field = assignedField(node.getVariable());
+                if (field != null) {
+                    if (value.direct) {
+                        result.directFieldWrites.add(field);
+                        classInfo.sensitiveFields.add(field);
+                    }
+                    if (!value.parameters.isEmpty()) {
+                        result.fieldWritesFromParameters.computeIfAbsent(field,
+                                ignored -> new HashSet<>()).addAll(value.parameters);
+                    }
+                } else if (node.getVariable() instanceof IdentifierTree) {
+                    String target = ((IdentifierTree) node.getVariable()).getName().toString();
+                    locals.computeIfAbsent(target, ignored -> new ValueTaint()).merge(value);
+                }
+                return super.visitAssignment(node, unused);
+            }
+
+            @Override
+            public Void visitReturn(com.sun.source.tree.ReturnTree node, Void unused) {
+                resultValue(node.getExpression());
+                return super.visitReturn(node, unused);
+            }
+
+            @Override
+            public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                MethodDefinition target = index.resolveDefinition(definition.owner, node, localTypes);
+                if (target != null) {
+                    MethodSummary called = previous.get(target.key);
+                    if (called != null) {
+                        for (String field : called.directFieldWrites) {
+                            classInfo.sensitiveFields.add(field);
+                        }
+                        for (Map.Entry<String, Set<Integer>> write
+                                : called.fieldWritesFromParameters.entrySet()) {
+                            for (int parameter : write.getValue()) {
+                                if (parameter < node.getArguments().size()) {
+                                    ValueTaint argument = evaluate(node.getArguments().get(parameter));
+                                    if (argument.direct) {
+                                        classInfo.sensitiveFields.add(write.getKey());
+                                    }
+                                    if (!argument.parameters.isEmpty()) {
+                                        result.fieldWritesFromParameters.computeIfAbsent(write.getKey(),
+                                                ignored -> new HashSet<>()).addAll(argument.parameters);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return super.visitMethodInvocation(node, unused);
+            }
+
+            private void resultValue(ExpressionTree expression) {
+                ValueTaint value = evaluate(expression);
+                result.directSensitiveReturn |= value.direct;
+                result.returnedParameters.addAll(value.parameters);
+            }
+
+            private String assignedField(ExpressionTree target) {
+                if (target instanceof IdentifierTree) {
+                    String name = ((IdentifierTree) target).getName().toString();
+                    return classInfo.fieldNames.contains(name) && !locals.containsKey(name) ? name : null;
+                }
+                if (target instanceof MemberSelectTree) {
+                    MemberSelectTree member = (MemberSelectTree) target;
+                    String name = member.getIdentifier().toString();
+                    String receiver = member.getExpression().toString();
+                    return classInfo.fieldNames.contains(name)
+                            && ("this".equals(receiver) || receiver.endsWith(".this")
+                            || classInfo.owner.equals(receiver)) ? name : null;
+                }
+                return null;
+            }
+
+            private ValueTaint evaluate(ExpressionTree expression) {
+                ValueTaint value = new ValueTaint();
+                if (expression == null) return value;
+                new TreeScanner<Void, Void>() {
+                    @Override
+                    public Void visitIdentifier(IdentifierTree node, Void unused) {
+                        String name = node.getName().toString();
+                        ValueTaint local = locals.get(name);
+                        if (local != null) {
+                            value.merge(local);
+                        } else if (classInfo.sensitiveFields.contains(name)
+                                || (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                                && !SAFE_OPERATIONAL_COUNTERS.contains(name))) {
+                            value.direct = true;
+                        }
+                        return null;
+                    }
+
+                    @Override
+                    public Void visitMemberSelect(MemberSelectTree node, Void unused) {
+                        String name = node.getIdentifier().toString();
+                        if (classInfo.sensitiveFields.contains(name)
+                                || (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                                && !SAFE_OPERATIONAL_COUNTERS.contains(name))) {
+                            value.direct = true;
+                        }
+                        return super.visitMemberSelect(node, unused);
+                    }
+
+                    @Override
+                    public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                        String name = methodName(node);
+                        String receiver = receiverName(node);
+                        if (isRedactionCall(definition.owner, node)
+                                || isSafeOperationalProjection(definition.owner, node, localTypes)
+                                || index.isSafeOperationalHelper(definition.owner, node, localTypes)) {
+                            return null;
+                        }
+                        if (SENSITIVE_ACCESSOR.matcher(name).matches()
+                                || "getMessage".equals(name) || "getLocalizedMessage".equals(name)
+                                || "getCause".equals(name) || "getException".equals(name)
+                                || "getThrowable".equals(name) || "getFailure".equals(name)
+                                || "getStackTraceString".equals(name)) {
+                            value.direct = true;
+                            return null;
+                        }
+                        MethodDefinition target = index.resolveDefinition(definition.owner, node, localTypes);
+                        if (target != null) {
+                            MethodSummary called = previous.get(target.key);
+                            if (called == null || called.unknownReturn) {
+                                value.direct = true;
+                            } else {
+                                value.direct |= called.directSensitiveReturn;
+                                for (int parameter : called.returnedParameters) {
+                                    if (parameter < node.getArguments().size()) {
+                                        value.merge(evaluate(node.getArguments().get(parameter)));
+                                    }
+                                }
+                            }
+                            return null;
+                        }
+                        // An unresolved external/virtual call is not assumed to be
+                        // a sanitizer. Preserve the previous conservative behavior.
+                        value.merge(evaluate(receiverExpression(node)));
+                        for (ExpressionTree argument : node.getArguments()) {
+                            value.merge(evaluate(argument));
+                        }
+                        return null;
+                    }
+
+                    @Override
+                    public Void visitNewClass(NewClassTree node, Void unused) {
+                        if (isThrowableType(node.getIdentifier().toString())) value.direct = true;
+                        for (ExpressionTree argument : node.getArguments()) {
+                            value.merge(evaluate(argument));
+                        }
+                        return null;
+                    }
+                }.scan(expression, null);
+                return value;
+            }
+        }
+
+        private static boolean isRedactionCall(String owner, MethodInvocationTree node) {
+            String method = methodName(node);
+            String receiver = receiverName(node);
+            if ("redactOperationName".equals(method) && "B2StorageHelper".equals(owner)
+                    && (receiver.isEmpty() || receiver.endsWith(".B2StorageHelper"))) return true;
+            return ("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                    && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"));
+        }
+
+        private static boolean isSafeOperationalProjection(String owner, MethodInvocationTree node,
+                                                            Map<String, String> localTypes) {
+            String method = methodName(node);
+            ExpressionTree receiver = receiverExpression(node);
+            String root = MethodLocalTaintScanner.rootIdentifier(receiver);
+            String type = root == null ? "" : localTypes.getOrDefault(root, "");
+            if ("size".equals(method)) {
+                return type.matches("(?i).*(map|list|set|collection|bundle|jsonarray|jsonobject|contentvalues).*");
+            }
+            if ("code".equals(method)) return type.endsWith("Response");
+            if ("getResponseCode".equals(method)) return type.endsWith("HttpURLConnection");
+            if ("getSummary".equals(method)) return type.endsWith("TurnBandwidthTracker");
+            if ("copyInto".equals(method)) return "LegacyPlaintextMigrator".equals(owner) && receiver == null;
+            if ("postDuressLock".equals(method)) return "DuressManager".equals(owner) && receiver == null;
+            return false;
+        }
+    }
+
+    /**
      * Conservative method-local data-flow pass for release-log sinks.
      *
      * <p>Tracks sensitive values through local declarations, reassignment,
@@ -353,6 +950,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final SourcePositions positions;
         private final List<String> violations;
         private final String ownerClass;
+        private final MethodReturnSummaryIndex returnSummaries;
         private final Map<String, String> localTypes = new HashMap<>();
         private final Set<String> taintedLocals = new HashSet<>();
         private final Set<String> taintedContainers = new HashSet<>();
@@ -360,11 +958,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final Set<String> throwableLocals = new HashSet<>();
 
         MethodLocalTaintScanner(CompilationUnitTree unit, SourcePositions positions,
-                                List<String> violations, String ownerClass) {
+                                List<String> violations, String ownerClass,
+                                MethodReturnSummaryIndex returnSummaries) {
             this.unit = unit;
             this.positions = positions;
             this.violations = violations;
             this.ownerClass = ownerClass == null ? "" : ownerClass;
+            this.returnSummaries = returnSummaries;
         }
 
         @Override
@@ -383,6 +983,20 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     taintedLocals.add(name);
                 }
             }
+            new TreeScanner<Void, Void>() {
+                @Override
+                public Void visitVariable(VariableTree variable, Void ignored) {
+                    if (variable.getType() != null) {
+                        localTypes.put(variable.getName().toString(), variable.getType().toString());
+                    }
+                    return super.visitVariable(variable, ignored);
+                }
+
+                @Override
+                public Void visitClass(ClassTree nested, Void ignored) {
+                    return null;
+                }
+            }.scan(node.getBody(), null);
             scan(node.getBody(), null);
             return null;
         }
@@ -555,23 +1169,49 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             || isSafeOperationalProjection(node)) {
                         return null; // Exact redaction/projection boundary; do not inspect its receiver/arguments.
                     }
-                    if (isSafeThrowableClassNameCall(node)) {
+                    if (isSafeThrowableClassNameCall(node)
+                            || returnSummaries.isSafeOperationalHelper(ownerClass, node, localTypes)) {
                         return null;
                     }
+                    // Source-backed sensitive accessors are an unconditional taint
+                    // source. Never let an app-defined stub/helper summary override
+                    // this established boundary (e.g. a test double whose getUserId()
+                    // body returns a literal must not make the accessor safe).
                     if (SENSITIVE_ACCESSOR.matcher(method).matches()
                             || "getMessage".equals(method) || "getLocalizedMessage".equals(method)
                             || "getCause".equals(method) || "getException".equals(method)
                             || "getThrowable".equals(method) || "getFailure".equals(method)
                             || "getStackTraceString".equals(method)) {
                         found[0] = true;
+                        return null;
                     }
-                    return found[0] ? null : super.visitMethodInvocation(node, unused);
+                    MethodReturnSummaryIndex.MethodSummary helperSummary =
+                            returnSummaries.resolve(ownerClass, node, localTypes);
+                    if (helperSummary != null) {
+                        if (helperSummary.unknownReturn || helperSummary.directSensitiveReturn) {
+                            found[0] = true;
+                            return null;
+                        }
+                        for (int parameter : helperSummary.returnedParameters) {
+                            if (parameter < node.getArguments().size()
+                                    && (hasSensitiveSource(node.getArguments().get(parameter))
+                                    || containsTrackedAlias(node.getArguments().get(parameter)))) {
+                                found[0] = true;
+                                return null;
+                            }
+                        }
+                        // A resolved helper is summarized by what it returns. In
+                        // particular, a helper returning LogRedact output does not
+                        // leak merely because its input was sensitive.
+                        return null;
+                    }
+                    return super.visitMethodInvocation(node, unused);
                 }
 
                 @Override
                 public Void visitIdentifier(IdentifierTree node, Void unused) {
                     String name = node.getName().toString();
-                    if (taintedLocals.contains(name)
+                    if (taintedLocals.contains(name) || returnSummaries.isSensitiveField(ownerClass, name)
                             || (SENSITIVE_IDENTIFIER.matcher(name).matches()
                             && !SAFE_OPERATIONAL_COUNTERS.contains(name))
                             || throwableLocals.contains(name)) {
@@ -583,9 +1223,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 @Override
                 public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                     String name = node.getIdentifier().toString();
-                    if (!SAFE_OPERATIONAL_COUNTERS.contains(name)
+                    if (returnSummaries.isSensitiveField(ownerClass, name)
+                            || (!SAFE_OPERATIONAL_COUNTERS.contains(name)
                             && (SENSITIVE_IDENTIFIER.matcher(name).matches()
-                            || SENSITIVE_ACCESSOR.matcher(name).matches())) {
+                            || SENSITIVE_ACCESSOR.matcher(name).matches()))) {
                         found[0] = true;
                     }
                     return found[0] ? null : super.visitMemberSelect(node, unused);
@@ -618,14 +1259,39 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             || isSafeOperationalProjection(node)) {
                         return null;
                     }
-                    if (isSafeThrowableClassNameCall(node)) return null;
+                    if (isSafeThrowableClassNameCall(node)
+                            || returnSummaries.isSafeOperationalHelper(ownerClass, node, localTypes)) return null;
+                    MethodReturnSummaryIndex.MethodSummary helperSummary =
+                            returnSummaries.resolve(ownerClass, node, localTypes);
+                    if (helperSummary != null) {
+                        if (helperSummary.unknownReturn || helperSummary.directSensitiveReturn) {
+                            found.add("helper-return:" + method);
+                        } else {
+                            for (int parameter : helperSummary.returnedParameters) {
+                                if (parameter < node.getArguments().size()
+                                        && (hasSensitiveSource(node.getArguments().get(parameter))
+                                        || containsTrackedAlias(node.getArguments().get(parameter)))) {
+                                    found.add("helper-parameter-return:" + method);
+                                }
+                            }
+                        }
+                        return null;
+                    }
                     return super.visitMethodInvocation(node, unused);
+                }
+
+                @Override
+                public Void visitMemberSelect(MemberSelectTree node, Void unused) {
+                    String name = node.getIdentifier().toString();
+                    if (returnSummaries.isSensitiveField(ownerClass, name)) found.add("field:" + name);
+                    return super.visitMemberSelect(node, unused);
                 }
 
                 @Override
                 public Void visitIdentifier(IdentifierTree node, Void unused) {
                     String name = node.getName().toString();
-                    if (taintedLocals.contains(name) || taintedContainers.contains(name)) {
+                    if (taintedLocals.contains(name) || taintedContainers.contains(name)
+                            || returnSummaries.isSensitiveField(ownerClass, name)) {
                         found.add(name);
                     }
                     return null;
@@ -688,15 +1354,18 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final int[] inspectedCalls;
         private final List<String> violations;
         private final Set<String> throwableVariables;
+        private final MethodReturnSummaryIndex returnSummaries;
 
         LogCallScanner(CompilationUnitTree unit, SourcePositions positions,
                        int[] inspectedCalls, List<String> violations,
-                       Set<String> throwableVariables) {
+                       Set<String> throwableVariables,
+                       MethodReturnSummaryIndex returnSummaries) {
             this.unit = unit;
             this.positions = positions;
             this.inspectedCalls = inspectedCalls;
             this.violations = violations;
             this.throwableVariables = throwableVariables;
+            this.returnSummaries = returnSummaries;
         }
 
         @Override
@@ -707,7 +1376,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (parent != null && parent.getLeaf() instanceof ClassTree) {
                     ownerClass = ((ClassTree) parent.getLeaf()).getSimpleName().toString();
                 }
-                new MethodLocalTaintScanner(unit, positions, violations, ownerClass)
+                new MethodLocalTaintScanner(unit, positions, violations, ownerClass, returnSummaries)
                         .scan(node, null);
             }
             return super.visitMethod(node, unused);
