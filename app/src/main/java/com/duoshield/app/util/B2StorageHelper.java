@@ -280,7 +280,7 @@ public final class B2StorageHelper {
      * operation prefix for diagnostics. Object keys can contain account,
      * conversation and message identifiers.
      */
-    static String redactOperationName(String operation) {
+    public static String redactOperationName(String operation) {
         if (operation == null || operation.isEmpty()) return "storage operation";
         int separator = operation.indexOf(':');
         if (separator < 0 || separator == operation.length() - 1) {
