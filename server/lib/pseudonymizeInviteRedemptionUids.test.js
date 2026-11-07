@@ -13,12 +13,12 @@ const {
 test("service-account private-key escaped newlines normalize without mutating input", () => {
   const input = {
     project_id: "synthetic-project",
-    private_key: "-----BEGIN PRIVATE KEY-----\\nsynthetic-line\\n-----END PRIVATE KEY-----\\n",
+    private_key: "synthetic-line-one\\nsynthetic-line-two\\nsynthetic-line-three\\n",
   };
   const normalized = normalizeServiceAccountPrivateKey(input);
   assert.notEqual(normalized, input);
   assert.equal(normalized.project_id, input.project_id);
-  assert.equal(normalized.private_key, "-----BEGIN PRIVATE KEY-----\nsynthetic-line\n-----END PRIVATE KEY-----\n");
+  assert.equal(normalized.private_key, "synthetic-line-one\nsynthetic-line-two\nsynthetic-line-three\n");
   assert.equal(input.private_key.includes("\n"), false, "normalization must not mutate caller-owned input");
 });
 
