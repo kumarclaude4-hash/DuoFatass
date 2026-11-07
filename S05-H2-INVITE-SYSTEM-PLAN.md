@@ -14,6 +14,8 @@ Firestore `invites/{inviteId}` stores `tokenHash` (never the raw bearer token), 
 - Add authenticated admin create/list/search/filter/paginate/revoke endpoints.
 - Return the raw token once at creation; list responses expose only a short fingerprint.
 - Audit creation, revocation, and redemption without logging bearer tokens or notes.
+- Store only a 12-character pseudonymous `usedByUserIdTag` on redemption; never persist or return the raw seed-derived UID.
+- Mask legacy `usedByUserId` values in list projections. Before closing the migration, run `node scripts/pseudonymizeInviteRedemptionUids.js --dry-run` against the intended staging project, review counts, then use `--apply` only with explicit operator approval to pseudonymize tags and delete legacy raw UID fields. Repeat the dry run to confirm zero remaining candidates.
 
 ## Android
 Refactor `RequestAccessActivity` into invite-code entry, replace waitlist request/poll networking with validation, and thread `inviteToken` through account creation in memory only. Do not persist or log the bearer token.

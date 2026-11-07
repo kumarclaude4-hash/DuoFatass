@@ -249,7 +249,11 @@ if (!emulatorHost) {
       crypto.createHash("sha256").update(Buffer.from(validIdentity.publicKeyHex, "hex")).digest("hex"));
     const storedInvite = await db.collection(collections.invites).doc(issuedInvite.id).get();
     assert.equal(storedInvite.data().status, "used");
-    assert.equal(storedInvite.data().usedByUserId, validUid);
+    assert.match(storedInvite.data().usedByUserIdTag, /^[0-9a-f]{12}$/);
+    assert.equal(storedInvite.data().usedByUserId, undefined,
+      "new redemption records must not persist the raw seed-derived UID");
+    assert.equal(JSON.stringify(storedInvite.data()).includes(validUid), false,
+      "the raw account UID must not be stored in the invite document");
     assert.deepEqual(mintedUsers, [validUid]);
 
     const audits = await db.collection(collections.audit).get();

@@ -32,7 +32,7 @@ function createFixture(t, overrides = {}) {
     async list(options) {
       calls.list.push(options);
       if (state.listError) throw state.listError;
-      return { items: [{ id: "invite_1234567890", status: "active" }], nextCursor: null, totalCount: 1 };
+      return state.listResult || { items: [{ id: "invite_1234567890", status: "active" }], nextCursor: null, totalCount: 1 };
     },
     async create(input, request) {
       calls.create.push({ input, method: request.method, url: request.url });
@@ -193,6 +193,22 @@ test("admin invite list is authenticated and passes filters and cursor to the st
     cursor,
   });
   assert.equal(JSON.parse(accepted.text).totalCount, 1);
+});
+
+test("invite list API returns pseudonymous redemption tags and never raw UIDs", async (t) => {
+  const fixture = await createFixture(t);
+  const rawUid = "seed-derived-private-account-uid";
+  fixture.state.listResult = {
+    items: [{ id: "invite_1234567890", status: "used", usedByUserIdTag: "a1b2c3d4e5f6" }],
+    nextCursor: null,
+    totalCount: 1,
+  };
+  const response = await fixture.request("/admin/api/invites?status=used", { admin: true });
+  assert.equal(response.status, 200);
+  const payload = JSON.parse(response.text);
+  assert.equal(payload.items[0].usedByUserIdTag, "a1b2c3d4e5f6");
+  assert.equal(JSON.stringify(payload).includes(rawUid), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(payload.items[0], "usedByUserId"), false);
 });
 
 test("invite creation authenticates before reading the body and returns the one-time token", async (t) => {

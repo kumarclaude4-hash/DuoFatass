@@ -1581,7 +1581,7 @@ const ADMIN_PAGE_HTML = `<!DOCTYPE html>
           <button class="action" type="button" id="inviteApplyBtn">Apply</button>
         </div>
         <div class="section-help" id="invitesMeta" aria-live="polite"></div>
-        <div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Status</th><th>Fingerprint</th><th>Created</th><th>Expires</th><th>Used by</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="invitesBody"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Status</th><th>Fingerprint</th><th>Created</th><th>Expires</th><th>Redeemed user tag</th><th><span class="sr-only">Action</span></th></tr></thead><tbody id="invitesBody"></tbody></table></div>
         <div class="loading" id="invitesLoading">Loading…</div>
         <div class="empty" id="invitesEmpty" hidden>No invitations match these filters.</div>
         <div class="pager"><button class="action" type="button" id="invitesPrevBtn" disabled>Previous</button><button class="action" type="button" id="invitesNextBtn" disabled>Next</button></div>
@@ -1857,7 +1857,7 @@ async function loadInvites(reset) {
       }
       const usedByTd = document.createElement("td");
       usedByTd.className = "mono";
-      usedByTd.textContent = item.usedByUserId || "—";
+      usedByTd.textContent = item.usedByUserIdTag || "—";
       tr.appendChild(usedByTd);
       const actionTd = document.createElement("td");
       if (item.status === "active") {
