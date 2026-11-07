@@ -3,6 +3,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.VariableTree;
@@ -177,11 +178,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", \"alias=\" + LogRedact.metadata(alias));\n"
                   + "    Log.w(\"TAG\", \"device=\" + LogRedact.metadata(Build.MODEL) + \"/\" + LogRedact.metadata(Build.MANUFACTURER));\n"
                   + "    Log.w(LogRedact.uid(peerId), \"redacted tag is safe\");\n"
+                  + "    String safeAlias = LogRedact.metadata(alias);\n"
+                  + "    Log.w(\"TAG\", safeAlias);\n"
+                  + "    StringBuilder safeBuilder = new StringBuilder();\n"
+                  + "    safeBuilder.append(LogRedact.uid(peerId));\n"
+                  + "    Log.w(\"TAG\", safeBuilder.toString());\n"
                   + "  }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 9) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 11) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -200,6 +206,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void rawAlias(String alias) { Log.w(\"TAG\", \"alias=\" + alias); }\n"
                   + "  void rawDeviceModel() { Log.w(\"TAG\", \"device=\" + Build.MODEL + \"/\" + Build.MANUFACTURER); }\n"
                   + "  void rawTag(String uid) { Log.w(uid, \"static message\"); }\n"
+                  + "  void localAlias(Profile profile) { String value = profile.getUserId(); Log.e(\"TAG\", value); }\n"
+                  + "  void reassignedAlias(Profile profile) { String value = \"ready\"; value = profile.getUserId(); Log.w(\"TAG\", value); }\n"
+                  + "  void builderAlias(Profile profile) { StringBuilder builder = new StringBuilder(); builder.append(profile.getUserId()); Log.e(\"TAG\", builder.toString()); }\n"
+                  + "  void mapAlias(Profile profile) { Map<String, Object> fields = new HashMap<>(); fields.put(\"peer\", profile.getUserId()); Log.w(\"TAG\", fields.toString()); }\n"
+                  + "  void mapReadAlias(Profile profile) { Map<String, Object> fields = new HashMap<>(); fields.put(\"peer\", profile.getUserId()); String value = (String) fields.get(\"peer\"); Log.e(\"TAG\", value); }\n"
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult unsafeResult = scan(unsafe);
@@ -284,6 +295,282 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 throwableVariables.add(node.getName().toString());
             }
             return super.visitVariable(node, unused);
+        }
+    }
+
+    /**
+     * Conservative method-local data-flow pass for release-log sinks.
+     *
+     * <p>Tracks sensitive values through local declarations, reassignment,
+     * concatenated expressions, StringBuilder/StringBuffer operations, and
+     * common map/bundle/JSON/builder insertion and retrieval patterns. Taint is
+     * sticky for the remainder of a method: this deliberately prefers a false
+     * positive over clearing a value after a branch or a reassignment that the
+     * syntax-only pass cannot prove dominates every path.
+     *
+     * <p>This is not symbol-resolved or interprocedural analysis. It does not
+     * prove arbitrary helper return values, reflection or third-party internals.
+     */
+    private static final class MethodLocalTaintScanner extends TreePathScanner<Void, Void> {
+        private static final Pattern CONTAINER_TYPE = Pattern.compile(
+                "(?i).*(stringbuilder|stringbuffer|stringjoiner|map|bundle|intent|"
+              + "jsonobject|jsonarray|contentvalues|list|set|collection|builder|values).*");
+        private static final Pattern MUTATOR = Pattern.compile(
+                "(?i)(append|add|put|set|with|addProperty|addField|putExtra|putString|"
+              + "putSerializable|putParcelable|putInt|putLong|putBoolean).*");
+
+        private final CompilationUnitTree unit;
+        private final SourcePositions positions;
+        private final List<String> violations;
+        private final Set<String> taintedLocals = new HashSet<>();
+        private final Set<String> taintedContainers = new HashSet<>();
+        private final Set<String> containerLocals = new HashSet<>();
+        private final Set<String> throwableLocals = new HashSet<>();
+
+        MethodLocalTaintScanner(CompilationUnitTree unit, SourcePositions positions,
+                                List<String> violations) {
+            this.unit = unit;
+            this.positions = positions;
+            this.violations = violations;
+        }
+
+        @Override
+        public Void visitMethod(MethodTree node, Void unused) {
+            // A fresh pass is created for each method. Do not cross method or
+            // nested-type boundaries with a name-only environment.
+            for (VariableTree parameter : node.getParameters()) {
+                String name = parameter.getName().toString();
+                String type = parameter.getType() == null ? "" : parameter.getType().toString();
+                if (SENSITIVE_IDENTIFIER.matcher(name).matches()) taintedLocals.add(name);
+                if (isThrowableType(type)) {
+                    throwableLocals.add(name);
+                    taintedLocals.add(name);
+                }
+            }
+            scan(node.getBody(), null);
+            return null;
+        }
+
+        @Override
+        public Void visitClass(com.sun.source.tree.ClassTree node, Void unused) {
+            // Anonymous/local class methods are analyzed independently when the
+            // outer LogCallScanner reaches them.
+            return null;
+        }
+
+        @Override
+        public Void visitVariable(VariableTree node, Void unused) {
+            String name = node.getName().toString();
+            String type = node.getType() == null ? "" : node.getType().toString();
+            ExpressionTree initializer = node.getInitializer();
+            if (CONTAINER_TYPE.matcher(type).matches()
+                    || isContainerConstruction(initializer)) {
+                containerLocals.add(name);
+            }
+            if (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                    || (initializer != null && (hasSensitiveSource(initializer)
+                    || containsTrackedAlias(initializer)))) {
+                taintedLocals.add(name);
+            }
+            if (containerLocals.contains(name) && initializer != null
+                    && (hasSensitiveSource(initializer) || containsTrackedAlias(initializer))) {
+                taintedContainers.add(name);
+            }
+            if (isThrowableType(type)) {
+                throwableLocals.add(name);
+                taintedLocals.add(name);
+            }
+            return super.visitVariable(node, unused);
+        }
+
+        @Override
+        public Void visitAssignment(com.sun.source.tree.AssignmentTree node, Void unused) {
+            String target = node.getVariable() instanceof IdentifierTree
+                    ? ((IdentifierTree) node.getVariable()).getName().toString() : null;
+            if (target != null && (hasSensitiveSource(node.getExpression())
+                    || containsTrackedAlias(node.getExpression()))) {
+                taintedLocals.add(target);
+                if (containerLocals.contains(target)) taintedContainers.add(target);
+            }
+            return super.visitAssignment(node, unused);
+        }
+
+        @Override
+        public Void visitMethod(MethodTree node, Void unused) {
+            if (node.getBody() != null) {
+                new MethodLocalTaintScanner(unit, positions, violations).scan(node, null);
+            }
+            return super.visitMethod(node, unused);
+        }
+
+        @Override
+        public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+            String method = methodName(node);
+            String receiver = receiverName(node);
+            boolean logSink = ("w".equals(method) || "e".equals(method) || "wtf".equals(method))
+                    && ("Log".equals(receiver) || receiver.endsWith(".Log"));
+            if (logSink && node.getArguments().size() >= 2) {
+                List<? extends ExpressionTree> args = node.getArguments();
+                if (containsTrackedAlias(args.get(0))) {
+                    addViolation(node, "method-local sensitive alias/container reaches Log."
+                            + method + " tag");
+                }
+                if (containsTrackedAlias(args.get(1))) {
+                    addViolation(node, "method-local sensitive alias/container reaches Log."
+                            + method + " message");
+                }
+            }
+
+            if (MUTATOR.matcher(method).matches()) {
+                String root = rootIdentifier(receiverExpression(node));
+                if (root != null && containerLocals.contains(root)
+                        && hasSensitiveArgument(node.getArguments())) {
+                    taintedContainers.add(root);
+                }
+            }
+            return super.visitMethodInvocation(node, unused);
+        }
+
+        private boolean hasSensitiveArgument(List<? extends ExpressionTree> arguments) {
+            for (ExpressionTree argument : arguments) {
+                if (hasSensitiveSource(argument) || containsTrackedAlias(argument)) return true;
+            }
+            return false;
+        }
+
+        private boolean isContainerConstruction(ExpressionTree expression) {
+            if (expression instanceof NewClassTree) {
+                return CONTAINER_TYPE.matcher(
+                        ((NewClassTree) expression).getIdentifier().toString()).matches();
+            }
+            return false;
+        }
+
+        private boolean hasSensitiveSource(ExpressionTree expression) {
+            if (expression == null) return false;
+            final boolean[] found = {false};
+            new TreeScanner<Void, Void>() {
+                @Override
+                public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                    String method = methodName(node);
+                    String receiver = receiverName(node);
+                    if (("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"))) {
+                        return null; // A sanitizer protects only its returned subtree.
+                    }
+                    if (SENSITIVE_ACCESSOR.matcher(method).matches()
+                            || "getMessage".equals(method) || "getLocalizedMessage".equals(method)
+                            || "getCause".equals(method) || "getException".equals(method)
+                            || "getThrowable".equals(method) || "getFailure".equals(method)
+                            || "getStackTraceString".equals(method)) {
+                        found[0] = true;
+                    }
+                    return found[0] ? null : super.visitMethodInvocation(node, unused);
+                }
+
+                @Override
+                public Void visitIdentifier(IdentifierTree node, Void unused) {
+                    String name = node.getName().toString();
+                    if (taintedLocals.contains(name)
+                            || (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                            && !SAFE_OPERATIONAL_COUNTERS.contains(name))
+                            || throwableLocals.contains(name)) {
+                        found[0] = true;
+                    }
+                    return null;
+                }
+
+                @Override
+                public Void visitMemberSelect(MemberSelectTree node, Void unused) {
+                    String name = node.getIdentifier().toString();
+                    if (SENSITIVE_IDENTIFIER.matcher(name).matches()
+                            || SENSITIVE_ACCESSOR.matcher(name).matches()) {
+                        found[0] = true;
+                    }
+                    return found[0] ? null : super.visitMemberSelect(node, unused);
+                }
+
+                @Override
+                public Void visitNewClass(NewClassTree node, Void unused) {
+                    if (isThrowableType(node.getIdentifier().toString())) found[0] = true;
+                    return found[0] ? null : super.visitNewClass(node, unused);
+                }
+            }.scan(expression, null);
+            return found[0];
+        }
+
+        private boolean containsTrackedAlias(ExpressionTree expression) {
+            if (expression == null) return false;
+            final boolean[] found = {false};
+            new TreeScanner<Void, Void>() {
+                @Override
+                public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                    String method = methodName(node);
+                    String receiver = receiverName(node);
+                    if (("uid".equals(method) || "metadata".equals(method) || "error".equals(method))
+                            && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact"))) {
+                        return null;
+                    }
+                    return super.visitMethodInvocation(node, unused);
+                }
+
+                @Override
+                public Void visitIdentifier(IdentifierTree node, Void unused) {
+                    String name = node.getName().toString();
+                    if (taintedLocals.contains(name) || taintedContainers.contains(name)) {
+                        found[0] = true;
+                    }
+                    return null;
+                }
+            }.scan(expression, null);
+            return found[0];
+        }
+
+        private void addViolation(com.sun.source.tree.Tree tree, String reason) {
+            long position = positions.getStartPosition(unit, tree);
+            long line = position < 0 ? -1 : unit.getLineMap().getLineNumber(position);
+            String violation = unit.getSourceFile().getName() + ":" + line + ": " + reason;
+            if (!violations.contains(violation)) violations.add(violation);
+        }
+
+        private static boolean isThrowableType(String type) {
+            String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
+            return normalized.contains("throwable")
+                    || normalized.contains("exception")
+                    || normalized.contains("error");
+        }
+
+        private static String methodName(MethodInvocationTree node) {
+            if (node.getMethodSelect() instanceof MemberSelectTree) {
+                return ((MemberSelectTree) node.getMethodSelect()).getIdentifier().toString();
+            }
+            if (node.getMethodSelect() instanceof IdentifierTree) {
+                return ((IdentifierTree) node.getMethodSelect()).getName().toString();
+            }
+            return "";
+        }
+
+        private static String receiverName(MethodInvocationTree node) {
+            ExpressionTree receiver = receiverExpression(node);
+            return receiver == null ? "" : receiver.toString();
+        }
+
+        private static ExpressionTree receiverExpression(MethodInvocationTree node) {
+            return node.getMethodSelect() instanceof MemberSelectTree
+                    ? ((MemberSelectTree) node.getMethodSelect()).getExpression() : null;
+        }
+
+        private static String rootIdentifier(ExpressionTree expression) {
+            if (expression instanceof IdentifierTree) {
+                return ((IdentifierTree) expression).getName().toString();
+            }
+            if (expression instanceof MemberSelectTree) {
+                return rootIdentifier(((MemberSelectTree) expression).getExpression());
+            }
+            if (expression instanceof MethodInvocationTree) {
+                return rootIdentifier(receiverExpression((MethodInvocationTree) expression));
+            }
+            return null;
         }
     }
 
