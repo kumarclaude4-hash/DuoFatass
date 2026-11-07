@@ -202,6 +202,21 @@ public class ReleaseLogPrivacyTest {
         assertFalse(compound.contains("bytes=0-65535"));
     }
 
+    @Test
+    public void deviceGateAndKeystoreDiagnosticsDoNotExposeFingerprintOrRawAliases()
+            throws IOException {
+        String gate = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/DeviceSecurityGate.java");
+        assertTrue(gate.contains("Build.VERSION.SDK_INT"));
+        assertFalse(gate.contains("Build.MANUFACTURER"));
+        assertFalse(gate.contains("Build.MODEL"));
+
+        String pinGate = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/PinKeyGate.java");
+        assertTrue(pinGate.contains("LogRedact.metadata(alias)"));
+        assertFalse(pinGate.contains("Could not delete alias '" + String.valueOf('"') + " + alias"));
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 7 && dir != null; i++) {
