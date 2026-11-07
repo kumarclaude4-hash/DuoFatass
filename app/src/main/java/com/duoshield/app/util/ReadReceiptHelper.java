@@ -1,5 +1,9 @@
 package com.duoshield.app.util;
 
+import android.content.Context;
+
+import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.QuerySnapshot;
@@ -9,59 +13,74 @@ import java.util.List;
 
 public class ReadReceiptHelper {
 
-    public static void markAllRead(String convId, String myUid) {
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
+    public static void markAllRead(Context context, String convId, String myUid) {
+        if (context == null || convId == null || myUid == null) return;
+        FirebaseCostGuard guard = FirebaseCostGuard.getInstance(context);
+        // Two bounded status queries. Reserve their minimum read cost before
+        // sending them; any additional returned documents are accounted below.
+        if (!guard.reserveRead(2)) return;
 
-        // F-15 fix: the previous query used whereNotEqualTo("status", "read").
-        // Firestore's != operator *excludes* documents where the queried field does
-        // not exist at all — so messages created before the 'status' field was added
-        // (schema v6 → v7 migration) were permanently skipped and never marked read.
-        //
-        // Fix: run two explicit equality queries ('sent' and 'delivered') and union
-        // their results into a single write batch. This covers all non-read states
-        // that have the field set, plus avoids the Firestore limitation of only one
-        // inequality filter per query.
+        FirebaseFirestore db = FirebaseFirestore.getInstance();
         com.google.android.gms.tasks.Task<QuerySnapshot> sentTask =
                 db.collection("chats").document(convId)
                   .collection("messages")
                   .whereEqualTo("status", "sent")
+                  .limit(500)
                   .get();
 
         com.google.android.gms.tasks.Task<QuerySnapshot> deliveredTask =
                 db.collection("chats").document(convId)
                   .collection("messages")
                   .whereEqualTo("status", "delivered")
+                  .limit(500)
                   .get();
 
-        com.google.android.gms.tasks.Tasks.whenAllSuccess(sentTask, deliveredTask)
+        Tasks.whenAllSuccess(sentTask, deliveredTask)
                 .addOnSuccessListener(results -> {
                     List<DocumentSnapshot> docs = new ArrayList<>();
-                    for (Object r : results) {
-                        QuerySnapshot qs = (QuerySnapshot) r;
-                        docs.addAll(qs.getDocuments());
+                    for (Object result : results) {
+                        QuerySnapshot query = (QuerySnapshot) result;
+                        docs.addAll(query.getDocuments());
                     }
-                    if (docs.isEmpty()) return;
+                    if (docs.size() > 2) guard.recordReads(docs.size() - 2);
 
+                    List<DocumentSnapshot> unreadDocs = new ArrayList<>();
+                    for (DocumentSnapshot doc : docs) {
+                        if (!myUid.equals(doc.getString("sender"))) unreadDocs.add(doc);
+                    }
+
+                    // The conversation unread counter is part of this operation.
+                    // Reserve every document status update plus that one write
+                    // before committing any batch; do not clear the badge when
+                    // the status updates could not be persisted.
+                    if (!guard.reserveWrite(unreadDocs.size() + 1)) return;
+
+                    List<Task<Void>> commits = new ArrayList<>();
                     WriteBatch batch = db.batch();
                     int count = 0;
-                    for (DocumentSnapshot doc : docs) {
-                        String sender = doc.getString("sender");
-                        if (myUid.equals(sender)) continue;
+                    for (DocumentSnapshot doc : unreadDocs) {
                         batch.update(doc.getReference(), "status", "read");
                         if (++count == 450) {
-                            batch.commit();
+                            commits.add(batch.commit());
                             batch = db.batch();
                             count = 0;
                         }
                     }
-                    if (count > 0) batch.commit();
-                });
+                    batch.update(db.collection("chats").document(convId),
+                            "unread_" + myUid, 0L);
+                    commits.add(batch.commit());
 
-        db.collection("chats").document(convId)
-          .update("unread_" + myUid, 0L);
+                    Tasks.whenAllSuccess(commits)
+                            .addOnFailureListener(e -> android.util.Log.w(
+                                    "ReadReceiptHelper", "Read receipt batch failed: " + LogRedact.error(e)));
+                })
+                .addOnFailureListener(e -> android.util.Log.w(
+                        "ReadReceiptHelper", "Read receipt query failed: " + LogRedact.error(e)));
     }
 
-    public static void markMessageRead(String convId, String messageId) {
+    public static void markMessageRead(Context context, String convId, String messageId) {
+        if (context == null || convId == null || messageId == null) return;
+        if (!FirebaseCostGuard.getInstance(context).reserveWrite(1)) return;
         FirebaseFirestore.getInstance()
             .collection("chats").document(convId)
             .collection("messages").document(messageId)
