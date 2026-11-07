@@ -179,7 +179,7 @@ test("S05-M1: waitlist requestId is never logged to stdout in the clear", () => 
   );
 });
 
-test("S05-H2: invite listing is bounded, newest-first, paginated, and exposes redemption linkage", () => {
+test("S05-H2: invite listing is bounded, paginated, and exposes only pseudonymous redemption linkage", () => {
   const routeStart = INVITE_ROUTE_SOURCE.indexOf("async function listInvites(req, res)");
   const nextRouteStart = INVITE_ROUTE_SOURCE.indexOf("function createInvite(req, res)", routeStart);
   assert.ok(routeStart >= 0 && nextRouteStart > routeStart, "shared invite list handler missing");
@@ -191,12 +191,16 @@ test("S05-H2: invite listing is bounded, newest-first, paginated, and exposes re
   assert.ok(INVITE_STORE_SOURCE.includes(".count().get()"), "response must include total invite count");
   assert.ok(INVITE_STORE_SOURCE.includes("invite.decodeCursor("), "store must accept an opaque pagination cursor");
   assert.ok(INVITE_STORE_SOURCE.includes("invite.encodeCursor("), "store must return a next-page cursor");
-  assert.ok(INVITE_STORE_SOURCE.includes("usedByUserId: data.usedByUserId || null"), "list response must include redemption linkage");
+  assert.ok(INVITE_STORE_SOURCE.includes("usedByUserIdTag: data.usedByUserIdTag"), "list response must expose a pseudonymous redemption tag");
+  assert.ok(INVITE_STORE_SOURCE.includes("tagUserId(userId)"), "redemption tag must use the injected UID pseudonymizer");
+  assert.ok(!/usedByUserId:\s*userId/.test(INVITE_STORE_SOURCE), "new invite records must not persist raw UIDs");
+  assert.ok(INVITE_STORE_SOURCE.includes("tagUserId(data.usedByUserId)"), "legacy raw UIDs must be masked before list projection");
   assert.ok(INVITE_STORE_SOURCE.includes("totalCount,"), "list response must include totalCount");
   assert.ok(INVITE_STORE_SOURCE.includes("capped: totalCount > snapshot.size"), "bounded result must disclose excluded records");
   assert.ok(INVITE_STORE_SOURCE.includes("counts,"), "list response must include bounded status counts");
-  assert.ok(SERVER_SOURCE.includes('usedByTd.textContent = item.usedByUserId || "—"'),
-    "admin UI must safely render redeemed account linkage with textContent");
+  assert.ok(SERVER_SOURCE.includes('usedByTd.textContent = item.usedByUserIdTag || "—"'),
+    "admin UI must render only the pseudonymous redemption tag with textContent");
+  assert.ok(SERVER_SOURCE.includes("<th>Redeemed user tag</th>"), "admin UI must label the value as pseudonymous");
 });
 
 // ── S05-H2 / invite-management wiring tests ──────────────────────────────────
