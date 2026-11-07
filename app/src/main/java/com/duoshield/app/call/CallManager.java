@@ -201,6 +201,8 @@ public class CallManager {
     private static final long STATS_POLL_INTERVAL_MS = 10_000L;
     /** Cumulative estimated Cloudflare TURN egress received by this client. */
     private long sessionEgressBytesTotal = 0L;
+    /** Invalidates asynchronous stats callbacks from a previous call/session. */
+    private volatile long statsGeneration = 0L;
     /** Last snapshot of transport bytes from the stats report (to compute deltas). */
     private long lastTransportBytesSent     = -1L;
     private long lastTransportBytesReceived = -1L;
@@ -1685,6 +1687,7 @@ public class CallManager {
 
     private void startStatsPolling() {
         statsHandler.removeCallbacks(statsPollRunnable);
+        statsGeneration++;
         lastTransportBytesSent     = -1L;
         lastTransportBytesReceived = -1L;
         lastFramesEncoded          = -1L;
@@ -1704,12 +1707,21 @@ public class CallManager {
 
     private void stopStatsPolling() {
         statsHandler.removeCallbacks(statsPollRunnable);
-        // Attempt a final stats snapshot to capture bytes from the last polling interval.
-        // Guard: peerConnection may already be null/closed when stopStatsPolling is called
-        // from the FAILED path; the async callback would fire on a disposed object.
-        if (peerConnection != null) {
-            collectStats();
+        // Invalidate every in-flight periodic stats callback, then take one final
+        // snapshot before resetting per-call baselines. Calling getStats() and
+        // immediately zeroing the baselines lets its asynchronous callback treat
+        // all historical transport bytes as a new delta (overcounting relay use).
+        final long stoppingGeneration = ++statsGeneration;
+        if (peerConnection == null) {
+            finishStatsPollingStop(stoppingGeneration);
+            return;
         }
+        collectStats(() -> finishStatsPollingStop(stoppingGeneration));
+    }
+
+    private void finishStatsPollingStop(long stoppingGeneration) {
+        // A new call/session may have started while the final snapshot was in flight.
+        if (stoppingGeneration != statsGeneration) return;
         if (sessionEgressBytesTotal > 0) {
             Log.i(TAG, String.format(Locale.US,
                     "Call ended — estimated %.2f MB TURN egress. Monthly: %s",
@@ -1725,6 +1737,8 @@ public class CallManager {
         qualityStep                = qualityCeiling;
         isRelayCall                = false;
         unregisterThermalListener();
+        // Prevent a duplicate/late completion from resetting another session.
+        statsGeneration++;
     }
 
     /**
@@ -1742,19 +1756,42 @@ public class CallManager {
      * </ol>
      */
     private void collectStats() {
-        if (peerConnection == null) return;
-        peerConnection.getStats(new RTCStatsCollectorCallback() {
+        collectStats(null);
+    }
+
+    private void collectStats(Runnable onComplete) {
+        final PeerConnection statsConnection = peerConnection;
+        final long requestGeneration = statsGeneration;
+        if (statsConnection == null) {
+            if (onComplete != null) onComplete.run();
+            return;
+        }
+        statsConnection.getStats(new RTCStatsCollectorCallback() {
             @Override
             public void onStatsDelivered(RTCStatsReport report) {
-                if (report == null) return;
+                // Drop late samples from a previous call, disposed peer connection,
+                // or stopped polling generation. They must never mutate a new call's
+                // byte baselines or account stale traffic twice.
+                if (requestGeneration != statsGeneration || peerConnection != statsConnection) {
+                    if (onComplete != null) onComplete.run();
+                    return;
+                }
+                if (report == null) {
+                    if (onComplete != null) onComplete.run();
+                    return;
+                }
 
                 // ── Pass 1: build lookup maps ───────────────────────────────
                 // local-candidate id → candidateType ("host","srflx","relay")
                 Map<String, String> localCandidateTypes = new java.util.HashMap<>();
                 // transport id → {bytesSent, bytesReceived}
                 long transportSent = -1L, transportRecv = -1L;
-                // nominated candidate-pair local candidate id
+                // Prefer the nominated active pair. Some implementations omit
+                // nominated=true on a transient sample; only then fall back to
+                // the first succeeded pair rather than letting iteration order
+                // select an arbitrary historical candidate.
                 String nominatedLocalId = null;
+                String succeededLocalId = null;
                 // outbound-rtp fields for thermal watchdog
                 long framesEncoded = -1L;
                 String outboundKind = null;
@@ -1774,9 +1811,10 @@ public class CallManager {
                         Object stateObj = m.get("state");
                         boolean nominated = Boolean.TRUE.equals(nomObj);
                         boolean succeeded = "succeeded".equals(stateObj);
-                        if (nominated || succeeded) {
-                            Object lcid = m.get("localCandidateId");
-                            if (lcid != null) nominatedLocalId = lcid.toString();
+                        Object lcid = m.get("localCandidateId");
+                        if (lcid != null) {
+                            if (nominated) nominatedLocalId = lcid.toString();
+                            else if (succeeded && succeededLocalId == null) succeededLocalId = lcid.toString();
                         }
 
                     } else if ("transport".equals(type)) {
@@ -1794,6 +1832,10 @@ public class CallManager {
                         }
                     }
                 }
+
+                // Use a succeeded-pair fallback only if no nominated pair was reported.
+                if (nominatedLocalId == null) nominatedLocalId = succeededLocalId;
+                boolean wasRelayCall = isRelayCall;
 
                 // ── Pass 2: determine relay status ──────────────────────────
                 if (nominatedLocalId != null) {
@@ -1818,8 +1860,12 @@ public class CallManager {
                             ? transportRecv - lastTransportBytesReceived : 0L;
                     lastTransportBytesSent     = transportSent;
                     lastTransportBytesReceived = transportRecv;
-                    if (isRelayCall) {
-                        sessionEgressBytesTotal += deltaRecv;
+                    // Charge the interval if either endpoint sample says the
+                    // selected path was relayed. This conservatively includes the
+                    // last sampled relay interval when ICE switches back to P2P.
+                    if (isRelayCall || wasRelayCall) {
+                        sessionEgressBytesTotal = Long.MAX_VALUE - sessionEgressBytesTotal < deltaRecv
+                                ? Long.MAX_VALUE : sessionEgressBytesTotal + deltaRecv;
                         TurnBandwidthTracker.get(context).recordEgressBytes(deltaRecv);
                     }
                     Log.d(TAG, String.format(Locale.US,
@@ -1846,6 +1892,7 @@ public class CallManager {
                     lastFramesEncoded = framesEncoded;
                     lastFramesTs      = nowMs;
                 }
+                if (onComplete != null) onComplete.run();
             }
         });
     }
