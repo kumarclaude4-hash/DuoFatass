@@ -12,8 +12,9 @@ export { AdminLockoutCounter, MediaMutationBudget };
 // Enforce at 95% = 9.5 GB to stay safely within the free tier.
 const MAX_R2_BYTES = 9.5 * 1024 * 1024 * 1024; // 9.5 GB
 
-// Workers free tier: 100,000 requests/day (not per month). Enforce at 90% = 90K/day.
-const MAX_DAILY_REQUESTS = 90_000;
+// Workers Free hard allowance: 100,000 requests/day. Keep an 80% early-stop
+// target so KV/DO/storage overhead and measurement error retain headroom.
+const MAX_DAILY_REQUESTS = 80_000;
 
 // B2 free tier: 10 GB (decimal). Keep a 10% safety margin for accounting
 // drift and objects written outside this Worker. Tiering stops before 9 GB.
