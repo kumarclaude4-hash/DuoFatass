@@ -3213,10 +3213,9 @@ public class ChatMediaActivity extends BaseActivity {
         if (!FirebaseCostGuard.getInstance(ChatMediaActivity.this).reserveWrite(1)) {
             m.setStatus("failed");
             adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
-            saveToRoom(m);
             cleanupUnpublishedAlbumMedia(items);
             Toast.makeText(this,
-                    "Daily write budget reached — album not sent. Try again after the quota reset.",
+                    "Daily write budget reached — album not sent. Re-select the media after the quota reset.",
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -3237,9 +3236,10 @@ public class ChatMediaActivity extends BaseActivity {
               Log.e(TAG, "Failed to send album message: " + com.duoshield.app.util.LogRedact.error(e));
               adapter.updateMessage(msgId, msg -> msg.setStatus("failed"));
               m.setStatus("failed");
-              saveToRoom(m);
               cleanupUnpublishedAlbumMedia(items);
-              Toast.makeText(this, "Failed to send album. Uploaded media was cleaned up; please try again.", Toast.LENGTH_LONG).show();
+              Toast.makeText(this,
+                      "Album was not sent. Re-select the media to try again.",
+                      Toast.LENGTH_LONG).show();
           });
     }
 
@@ -3820,6 +3820,11 @@ public class ChatMediaActivity extends BaseActivity {
                 m.setStatus("sent");
             });
             retryPendingDecryption();
+            return;
+        }
+        if ("album".equals(msg.getMediaType())) {
+            Toast.makeText(this, "Please re-select the media to retry this album.",
+                    Toast.LENGTH_LONG).show();
             return;
         }
         if ("voice".equals(msg.getMediaType())) {
