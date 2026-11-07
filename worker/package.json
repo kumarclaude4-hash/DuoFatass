@@ -1,7 +1,7 @@
 {
   "name": "duoshield-storage-worker",
   "version": "1.0.0",
-  "description": "Cloudflare Worker for DuoShield tiered storage (R2 hot → B2 cold → purge at 180 days)",
+  "description": "Cloudflare Worker for DuoShield tiered storage (R2 hot → B2 cold; B2 objects remain until explicitly deleted)",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
