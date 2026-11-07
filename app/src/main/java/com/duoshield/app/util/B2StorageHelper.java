@@ -241,10 +241,13 @@ public final class B2StorageHelper {
      *       {@link #MAX_RETRIES} times with delays of 1 s, 2 s, 4 s (capped at 30 s).</li>
      * </ul>
      *
-     * @param opName  Short label for logcat messages (e.g. "upload:media/chat1/uuid.jpg").
+     * @param opName  Operation label. Any object-key suffix is pseudonymised before logging.
      * @param op      The B2 network operation to execute.
      */
     private static <T> T withRetry(String opName, B2Operation<T> op) throws Exception {
+        // Callers include B2 object keys (and sometimes ranges derived from them).
+        // Preserve the operation label while pseudonymising its sensitive suffix.
+        String safeOperation = redactOperationName(opName);
         long backoff = INITIAL_BACKOFF_MS;
         Exception last = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -255,7 +258,7 @@ public final class B2StorageHelper {
             } catch (Exception e) {
                 last = e;
                 if (attempt < MAX_RETRIES) {
-                    Log.w(TAG, opName + " failed (attempt " + (attempt + 1) + "/" + MAX_RETRIES
+                    Log.w(TAG, safeOperation + " failed (attempt " + (attempt + 1) + "/" + MAX_RETRIES
                             + "), retrying in " + backoff + " ms — " + com.duoshield.app.util.LogRedact.error(e));
                     try {
                         Thread.sleep(backoff);
@@ -265,11 +268,27 @@ public final class B2StorageHelper {
                     }
                     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
                 } else {
-                    Log.e(TAG, opName + " failed after " + MAX_RETRIES + " retries." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                    Log.e(TAG, safeOperation + " failed after " + MAX_RETRIES + " retries." + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
                 }
             }
         }
         throw last;
+    }
+
+    /**
+     * Redacts the sensitive suffix of an operation label while preserving the
+     * operation prefix for diagnostics. Object keys can contain account,
+     * conversation and message identifiers.
+     */
+    static String redactOperationName(String operation) {
+        if (operation == null || operation.isEmpty()) return "storage operation";
+        int separator = operation.indexOf(':');
+        if (separator < 0 || separator == operation.length() - 1) {
+            return com.duoshield.app.util.LogRedact.metadata(operation);
+        }
+        String prefix = operation.substring(0, separator + 1);
+        String sensitiveSuffix = operation.substring(separator + 1);
+        return prefix + com.duoshield.app.util.LogRedact.metadata(sensitiveSuffix);
     }
 
     // ── Connection pre-warming ────────────────────────────────────────────────
