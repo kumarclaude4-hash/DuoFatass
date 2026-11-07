@@ -14,9 +14,9 @@ const MAX_R2_BYTES = 9.5 * 1024 * 1024 * 1024; // 9.5 GB
 // Workers free tier: 100,000 requests/day (not per month). Enforce at 90% = 90K/day.
 const MAX_DAILY_REQUESTS = 90_000;
 
-// B2 free tier: 10 GB. Keep a 5% safety margin for accounting drift and
-// objects written outside this Worker. Tiering stops before this ceiling.
-const MAX_B2_BYTES = 9.5 * 1024 * 1024 * 1024;
+// B2 free tier: 10 GB (decimal). Keep a 10% safety margin for accounting
+// drift and objects written outside this Worker. Tiering stops before 9 GB.
+const MAX_B2_BYTES = 9_000_000_000;
 
 // Maximum objects migrated per cron run. 3 subrequests per migration (get + put + delete)
 // plus list overhead keeps total well under the 1,000 subrequest-per-invocation limit.
