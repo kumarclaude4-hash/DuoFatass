@@ -194,6 +194,11 @@ public class ReleaseLogPrivacyTest {
                         "download:media/private/message-123"));
         assertEquals("storage operation",
                 com.duoshield.app.util.B2StorageHelper.redactOperationName(null));
+        String compound = com.duoshield.app.util.B2StorageHelper.redactOperationName(
+                "worker-range:media/private/message-123:bytes=0-65535");
+        assertTrue(compound.startsWith("worker-range:m:"));
+        assertFalse(compound.contains("media/private/message-123"));
+        assertFalse(compound.contains("bytes=0-65535"));
         assertEquals("worker-range:m:01234567",
                 com.duoshield.app.util.B2StorageHelper.redactOperationName(
                         "worker-range:media/private/message-123:bytes=0-65535"));
