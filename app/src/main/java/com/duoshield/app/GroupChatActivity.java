@@ -1231,12 +1231,7 @@ public class GroupChatActivity extends BaseActivity {
                         "Daily write budget reached — media is saved locally. Try again after the quota reset.",
                         Toast.LENGTH_LONG).show();
             });
-            if (B2StorageHelper.isB2Path(storagePath)) {
-                executor.execute(() -> {
-                    try { B2StorageHelper.deleteFile(storagePath); }
-                    catch (Exception ignored) {}
-                });
-            }
+            B2StorageHelper.deleteFileAsync(storagePath);
             return;
         }
         db.collection("groups").document(groupId)
@@ -1263,12 +1258,7 @@ public class GroupChatActivity extends BaseActivity {
           .addOnFailureListener(ex -> {
               adapter.updateMessage(msgId, m -> m.setStatus("failed"));
               // Clean up orphaned B2 file
-              if (B2StorageHelper.isB2Path(storagePath)) {
-                  executor.execute(() -> {
-                      try { B2StorageHelper.deleteFile(storagePath); }
-                      catch (Exception ignored) {}
-                  });
-              }
+              B2StorageHelper.deleteFileAsync(storagePath);
               Toast.makeText(this, "Failed to send media.", Toast.LENGTH_SHORT).show();
           });
     }
@@ -1326,11 +1316,7 @@ public class GroupChatActivity extends BaseActivity {
             // Remove them when the local Firestore budget prevents publishing the album.
             for (String[] item : items) {
                 if (item != null && item.length > 0 && B2StorageHelper.isB2Path(item[0])) {
-                    String orphanedPath = item[0];
-                    executor.execute(() -> {
-                        try { B2StorageHelper.deleteFile(orphanedPath); }
-                        catch (Exception ignored) {}
-                    });
+                    B2StorageHelper.deleteFileAsync(item[0]);
                 }
             }
             Toast.makeText(this,
