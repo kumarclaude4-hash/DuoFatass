@@ -258,7 +258,7 @@ test('S03-H3: a single holder is rejected with 507 once their per-user quota is 
   assert.equal(put1.status, 200, await put1.clone().text());
 
   // Second upload of 600 more bytes from the SAME holder must be rejected —
-  // 600 + 600 > 1000 — even though MAX_R2_BYTES (9.5 GB) is untouched.
+  // 600 + 600 > 1000 — even though MAX_R2_BYTES (9 GB decimal) is untouched.
   const key2 = `media/${CHAT_ID}/two.jpg`;
   const token2 = await mintToken('write', key2, holder);
   const body2 = new Uint8Array(600);
