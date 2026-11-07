@@ -23,8 +23,15 @@ public final class MediaLimits {
 
     private MediaLimits() {}
 
-    /** Hard ceiling for any single outbound file. */
-    public static final long MAX_BYTES = 95_000_000L;
+    /**
+     * Hard ceiling for a plaintext outbound file.
+     *
+     * <p>The Worker accepts at most 95,000,000 encrypted bytes. Whole-blob
+     * AES-GCM adds a 12-byte IV and 16-byte tag; chunked media adds a 16-byte
+     * header and one 16-byte tag per 1 MiB chunk. Keep 1 MB of headroom so
+     * every permitted plaintext file still fits after encryption.
+     */
+    public static final long MAX_BYTES = 94_000_000L;
 
     /**
      * Videos above this get routed through {@link VideoTranscoder} first. It is
