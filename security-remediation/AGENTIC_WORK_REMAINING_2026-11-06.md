@@ -2,7 +2,7 @@
 
 Repository: `kumarclaude4-hash/DuoFatass`  
 Base branch: `main`  
-Current main HEAD: `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #271 merge).
+Current main HEAD: `d1ee9ac01e0809a6e398958be423097bc082e9d7` (PR #274 merge).
 
 Recent merged work:
 - PR #261 — invite lifecycle invalid-state fail-closed checks (S05-H2).
@@ -12,9 +12,11 @@ Recent merged work:
 - PR #269 — S10-N2 release-log taint analysis now fails closed for bodyless app-owned abstract/interface/native helper declarations; merged as `afdf2463c496f14a5c33ee5694fc47eff97d5e3d`. Exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed. S10-N2 remains Partial for inheritance/virtual dispatch, reflection, external callbacks and physical release-logcat residuals.
 - PR #270 — refreshed the security handoff/tracker/sign-off snapshot after #269; merged as `1a425ad0aa2e7c36fa66a2afe4e46d85e78ee514`.
 - PR #271 — bounded S07-L2 app-owned memory hygiene (defensive cache fingerprint copy/zeroization, serialized derivation/cache eviction, cleanup of derivation/HKDF intermediate arrays). Exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 jobs; Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3; merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`. S07-L2 remains Partial because native-key destruction is finalizer-timed.
+- PR #272 — post-#271 agent handoff refresh, corrected libsignal dependency topology and 12-route inventory; merged as `0a985fb39570fea3b030da76417e67a01790f8b5`. PR #273 was a duplicate documentation PR and was closed unmerged.
+- PR #274 — S10-N2 typed cross-class field taint correction. The analyzer now carries owner-qualified field-write summaries and resolves reads through the receiver's declared app-owned type; regression: sensitive `Profile.getUserId()` → `CrossClassHolder.setMemo()` → `Log.w(holder.memo)`. It also removes retry-count/protocol-type details from a `ChatMediaActivity` warning. Exact head `a26d4f1140532879c4e74590e6bb1ec16a34ebc4`; CI [42450251567](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251567) passed 10/10, Security [42450251553](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251553) passed 3/3; merged as `d1ee9ac01e0809a6e398958be423097bc082e9d7`. S10-N2 remains Partial for inheritance/virtual dispatch, arbitrary field aliases, reflection, native methods, third-party callbacks and physical release-logcat QA.
 - PR #266 was intentionally closed unmerged. Its documentation changes are not on main.
 
-There are **no open code PRs** after PR #271 merged. Operator/staging, owner-decision and feature-complete physical-device gates remain open. The old #253/#254/#258 table and their historical CI blockers are superseded: #253's invite lifecycle work was replaced by merged #261, #254's range allowance was superseded by merged #256, and #258 was closed; do not reopen those branches. PR #262 was closed unmerged; its S06-H5 implementation was carried by merged PR #265.
+There are **no open code PRs** in the latest repository issue/PR snapshot after PR #274 merged. Operator/staging, owner-decision and feature-complete physical-device gates remain open. The old #253/#254/#258 table and their historical CI blockers are superseded: #253's invite lifecycle work was replaced by merged #261, #254's range allowance was superseded by merged #256, and #258 was closed; do not reopen those branches. PR #262 was closed unmerged; its S06-H5 implementation was carried by merged PR #265.
 
 The canonical tracker has **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Use `BUG_TRACKER.md` and the refreshed [Next Work Report](NEXT_WORK_REPORT_2026-11-08.md) for the current ordered state; any conflicting 2026-11-06/07 narrative below is historical.
 
@@ -36,7 +38,7 @@ The canonical tracker has **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accep
 
 ## 2. Verified baseline
 
-Current main HEAD: `8d0082d004993278645f3eb7a72c43a8cdc14e59` (PR #267 merged).
+Historical main baseline at the PR #267 closeout: `8d0082d004993278645f3eb7a72c43a8cdc14e59`.
 
 PR #267 exact-head verification:
 - CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887): passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests, release-log AST, Gradle wrapper and vendored-libsignal integrity.

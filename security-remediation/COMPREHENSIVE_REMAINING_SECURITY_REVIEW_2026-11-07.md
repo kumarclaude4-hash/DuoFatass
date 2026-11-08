@@ -3,7 +3,7 @@
 **Prepared:** 2026-11-08  
 **Repository:** https://github.com/kumarclaude4-hash/DuoFatass  
 **Original source-review baseline:** `main` at `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` (PR #248 merge)  
-**Current reconciliation baseline:** `main` at `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #271 merge; includes #270, #269 and #267)  
+**Current reconciliation baseline:** `main` at `d1ee9ac01e0809a6e398958be423097bc082e9d7` (PR #274 merge; includes #272, #271, #270, #269 and #267)  
 **Purpose:** Source-linked, evidence-aware inventory of incomplete security work, with precise next actions and acceptance criteria for an independent Claude review.
 
 > This is a handoff report, not a new audit or sign-off. The canonical finding register is [`BUG_TRACKER.md`](../BUG_TRACKER.md). `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. Do not invent finding IDs, change dispositions without evidence, infer owner approval, or mark a finding Fixed merely because a PR merged.
@@ -14,7 +14,7 @@
 
 This addendum supersedes conflicting 2026-11-07 baseline and open-PR statements below. The original review remains historical evidence; current dispositions are in `BUG_TRACKER.md`.
 
-**Current main:** `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (after PR #271). There are no open code PRs at this snapshot.
+**Current main:** `d1ee9ac01e0809a6e398958be423097bc082e9d7` (after PR #274). There are no open code PRs in the latest repository issue/PR snapshot.
 
 Merged after the original review:
 - PR #261 — explicit active/future-expiry invite-state validation and audited invalid-state revocation (S05-H2).
@@ -24,6 +24,8 @@ Merged after the original review:
 - PR #269 — S10-N2 bodyless helper-return hardening; exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed; merged as `afdf2463c496f14a5c33ee5694fc47eff97d5e3d`. Inheritance/virtual dispatch, reflection, external callbacks and physical release-logcat residuals remain. Exact PR-head CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887), Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988), Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886), and Rules/server transactions [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962) all passed.
 - PR #270 — post-#269 security handoff reconciliation; merged as `1a425ad0aa2e7c36fa66a2afe4e46d85e78ee514`.
 - PR #271 — S07-L2 app-owned buffer/cache cleanup; exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3; merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`. Native key destruction remains finalizer-timed; S07-L2 remains Partial.
+- PR #272 — reconciled handoff, dependency guidance and 12-route static inventory; merged as `0a985fb39570fea3b030da76417e67a01790f8b5`.
+- PR #274 — S10-N2 typed cross-class field-write/read taint coverage; exact head `a26d4f1140532879c4e74590e6bb1ec16a34ebc4`, CI [42450251567](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251567) passed 10/10, Security [42450251553](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251553) passed 3/3, merged as `d1ee9ac01e0809a6e398958be423097bc082e9d7`. A separate `ChatMediaActivity` warning no longer emits retry-count or protocol-type details. This closes the reproduced typed setter-to-field flow, not arbitrary alias or virtual-dispatch flows.
 - PR #266 was intentionally closed unmerged; its documentation changes are not on main.
 
 The old #253/#254/#258 table below is historical: #253 was superseded by #261, #254's range-read work was superseded by #256, and #258 is closed. PR #262 was closed unmerged; its PIN-throttle change was carried in #265. Do not reopen those branches without a fresh source review.
@@ -35,6 +37,8 @@ S06-H5 remains Partial, but the formerly described Settings collision oracle has
 S10-N1 has been corrected: Firebase App Check enforcement occurs at the Firebase service layer before Firestore Rules evaluation. Firestore Rules cannot inspect App Check metadata. The unsupported `request.app`/ `appCheckVerified()` expressions and the emulator test arrangement that hid them were removed by PR #267. App Check monitoring, compatible-client adoption, Console enforcement and real-token isolated-staging acceptance remain operator tasks. Never recommend adding `request.app` to Firestore Rules.
 
 The current register remains 116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted. `FINAL_SIGNOFF.md` remains PENDING. No production configuration, live credentials, historical UID migration or physical-device acceptance is claimed.
+
+**S10-N2 update from PR #274:** the reproducible typed cross-class setter-to-field path is now guarded. The static analyzer associates a summarized field write with its declaring app-owned class and checks a later field read through a receiver with a resolvable declared type. Its synthetic regression uses `CrossClassHolder.memo`, with a `Profile.getUserId()` source passed through `setMemo()` and logged later. This is still bounded syntax/AST analysis; inheritance/override dispatch, arbitrary multi-hop/aliased receiver field flows, reflection, native methods, third-party callbacks and physical release-logcat acceptance remain unproven. CI [42450251567](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251567) and Security [42450251553](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251553) passed on exact PR head `a26d4f1140532879c4e74590e6bb1ec16a34ebc4`.
 
 ---
 
