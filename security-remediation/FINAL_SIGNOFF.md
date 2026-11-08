@@ -7,7 +7,7 @@
 
 ## Current evidence snapshot — 2026-11-08
 
-The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed; S06-H5 is Partial after the merged PIN-change attempt throttle; S05-H2 remains Partial pending product-contract and staging acceptance.
+The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up remains **118 register rows: 87 Fixed, 18 Partial, 1 Open, 12 Accepted** (Critical 4; High 33; Medium 27; Low 31; Informational 23). S06-H4 is Fixed; S06-H5 is Partial after the merged PIN-change attempt throttle; S05-H2 remains Partial pending product-contract and staging acceptance.
 
 Current `main`: `32175ccf86342a6c517459a0e2507f14c4d064e8`.
 
