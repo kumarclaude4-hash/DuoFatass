@@ -1,8 +1,8 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-08 (post-PR #274)  
+**Updated:** 2026-11-08 (independent re-verification after PR #277)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `d1ee9ac01e0809a6e398958be423097bc082e9d7` (PR #274 merge; includes PR #272, #271, #270, #269 and #267)
+**Current main:** `b596e965d4be54b4ea8079b4036012e68188f865` (PR #277 merge; includes #276 and #275). See [independent re-verification](INDEPENDENT_REVERIFICATION_2026-11-08.md).
 
 ## Current verified mainline
 
@@ -34,13 +34,17 @@ PR #269 exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFata
 - PR #271 — bounded S07-L2 app-owned key-buffer/cache hygiene; exact head `efceb00bc7fac0361804f98cf84458e69a75c0c3`, merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`; CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3. S07-L2 remains Partial because native destruction is still finalizer-timed.
 - PR #272 — refreshed the agent handoff after PR #271 (including exact libsignal dependency topology and corrected 12-route inventory); merged as `0a985fb39570fea3b030da76417e67a01790f8b5`. PR #273 was a duplicate documentation PR and was closed unmerged.
 - PR #274 — S10-N2 owner-qualified typed cross-class field-write/read taint coverage; exact head `a26d4f1140532879c4e74590e6bb1ec16a34ebc4`, merged as `d1ee9ac01e0809a6e398958be423097bc082e9d7`; CI [42450251567](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251567) passed 10/10 and Security [42450251553](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251553) passed 3/3. It also removed retry-count and protocol-type details from a ChatMediaActivity warning. S10-N2 remains Partial.
+
+- PR #275 — refreshed the security handoff after #274; exact head `e9ecaf3e4590dbcf7e701a628f1b4843d4a3f527`, merge `b401be50892f2e1adc55235bf6a840daa55669a1`; CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) 10/10 and Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810) 3/3.
+- PR #276 — S10-N2 fails closed for known app-owned subtype overrides; exact head `031ea9d0ecfbeba06bc9d14c2d5bbdaf0a8e58ed`, merge `79aacea3a05131f7c5afcc6c64eef182322eda3f`; CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10 and Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3.
+- PR #277 — S10-N2 treats ambiguous same-name/same-arity app-owned helper returns as unknown/tainted; exact head `28ed49f2ae63d134eedbb6a73aa4cfa2930f9abc`, merged as `b596e965d4be54b4ea8079b4036012e68188f865`; CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10 and Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3. S10-N2 remains Partial for residual flows and physical release-logcat acceptance.
 - PR #266 — intentionally closed unmerged; its documentation changes were not applied to main.
 
-There are **no open code PRs** in the latest repository issue/PR snapshot after PR #274 merged. Do not reopen PR #273; it was superseded by merged PR #272.
+There are **no open code PRs** and **no open issues** after PR #277 merged. PR #266 was intentionally closed unmerged per owner instruction; PR #273 was a duplicate of merged PR #272; PR #262's implementation was carried by merged PR #265. These closed historical PRs do not represent outstanding work. Do not reopen superseded branches.
 
 ## Canonical tracker
 
-The five severity sections of `BUG_TRACKER.md` retain **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). The register is authoritative; this report does not promote findings based on PR merge alone.
+The five severity sections of `BUG_TRACKER.md` retain **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23), recounted at main HEAD `b596e965d4be54b4ea8079b4036012e68188f865`. The #276/#277 improvements reduce S10-N2 residual scope but do not create new finding IDs or justify promoting it to Fixed. The register is authoritative; this report does not promote findings based on PR merge alone.
 
 Notable evidence corrections:
 - **S06-H5 remains Partial:** PR #265's durable three-attempt/15-minute, UID-scoped throttle counts successful and failed replacement attempts and uses a generic failure response. This bounds probing but does not prove every success/failure side channel impossible.
@@ -53,7 +57,7 @@ Notable evidence corrections:
 
 ### 1. Source-review / code-analysis candidates
 
-- **S10-N2:** PR #274 closes direct typed cross-class setter-to-field flow. Continue only with a targeted residual review of inherited/overridden virtual dispatch, multi-hop or aliased receiver flows, reflection and third-party callbacks. Add a narrow fail-closed regression only where a concrete false negative is reproducible and safely fixable; keep the analyzer's syntax-only limitations explicit.
+- **S10-N2:** PR #276 additionally closes the reproduced app-owned virtual-override return false negative; PR #277 closes the ambiguous same-name/same-arity app-owned overload false negative. Continue only with reproducible residuals: multi-hop/aliased receiver flows, external/library subclass dispatch, dynamic class loading, reflection/native paths, third-party callback internals and full symbol/generic resolution. Keep the analyzer's syntax-only limitations explicit; physical release/minified APK logcat acceptance remains deferred until feature-complete.
 - **S07-L2:** source review confirmed pinned libsignal 0.54.1 has no supported deterministic Java destruction API. PR #271 has merged bounded cleanup of app-owned arrays/cache metadata. Do not use reflection, unsafe native access or GC forcing; prepare an explicit owner residual-risk decision for finalizer-timed native destruction and ensure app lifecycle blocks post-wipe identity derivation.
 - Re-check `BUG_TRACKER.md` and current source before taking any additional code task; the 2026-11-07 open-PR list is historical and must not be revived.
 
