@@ -2,45 +2,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── S10-N1: App Check verification (S08-H5 item 4a — now wired) ──────────
-    // Without App Check, every rule below is reachable by any script holding a
-    // valid Firebase Auth session — no app install required at all
-    // (audit/SESSION-10-SYNTHESIS.md §S10-N1). `request.app` is populated by
-    // Firestore whenever the caller attached an App Check token, independently
-    // of whether "Enforce" is turned on for this project in the Firebase
-    // console App Check settings — so this helper is meaningful the moment the
-    // client-side provider (DuoShieldApp.onCreate(), app/build.gradle) ships,
-    // without waiting on that console toggle.
+    // ── S10-N1: Firebase App Check rollout boundary ───────────────────────────
+    // App Check token enforcement is performed by the Firebase service layer,
+    // before Firestore Security Rules are evaluated. Rules cannot inspect App
+    // Check token metadata: request.app is not a supported Firestore Rules field,
+    // and referencing it causes rule evaluation to fail closed even when a
+    // request carries a valid App Check token.
     //
-    // `appCheckVerified()` is now attached to the `allow` clauses that guard the
-    // seed-derived recovery/backup corpus and the duress machinery — the paths
-    // an attacker holding only a coerced seed + a REST session can otherwise
-    // read straight off the wire:
-    //   recovery/{uid}, backups/{userId} (+ messages/contacts/groups),
-    //   duressEligibility/{accountId} (read), accountLock/{accountId} (read+create),
-    //   users/{uid}/devices/{deviceId} (the new per-device push registry).
-    // _duressNonces and waitlist are already `allow …: if false` (Admin-SDK only),
-    // so App Check is moot there and is intentionally not added — a gate on an
-    // already-total deny would be dead code, and the static test (Suite C) treats
-    // `if false` clauses as out of scope for exactly this reason.
-    //
-    // ROLLOUT SAFETY. These rules are committed but console enforcement stays
-    // OFF until the App-Check-aware APK has shipped and monitoring metrics show
-    // real traffic is attaching tokens. Because the emulator cannot mint App
-    // Check tokens (@firebase/rules-unit-testing v3 has no App Check support;
-    // request.app is always null there), the rules test harness is split:
-    //   - firestore-tests/rules.test.js loads the rules with appCheckVerified()
-    //     string-substituted to `true`, proving the auth/lock logic is unchanged;
-    //   - firestore-tests/appcheck.test.js loads the REAL rules and asserts the
-    //     gated paths DENY even with valid auth, since no App Check context exists;
-    //   - firestore-tests/appcheck-static.test.js parses this file and asserts
-    //     every non-`false` allow on a gated path carries the gate, catching a
-    //     future path added without it.
-    // A sideloaded/rooted install remains a residual gap by design (README.md
-    // threat model): App Check changes attacker *cost*, not the trust boundary.
-    function appCheckVerified() {
-      return request.app != null;
-    }
+    // Keep authentication, ownership and account-lock checks in these rules.
+    // Do not add request.app checks or an App Check helper to this ruleset.
+    // Enable Firestore App Check enforcement only after an authorized operator
+    // verifies monitoring metrics, compatible-client adoption and rollback.
+    // The Android provider is registered in DuoShieldApp.onCreate().
 
     // Users: anyone authenticated can read (needed for ECDH key exchange,
     // partner display info, FCM token delivery). Only the owner can write.
@@ -98,10 +71,8 @@ service cloud.firestore {
       // to read another account's device list (it reveals how many devices a
       // target uses and their push tokens) nor write into it.
       match /devices/{deviceId} {
-        allow read: if request.auth != null && request.auth.uid == uid
-                    && appCheckVerified();
+        allow read: if request.auth != null && request.auth.uid == uid;
         allow create, update: if request.auth != null && request.auth.uid == uid
-                    && appCheckVerified()
                     && request.resource.data.keys().hasOnly(
                          ['fcmToken', 'platform', 'createdAt', 'updatedAt'])
                     && request.resource.data.fcmToken is string
@@ -109,8 +80,7 @@ service cloud.firestore {
                     && (!('platform' in request.resource.data)
                         || request.resource.data.platform is string);
         // A device may retire its own registration on logout/unregister.
-        allow delete: if request.auth != null && request.auth.uid == uid
-                    && appCheckVerified();
+        allow delete: if request.auth != null && request.auth.uid == uid;
       }
     }
 
@@ -492,8 +462,8 @@ service cloud.firestore {
     // Even though the blob is encrypted, restricting to the owner prevents offline
     // brute-force attacks against the full corpus.
     match /recovery/{uid} {
-      allow read:  if request.auth != null && request.auth.uid == uid && appCheckVerified();
-      allow write: if request.auth != null && request.auth.uid == uid && appCheckVerified();
+      allow read:  if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid;
     }
 
     // ── Backup collections ────────────────────────────────────────────────────
@@ -515,35 +485,35 @@ service cloud.firestore {
     // duress path is trying to flush.
     match /backups/{userId} {
       // Meta document (lastBackupTs, count) — owner read/write only.
-      allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-      allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-      allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
+      allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+      allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+      allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
       allow delete: if false;  // meta doc never deleted via client
 
       // Encrypted message backups — owner read/write; delete hard-denied.
       // This is the collection S06-C2 is about: the complete message history,
       // encrypted under a key derived solely from the seed phrase.
       match /messages/{msgId} {
-        allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-        allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-        allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
+        allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+        allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+        allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
         allow delete: if false;  // use isDeleted:true soft-delete instead
       }
 
       // Contact backups (display name + conversationId) — owner read/write.
       match /contacts/{contactId} {
-        allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-        allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-        allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
+        allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+        allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+        allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
         allow delete: if false;
       }
 
       // Group backup metadata is restored with contacts and must be available to
       // the same account that encrypted and uploaded it.
       match /groups/{groupId} {
-        allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-        allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
-        allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId) && appCheckVerified();
+        allow read:   if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+        allow create: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
+        allow update: if request.auth != null && request.auth.uid == userId && accountNotLocked(userId);
         allow delete: if false;
       }
     }
@@ -563,7 +533,7 @@ service cloud.firestore {
     // auditing how eligibility is granted should look at those endpoints, not
     // the console.
     match /duressEligibility/{accountId} {
-      allow read:  if request.auth != null && request.auth.uid == accountId && appCheckVerified();
+      allow read:  if request.auth != null && request.auth.uid == accountId;
       allow write: if false;
     }
 
@@ -594,7 +564,7 @@ service cloud.firestore {
     // Note also that unfreeze no longer deletes the doc — it rewrites it as
     // locked:false + rotationRequired:true (see §8 promote-and-rotate).
     match /accountLock/{accountId} {
-      allow read:   if request.auth != null && request.auth.uid == accountId && appCheckVerified();
+      allow read:   if request.auth != null && request.auth.uid == accountId;
 
       // Create is allowed only when the new document carries locked=true, and
       // only for an account the operator actually enrolled.
@@ -606,7 +576,6 @@ service cloud.firestore {
       // how it fires and what it writes. That is exactly the question the
       // eligibility gate exists to keep unanswerable.
       allow create: if request.auth != null && request.auth.uid == accountId
-                    && appCheckVerified()
                     && request.resource.data.locked == true
                     && exists(/databases/$(database)/documents/duressEligibility/$(accountId))
                     && get(/databases/$(database)/documents/duressEligibility/$(accountId)).data.eligible == true;
