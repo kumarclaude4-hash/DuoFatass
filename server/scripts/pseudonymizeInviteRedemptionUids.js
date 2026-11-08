@@ -20,7 +20,7 @@ function normalizeServiceAccountPrivateKey(serviceAccount) {
 
   const normalized = { ...serviceAccount };
   if (typeof normalized.private_key === "string") {
-    normalized.private_key = normalized.private_key.replace(/\\\\n/g, "\\n");
+    normalized.private_key = normalized.private_key.replace(/\\n/g, "\n");
   }
   return normalized;
 }
