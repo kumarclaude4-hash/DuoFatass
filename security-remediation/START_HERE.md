@@ -10,19 +10,19 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. S3-15b Firestore Rules emulator coverage passed **186/186 tests**; the Android CI catch-up includes unit tests, lint, debug APK, Espresso, API 35 predictive-back and minified R8.
 
-As of 2026-11-08, current main is \`32175ccf86342a6c517459a0e2507f14c4d064e8\`. PRs #260, #261, #263, #264 and #265 are merged. The earlier #253/#258 branches were closed as superseded by #261/#260; #254 was closed as superseded by #256. There are **no open pull requests** at this snapshot.
+As of 2026-11-08, current main is `32175ccf86342a6c517459a0e2507f14c4d064e8`. PRs #260, #261, #263, #264 and #265 are merged. The earlier #253/#258 branches were closed as superseded by #261/#260; #254 was closed as superseded by #256. There are **no open pull requests** at this snapshot.
 
-PR #265's exact head \`ed8e47550763cf7766acb0f6ef3d53dc15039df3\` passed CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048), including Android unit tests/lint, debug/R8 builds, Espresso, API 35 predictive-back, Server/Worker, CodeQL, Gitleaks and SBOM. Post-merge main Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) passed. Main CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) remains in progress: eight jobs passed; Espresso and API 35 predictive-back remain in progress. Recheck both before release.
+PR #265's exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3` passed CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048), including Android unit tests/lint, debug/R8 builds, Espresso, API 35 predictive-back, Server/Worker, CodeQL, Gitleaks and SBOM. Post-merge main Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) passed. Main CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) remains in progress: eight jobs passed; Espresso and API 35 predictive-back remain in progress. Recheck both before release.
 
-The canonical \`../BUG_TRACKER.md\` contains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial after the merged PIN-change throttle because the mitigation bounds candidate probing but does not prove every success/failure observation indistinguishable. S05-H2 remains Partial pending invite-only product-contract confirmation, authorized legacy UID cleanup and isolated staging onboarding.
+The canonical `../BUG_TRACKER.md` contains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial after the merged PIN-change throttle because the mitigation bounds candidate probing but does not prove every success/failure observation indistinguishable. S05-H2 remains Partial pending invite-only product-contract confirmation, authorized legacy UID cleanup and isolated staging onboarding.
 
-\`FINAL_SIGNOFF.md\` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF** until residual-risk decisions, staging/operator configuration and testing, credential rotation, governance controls and deferred physical-device acceptance are evidenced or formally approved.
+`FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF** until residual-risk decisions, staging/operator configuration and testing, credential rotation, governance controls and deferred physical-device acceptance are evidenced or formally approved.
 
 ---
 
 ## Current state — 2026-11-08
 
-\`\`\`
+```
 MAIN: 32175ccf86342a6c517459a0e2507f14c4d064e8
 PR #265: merged; exact-head CI and Security Scan passed.
 OPEN PULL REQUESTS: none.
@@ -33,7 +33,7 @@ NEXT: operator/staging owner acceptance, residual-risk decisions and release gov
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
 FINAL SIGN-OFF: PENDING.
-\`\`\`
+```
 
 ## Chain state — historical Round 3 schedule
 
