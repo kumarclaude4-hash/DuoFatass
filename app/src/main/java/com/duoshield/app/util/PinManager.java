@@ -3,6 +3,7 @@ package com.duoshield.app.util;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.SystemClock;
+import android.provider.Settings;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import java.security.SecureRandom;
@@ -217,6 +218,7 @@ public class PinManager {
     private static final String KEY_FAIL_HIGH_PREFIX      = "pin_fail_high_";
     private static final String KEY_FAIL_UNTIL_ELAPSED_PREFIX = "pin_fail_until_elapsed_";
     private static final String KEY_FAIL_BOOT_ID_PREFIX   = "pin_fail_boot_id_";
+    private static final String KEY_PIN_CHANGE_PREFIX     = "pin_change_";
     private static final int    LOCKOUT_THRESHOLD         = 5;
     private static final long   LOCKOUT_BASE_MS           = 2_000L;
     private static final long   LOCKOUT_MAX_MS            = 5 * 60_000L;
@@ -269,13 +271,58 @@ public class PinManager {
     }
 
     /**
-     * Identifies the current boot session, so a stored {@code elapsedRealtime()}
-     * deadline is only trusted when it was written during this same boot. Derived
-     * from the approximate boot instant (now minus uptime), quantised to 10s to
-     * absorb the small jitter between successive computations.
+     * Historical boot-session identifier used by the pre-existing wrong-PIN
+     * backoff fields. Retained for compatibility with values already persisted
+     * under that format; do not reuse for new security windows.
      */
     private static long bootId() {
         return (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 10_000L;
+    }
+
+    /**
+     * Stable OS boot counter for the Settings PIN-change throttle. Unlike
+     * wall-clock-minus-uptime, BOOT_COUNT does not change when the user or
+     * network adjusts the wall clock.
+     *
+     * <p>BOOT_COUNT is readable by ordinary apps on this app's supported API
+     * range (26+). If the provider is temporarily unavailable, use a stable
+     * sentinel: elapsedRealtime then remains conservative across reboot because
+     * a reset clock cannot advance past an older persisted deadline early.
+     */
+    private static long pinChangeBootId(Context ctx) {
+        try {
+            int count = Settings.Global.getInt(
+                    ctx.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+            if (count >= 0) return count;
+        } catch (RuntimeException ignored) {
+            // Fall through to the fail-closed sentinel.
+        }
+        return -1L;
+    }
+
+    /**
+     * Atomically records a primary-PIN change attempt for the current account.
+     *
+     * <p>Settings calls this before checking whether the proposed primary PIN
+     * collides with the hidden secondary code and before attempting the write.
+     * Therefore accepted and rejected candidates consume the same allowance.
+     * The helper persists its counter and wall/elapsed deadlines in SecurePrefs;
+     * failure to persist is fail-closed.
+     *
+     * @return true when the attempt was recorded and may proceed, false while
+     *         the account is cooling down or when durable storage failed.
+     */
+    public static boolean tryRecordPinChangeAttempt(Context ctx) {
+        try {
+            return PinChangeThrottle.tryRecord(
+                    SecurePrefs.get(ctx),
+                    scopedKey(KEY_PIN_CHANGE_PREFIX),
+                    System.currentTimeMillis(),
+                    SystemClock.elapsedRealtime(),
+                    pinChangeBootId(ctx));
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     /**
