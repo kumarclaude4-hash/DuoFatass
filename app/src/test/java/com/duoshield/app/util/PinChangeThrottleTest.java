@@ -72,6 +72,29 @@ public class PinChangeThrottleTest {
     }
 
     @Test
+    public void wallClockForwardJumpCannotResetWindowDuringSameBoot() {
+        assertTrue(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL, ELAPSED, BOOT));
+
+        // A large wall-clock jump with the same stable boot counter does not
+        // expire the attempt window; elapsedRealtime remains authoritative.
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 60 * 60_000L,
+                ELAPSED + 1,
+                BOOT));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 60 * 60_000L + 1,
+                ELAPSED + 2,
+                BOOT));
+        assertFalse(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 60 * 60_000L + 2,
+                ELAPSED + 3,
+                BOOT));
+    }
+
+    @Test
     public void cooldownIsPersistedAndWindowResetsAfterExpiry() {
         for (int i = 0; i < PinChangeThrottle.MAX_ATTEMPTS; i++) {
             assertTrue(PinChangeThrottle.tryRecord(
