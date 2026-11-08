@@ -61,15 +61,15 @@ jobs:
         working-directory: server
         run: npm ci
 
-      # Suite C: static App Check policy guard. Keep it separate so a missing
-      # gate fails even if the emulator itself is unavailable.
-      - name: Static App Check gate guard (Suite C)
+      # App Check is enforced by Firebase before Rules evaluation. Keep a source
+      # guard against unsupported request.app expressions outside the emulator.
+      - name: App Check Rules-language boundary guard
         working-directory: firestore-tests
         run: npx jest appcheck-static.test.js --runInBand
 
-      # Suites A + B validate client security rules. The server integration
-      # suite exercises actual Admin SDK transactions across independent
-      # instances; mocks alone cannot prove cross-instance durability or races.
+      # The emulator suite loads the exact committed Firestore Rules. It does not
+      # simulate Firebase Console App Check enforcement or mint App Check tokens.
+      # Server integration separately exercises durable Admin SDK transactions.
       - name: Run rules and server integration suites on one isolated emulator
         working-directory: firestore-tests
         env:
