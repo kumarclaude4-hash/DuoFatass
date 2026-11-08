@@ -31,9 +31,11 @@ Return a finding-by-finding disposition (confirmed remaining / newer evidence sa
 
 ## 1. Current baseline and already-completed work
 
-**Current main:** `98f76cdf374eeaf5c8144befad068ef05805a20b` (2026-11-07).  
-**Main CI:** [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) — passed.  
-**Main Security Scan:** [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) — passed.
+**Current main:** `32175ccf86342a6c517459a0e2507f14c4d064e8` (2026-11-08).  
+**Current post-merge CI:** [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) — in progress at this snapshot; eight jobs passed, with Espresso and API 35 predictive-back still running.  
+**Current post-merge Security Scan:** [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) — passed.
+
+Earlier main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) validated the prior 2026-11-07 baseline and should be treated as historical evidence, not current-main checks. The current main commit's exact PR #265 head CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed before merge.
 
 This report was initially prepared against the earlier `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` baseline. The current mainline includes the subsequent merges below; follow the current tracker and addenda rather than treating the original line-by-line review as current after those changes.
 
@@ -43,7 +45,7 @@ Relevant merged work:
 - PR #256: valid single-range GETs cost half a request unit in the shared per-holder minute bucket to support chunked encrypted-video playback; global daily request and mutation budgets remain unchanged.
 - PR #257: documentation-only S05-H2 privacy closeout.
 
-Current main CI and Security Scan passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server/Worker tests, release-log AST, Cloudflare Worker build validation, CodeQL, Gitleaks, SBOM and dependency-integrity checks.
+The exact PR #265 head validation passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server/Worker tests, release-log AST and dependency-integrity checks; Security passed CodeQL, Gitleaks and SBOM. Post-merge main CI is still waiting only for its Espresso and API 35 emulator jobs; do not label those post-merge jobs passed until their run completes.
 
 ### Open PRs requiring follow-up — none as of 2026-11-08
 
@@ -186,7 +188,9 @@ Only HTTP 200/204 confirms remote lock. Permanent 4xx fails without clearing dur
 
 App cache references are cleared on wipe. Pinned libsignal Java `ECPrivateKey.finalize()` calls native destroy; Rust owns x25519-dalek `StaticSecret`, whose enabled zeroize feature wipes on drop. Java wrapper exposes no deterministic close/destroy API. Native destruction is GC/finalizer-timed; cache clearing does not synchronously wipe every clone/transient copy at wipe return.
 
-**Next:** verify pinned upstream source; investigate a supported deterministic API in a compatible upstream version or upstream contribution; assess clone/thread/use-after-destroy semantics; retain cache-clear regression tests. Do not use reflection/unsafe hacks or claim deterministic zeroization. If no safe API exists, prepare explicit owner residual-risk decision.
+**2026-11-08 upstream API re-check:** the pinned application wrapper remains libsignal 0.54.1 and has no public deterministic `close()`/`destroy()` API on `ECPrivateKey`. Current upstream source at commit `850942581c06fa65c0323fd52029afa02fa1a1ba` has a generic `NativeHandleGuard.CloseableOwner`, but `ECPrivateKey` still extends `NativeHandleGuard.SimpleOwner`; the key type itself remains without caller-facing deterministic destruction. See the dated API evidence in [SESSION-S07-L2](sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md).
+
+**Next:** no application-side reflection/unsafe workaround is justified. Retain cache-clear regressions. Obtain explicit owner approval of the GC-timed residual or wait for a supported upstream `ECPrivateKey` destruction API; if considering an upstream contribution, assess clone/thread/use-after-destroy semantics first. Do not claim deterministic zeroization.
 
 **Acceptance:** tested supported deterministic destruction with upstream/API evidence, or approved residual naming GC-timed limitation. Keep Partial.
 
