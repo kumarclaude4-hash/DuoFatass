@@ -49,7 +49,7 @@ describe('App Check Android provider wiring', () => {
 
   test('debug provider installation is guarded by BuildConfig.DEBUG', () => {
     expect(app).toMatch(
-      /if\s*\(BuildConfig\.DEBUG\)\s*\{\s*AppCheckDebugProvider\.install\(app\);\s*\}/
+      /if\s*\(BuildConfig\.DEBUG\)\s*\{\s*AppCheckDebugProvider\.install\(appCheck\);\s*\}/
     );
   });
 });
