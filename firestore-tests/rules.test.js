@@ -13,7 +13,6 @@ const {
 } = require('@firebase/rules-unit-testing');
 const { readFileSync } = require('fs');
 const { resolve } = require('path');
-const { loadRulesWithAppCheckStubbed } = require('./appCheckRules');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,23 +34,15 @@ function asAnon() {
 // ── setup / teardown ──────────────────────────────────────────────────────────
 
 beforeAll(async () => {
-  // Suite A: load the REAL rules but with appCheckVerified() forced to `true`.
-  //
-  // S08-H5 item 4a attached appCheckVerified() (== `request.app != null`) to the
-  // seed-derived recovery/backup + duress paths. @firebase/rules-unit-testing v3
-  // has no App Check support — request.app is ALWAYS null in the emulator — so
-  // loading the rules verbatim would make every existing test against those paths
-  // fail for a reason that has nothing to do with the auth/lock logic they cover.
-  //
-  // Stubbing the helper to `return true;` isolates this suite to exactly the
-  // property it has always tested: that the auth/ownership/lock logic is correct.
-  // The complementary proof — that the gate actually denies when App Check is
-  // absent — lives in appcheck.test.js (Suite B), and the proof that every gated
-  // path still carries the gate lives in appcheck-static.test.js (Suite C).
+  // Load the committed Firestore Rules verbatim. App Check enforcement is
+  // applied by Firebase at the service layer before Rules evaluation; Rules
+  // cannot inspect App Check token metadata. The emulator does not simulate
+  // the Firebase Console enforcement toggle, so real-token acceptance remains
+  // an isolated staging/operator check rather than an emulator assertion.
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
-      rules: loadRulesWithAppCheckStubbed(RULES_PATH),
+      rules: readFileSync(RULES_PATH, 'utf8'),
       host: '127.0.0.1',
       port: 8080,
     },
