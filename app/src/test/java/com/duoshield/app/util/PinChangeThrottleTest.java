@@ -62,6 +62,16 @@ public class PinChangeThrottleTest {
     }
 
     @Test
+    public void attemptWindowCanStartAtBootElapsedTimeZero() {
+        assertTrue(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL, 0L, BOOT));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 1,
+                PinChangeThrottle.WINDOW_MS + 1,
+                BOOT));
+    }
+
+    @Test
     public void cooldownIsPersistedAndWindowResetsAfterExpiry() {
         for (int i = 0; i < PinChangeThrottle.MAX_ATTEMPTS; i++) {
             assertTrue(PinChangeThrottle.tryRecord(
