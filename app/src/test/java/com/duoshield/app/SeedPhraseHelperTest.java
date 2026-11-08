@@ -2,6 +2,7 @@ package com.duoshield.app;
 
 import com.duoshield.app.crypto.SeedPhraseHelper;
 
+import java.util.Arrays;
 import java.util.Locale;
 
 import org.junit.Test;
@@ -218,30 +219,98 @@ public class SeedPhraseHelperTest {
     // not just that the public method returns without throwing.
 
     @Test
-    public void clearDerivationCache_nullsOutTheBackingField() throws Exception {
+    public void clearDerivationCache_dropsEntryAndZeroesItsFingerprintCopy() throws Exception {
         java.lang.reflect.Field cacheField =
                 SeedPhraseHelper.class.getDeclaredField("derivationCache");
         cacheField.setAccessible(true);
-        // Raw type deliberately, not AtomicReference<?> — the wildcard capture would
-        // reject the plain Object set() below at compile time, and this reflection
-        // handle is exactly the kind of unchecked access that's expected here.
         @SuppressWarnings("unchecked")
-        java.util.concurrent.atomic.AtomicReference cache =
-                (java.util.concurrent.atomic.AtomicReference) cacheField.get(null);
+        java.util.concurrent.atomic.AtomicReference<Object> cache =
+                (java.util.concurrent.atomic.AtomicReference<Object>) cacheField.get(null);
 
-        // Seed a non-null value directly (bypassing deriveIdentityKeyPair(), which
-        // needs libsignal's native code unavailable in this plain-JVM test) so we
-        // can prove clearDerivationCache() actually clears a populated cache, not
-        // just a cache that happened to already be empty.
-        cache.set(new Object());
-        assertNotNull("test setup sanity: cache must be populated before clearing",
-                cache.get());
+        Class<?> cachedType = null;
+        for (Class<?> candidate : SeedPhraseHelper.class.getDeclaredClasses()) {
+            if ("CachedDerivation".equals(candidate.getSimpleName())) {
+                cachedType = candidate;
+                break;
+            }
+        }
+        assertNotNull("cached derivation implementation must exist", cachedType);
+        java.lang.reflect.Constructor<?> constructor =
+                cachedType.getDeclaredConstructors()[0];
+        constructor.setAccessible(true);
 
-        SeedPhraseHelper.clearDerivationCache();
+        byte[] fingerprintInput = new byte[] { 0x11, 0x22, 0x33, 0x44 };
+        Object cached = constructor.newInstance(fingerprintInput, null);
+        java.lang.reflect.Field fingerprintField =
+                cachedType.getDeclaredField("seedFingerprint");
+        fingerprintField.setAccessible(true);
+        byte[] retainedFingerprint = (byte[]) fingerprintField.get(cached);
 
-        assertNull("clearDerivationCache() must null out the cached derivation so no "
-                        + "identity private key material stays reachable after a wipe",
-                cache.get());
+        assertNotSame("cache must own a defensive copy of the fingerprint",
+                fingerprintInput, retainedFingerprint);
+        assertArrayEquals(new byte[] { 0x11, 0x22, 0x33, 0x44 }, retainedFingerprint);
+        fingerprintInput[0] = 0x7f;
+        assertArrayEquals("caller mutation must not alter the cached fingerprint",
+                new byte[] { 0x11, 0x22, 0x33, 0x44 }, retainedFingerprint);
+
+        try {
+            cache.set(cached);
+            assertSame(cached, cache.get());
+
+            SeedPhraseHelper.clearDerivationCache();
+
+            assertNull("clearDerivationCache() must detach the cached key-pair entry",
+                    cache.get());
+            assertArrayEquals("cache-owned fingerprint bytes must be zeroed before release",
+                    new byte[] { 0, 0, 0, 0 }, retainedFingerprint);
+        } finally {
+            SeedPhraseHelper.clearDerivationCache();
+            Arrays.fill(fingerprintInput, (byte) 0);
+        }
+    }
+
+    @Test
+    public void hkdfSha256_preservesOutputAndRejectsInvalidLengths() throws Exception {
+        byte[] ikm = new byte[32];
+        for (int i = 0; i < ikm.length; i++) ikm[i] = (byte) i;
+        byte[] info = "DuoShield HKDF cleanup test".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] expected = hexToBytes(
+                "268ba483b84a2cf92922eaa1e036d8d9fcd78328b05258e36c767eb4b5433df8");
+
+        try {
+            assertArrayEquals("HKDF output must remain byte-for-byte stable",
+                    expected, SeedPhraseHelper.hkdfSha256(ikm, info, 32));
+            assertEquals("zero-length HKDF output is supported", 0,
+                    SeedPhraseHelper.hkdfSha256(ikm, info, 0).length);
+            try {
+                SeedPhraseHelper.hkdfSha256(ikm, info, 33);
+                fail("HKDF must reject output longer than one SHA-256 block");
+            } catch (IllegalArgumentException expectedException) {
+                // expected
+            }
+            try {
+                SeedPhraseHelper.hkdfSha256(ikm, info, -1);
+                fail("HKDF must reject negative output length");
+            } catch (IllegalArgumentException expectedException) {
+                // expected
+            }
+        } finally {
+            Arrays.fill(ikm, (byte) 0);
+            Arrays.fill(info, (byte) 0);
+            Arrays.fill(expected, (byte) 0);
+        }
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        if ((hex.length() & 1) != 0) throw new IllegalArgumentException("odd hex length");
+        byte[] result = new byte[hex.length() / 2];
+        for (int i = 0; i < result.length; i++) {
+            int high = Character.digit(hex.charAt(i * 2), 16);
+            int low = Character.digit(hex.charAt(i * 2 + 1), 16);
+            if (high < 0 || low < 0) throw new IllegalArgumentException("invalid hex");
+            result[i] = (byte) ((high << 4) | low);
+        }
+        return result;
     }
 
     @Test
