@@ -77,6 +77,21 @@ test("shared invite router authenticates admin routes and delegates every lifecy
     "HTTP handlers must not maintain a second invite persistence implementation");
 });
 
+test("invalid invite rows expose the audited revoke action in the admin UI", () => {
+  assert.match(SOURCE, /<option value="invalid">Invalid \(blocked\)<\/option>/);
+  const table = section(SOURCE, "async function loadInvites(reset)", "async function createInvite(event)");
+  assert.ok(table.includes('if (item.status === "active" || item.status === "invalid")'),
+    "active and invalid invite rows must both render the revoke action");
+  assert.ok(table.includes("revokeInvite(item.id, revokeBtn)"),
+    "the visible action must call the shared revoke API path");
+
+  const revoke = section(SOURCE, "async function revokeInvite(inviteId, btn)", "function setDefaultInviteExpiry()");
+  assert.ok(revoke.includes('confirm("Revoke this invitation? This action cannot be undone.")'),
+    "the confirmation text must also be valid for malformed/unknown lifecycle states");
+  assert.ok(revoke.includes('"/admin/api/invites/revoke"'),
+    "the UI must delegate to the server's transaction-coupled audited revocation route");
+});
+
 test("production mintToken endpoint uses the tested handler and keeps proof-of-possession before claim", () => {
   assert.ok(SOURCE.includes('const { createMintTokenRouteHandler } = require("./lib/mintTokenRoute");'));
   const setup = section(
