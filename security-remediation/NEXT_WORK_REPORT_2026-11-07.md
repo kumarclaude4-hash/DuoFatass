@@ -1,41 +1,52 @@
 # DuoShield — Next Work Report
-**Updated:** 2026-11-07  
+**Updated:** 2026-11-08  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `98f76cdf374eeaf5c8144befad068ef05805a20b`
+**Current main:** `32175ccf86342a6c517459a0e2507f14c4d064e8`
 
-## Current verified mainline
+## Current verified mainline — 2026-11-08
 
-Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) both completed successfully on the exact current main SHA.
+**Main HEAD:** `32175ccf86342a6c517459a0e2507f14c4d064e8`.
 
-The current main CI check set passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server/Worker tests, Android release-log AST, Cloudflare Worker build validation, Gradle-wrapper integrity and vendored-libsignal integrity. Security checks passed CodeQL, Gitleaks and SBOM.
+PR #265 merged S06-H5's bounded PIN-change attempt throttle. Its exact PR head `ed8e47550763cf7766acb0f6ef3d53dc15039df3` passed:
+- CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067): all 10 jobs passed, including Server/Worker, Android unit tests/lint, Espresso, API 35 predictive-back, debug APK, minified R8/mapping, AST privacy and dependency-integrity checks.
+- Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048): CodeQL, Gitleaks and SBOM passed.
+- Merge commit: `32175ccf86342a6c517459a0e2507f14c4d064e8`.
 
-Recent merged changes:
-- PR #251: bounded interprocedural release-log taint analysis; S10-N2 remains Partial for syntax-only analysis limits and physical release-logcat acceptance.
-- PR #255: new invite redemptions store a 12-hex pseudonymous UID tag; admin listing masks legacy raw UID; a dry-run-first cleanup script exists.
-- PR #256: valid single-range Worker GETs cost half a request unit in the shared per-holder minute bucket, allowing chunked encrypted-video playback without adding a second quota bucket.
-- PR #257: S05-H2 privacy closeout documentation.
+Post-merge mainline CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) and Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) were queued when this report was reconciled; the exact PR-head validation above is complete. Recheck these mainline runs before release.
 
-The canonical finding register is `BUG_TRACKER.md`: **116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 and S06-H5 are restored as high-severity rows; H4 is Fixed on current source and H5 remains Partial because the Settings-based candidate oracle is not fully closed.
+Recent merged changes now reflected on main:
+- PR #251 — bounded interprocedural Android release-log taint analysis; S10-N2 remains Partial for analysis limitations and physical release-logcat acceptance.
+- PR #255 — pseudonymous invite redemption UID tags and dry-run-first legacy cleanup utility.
+- PR #256 — bounded range-read accounting for chunked encrypted-video playback.
+- PR #257 — S05-H2 privacy documentation.
+- PR #260 — Firebase service-account private-key newline normalization in the legacy invite UID migration utility; synthetic regression fixture and expiry integration boundary hardened.
+- PR #261 — invite lifecycle fails closed on unknown/malformed states; invalid records are filterable and backend-revocable.
+- PR #263 — regression guard for failed duress-code save behavior (S06-H4).
+- PR #264 — admin UI exposes audited revoke action for invalid invite rows.
+- PR #265 — persisted UID-scoped PIN-change attempt throttle, stable boot identity and generic collision/cooldown/storage failure response (S06-H5).
 
-## Priority 1 — get the three open code PRs current and green
+There are **no open pull requests** at this snapshot. The older PRs #253 and #258 were closed as superseded by #261 and #260; #254 was closed as superseded by #256.
 
-| PR | Scope | Current evidence | Required next action |
-|---|---|---|---|
-| [#253](https://github.com/kumarclaude4-hash/DuoFatass/pull/253) | Reject missing/unknown/corrupt invite lifecycle states; add invalid-state admin filter and audited revoke | Exact head `231af6f3a499b60286d567a6628876abfb5d6d31`; CI 10/10, Security 3/3 and Firestore Rules/server transaction suite passed | The branch is based on `3d41501` and GitHub reports it **dirty/non-mergeable** against current main. Rebase/resolve current changes and rerun all checks. |
-| [#254](https://github.com/kumarclaude4-hash/DuoFatass/pull/254) | Range-read request allowance for 1 MiB encrypted video chunks | Exact head `1d5583584572859bcb07b39bba0628c554226c84`; CI 10/10 and Security 3/3 passed | The branch is also based on `3d41501` and **dirty/non-mergeable**. Rebase onto current main (including PR #255 and #256) and rerun. |
-| [#258](https://github.com/kumarclaude4-hash/DuoFatass/pull/258) | Normalize escaped PEM newlines in the invite UID cleanup utility | Exact head `b20a5bf628c2a58b29b41f5cf71668d88d445b0d`; regular CI passed | Security failed because Gitleaks flagged a synthetic PEM-shaped test fixture in `pseudonymizeInviteRedemptionUids.test.js`. Firestore integration failed one mintToken test because its invite expiry hit the exact one-hour minimum during test execution. Replace the fixture with non-secret placeholder data that does not resemble a private key; make the expiry deterministic with a fixed injected clock or a safe margin. Rerun Security and Firestore integration. |
+The canonical finding register remains `BUG_TRACKER.md`: **116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial because bounded attempts and a generic failure response reduce probing but do not prove all success/failure observations indistinguishable. S05-H2 remains Partial pending owner/product and staging acceptance.
 
-Workflow evidence for PR #258: CI [42387218211](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218211), Security [42387218255](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218255), Firestore Rules/server transactions [42387218230](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218230).
+## Priority 1 — code PR integration is complete
 
-Do not merge any of these three until the exact updated PR head has fresh green CI/Security/Firestore checks. Do not use production credentials or run the historical UID cleanup as part of PR validation.
+All current code PRs are merged and the repository has no open PRs. The final code batch:
+- #260 — migration credential newline normalization; CI, Firestore integration and Security Scan passed.
+- #261 — invite lifecycle invalid-state fail-closed checks; CI, Firestore integration and Security Scan passed.
+- #263 — S06-H4 duress-code arming failure regression; all CI and Security jobs passed.
+- #264 — invalid-invite admin revoke action; CI, Firestore integration and Security Scan passed.
+- #265 — S06-H5 PIN-change attempt throttle; exact-head CI and Security Scan passed as recorded above.
+
+PR #254's range-read objective was already implemented by #256. PRs #253/#258 were superseded by #261/#260. Do not reopen these historical branches. If a new regression is found, start a fresh narrow branch from the latest main.
 
 ## Priority 2 — close the remaining source-level gaps
 
-### S06-H5 — PIN-change duress oracle (Partial; source mitigation prepared in PR #262)
-The Settings PIN-change flow now records a durable, UID-scoped attempt before checking the candidate against the hidden secondary code or writing the replacement. The throttle permits three attempts per 15-minute window, counts both successful and rejected candidates, uses wall-clock plus same-boot elapsed-time deadlines, with Android `Settings.Global.BOOT_COUNT` as the stable boot identifier (rather than a wall-clock-derived approximation), and fails closed on preference read/write errors. Collision, cooldown and storage failures share one generic rejection message; the previous collision-specific toast/branch is removed. PR #262 adds JVM coverage for the attempt limit, persistence/expiry, same-boot wall-clock rollback and per-account separation, plus a source-wiring regression. Keep Partial: this materially bounds candidate probing and hides collision-specific failure text, but does not establish that every success/failure observation is impossible. Promote only after exact-head Android CI and independent security review; physical-device acceptance remains deferred until feature-complete.
+### S06-H5 — PIN-change duress oracle (Partial; mitigation merged in PR #265)
+The Settings PIN-change flow records a durable, UID-scoped attempt before checking the proposed PIN against the hidden secondary code or writing the replacement. Three attempts are allowed in a fixed 15-minute window; a third attempt starts a 15-minute cooldown. Accepted and rejected candidates consume the same allowance. The throttle uses Android `Settings.Global.BOOT_COUNT` as its stable boot identifier, same-boot elapsed-time anchors to resist wall-clock changes, and a conservative elapsed-reset fallback when BOOT_COUNT is unavailable. Preference read/write failures fail closed. Collision, cooldown and secure-storage failures share one generic response; the collision-specific message is removed. PR #265 merged at `32175ccf86342a6c517459a0e2507f14c4d064e8`; exact-head CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed. Coverage includes the attempt/window/cooldown boundaries, same-boot clock changes, BOOT_COUNT-unavailable reboot fallback, elapsedRealtime boot-zero and account separation, plus Settings/PinManager wiring. Keep Partial: this bounds probing and removes the collision-specific response but does not prove all success/failure observations are indistinguishable; it also remains a local anti-probing control rather than server-side account throttling. Independent security review and later feature-complete device acceptance remain.
 
-### S06-H4 — arming failure (Fixed; source-wiring regression added in PR #263)
-`ManageUnlockCodesActivity.onConfirmExplain()` captures the result of `DuressManager.setDuressPin()`. On false, the UI reports a generic retry message and returns before the success toast or `finish()`; only a true result produces “Code saved.” and exits. `setDuressPin()` accepts the shared 4–6 digit range. PR #263 adds a JVM source-wiring regression proving the failure branch returns before the success path and contains no finish call. Keep the behavioral disposition Fixed, but require exact-head Android CI to validate the new coverage.
+### S06-H4 — arming failure (Fixed; regression merged in PR #263)
+`ManageUnlockCodesActivity.onConfirmExplain()` captures the result of `DuressManager.setDuressPin()`. On false, the UI reports a generic retry message and returns before the success toast or `finish()`; only a true result produces “Code saved.” and exits. `setDuressPin()` accepts the shared 4–6 digit range. PR #263's source-wiring regression verifies the false path returns before success/exit. Exact-head CI and Security Scan passed on PR #263. Keep Fixed.
 
 ### S10-N2 — release-log data flow (code merged)
 PR #251 extends PRs #244/#246/#248 with bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through and same-class field writes/reads. The exact head passed CI 10/10 and Security 3/3; the production AST pass scanned 204 Java files and 414 warning/error/fatal log sinks with zero violations. Residuals remain for reflection, inheritance/virtual dispatch, cross-class aliasing, native methods and third-party callbacks. Physical release-logcat acceptance remains deferred until feature-complete.
