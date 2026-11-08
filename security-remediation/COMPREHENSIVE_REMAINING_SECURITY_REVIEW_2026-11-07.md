@@ -3,7 +3,7 @@
 **Prepared:** 2026-11-08  
 **Repository:** https://github.com/kumarclaude4-hash/DuoFatass  
 **Original source-review baseline:** `main` at `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` (PR #248 merge)  
-**Current reconciliation baseline:** `main` at `afdf2463c496f14a5c33ee5694fc47eff97d5e3d` (PR #269 merge; includes PR #267)  
+**Current reconciliation baseline:** `main` at `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #271 merge; includes #270, #269 and #267)  
 **Purpose:** Source-linked, evidence-aware inventory of incomplete security work, with precise next actions and acceptance criteria for an independent Claude review.
 
 > This is a handoff report, not a new audit or sign-off. The canonical finding register is [`BUG_TRACKER.md`](../BUG_TRACKER.md). `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. Do not invent finding IDs, change dispositions without evidence, infer owner approval, or mark a finding Fixed merely because a PR merged.
@@ -14,7 +14,7 @@
 
 This addendum supersedes conflicting 2026-11-07 baseline and open-PR statements below. The original review remains historical evidence; current dispositions are in `BUG_TRACKER.md`.
 
-**Current main:** `afdf2463c496f14a5c33ee5694fc47eff97d5e3d` (after PR #269). There are no open code PRs at this snapshot; documentation reconciliation is in progress.
+**Current main:** `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (after PR #271). There are no open code PRs at this snapshot.
 
 Merged after the original review:
 - PR #261 — explicit active/future-expiry invite-state validation and audited invalid-state revocation (S05-H2).
