@@ -83,9 +83,9 @@ public final class SeedPhraseHelper {
      * {@link #deriveIdentityKeyPair(byte[])}.
      *
      * <p>Called from every {@code WipeHelper.eraseLocalData()} path (voluntary wipe,
-     * unpair and duress). This method shares the class monitor with derivation, so a
-     * derivation already in flight completes before the wipe clears its cache entry;
-     * the in-flight operation cannot repopulate the cache after this method returns.
+     * unpair and duress). This method shares the class monitor with derivation, so cache
+     * eviction cannot overlap an executing derivation. A later derivation call can still
+     * populate a fresh cache entry; callers must prevent new identity work after wipe.
      *
      * <p>The cache-owned seed fingerprint copy is zeroed before the entry is released.
      * The {@link IdentityKeyPair} is then eligible for collection once other callers
