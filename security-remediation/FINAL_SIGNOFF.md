@@ -17,7 +17,7 @@ PR #265's exact head \`ed8e47550763cf7766acb0f6ef3d53dc15039df3\`, merged as cur
 - CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067): **all jobs passed**, including Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8/mapping, Server/Worker tests, AST privacy and dependency-integrity checks.
 - Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048): **all jobs passed** (CodeQL, Gitleaks, SBOM).
 
-Post-merge mainline CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) and Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) were queued when this snapshot was drafted. Recheck these exact mainline workflows before release.
+Post-merge mainline Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) passed. Main CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) remains in progress: Server/Worker, Android unit/lint, debug APK, R8/mapping, AST privacy and Gradle/libsignal integrity passed; Espresso and API 35 predictive-back remain in progress. Recheck before release.
 
 ### Recent merged work
 
