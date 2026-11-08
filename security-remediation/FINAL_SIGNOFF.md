@@ -140,7 +140,7 @@ The Cloudflare Workers integration reported a successful deployment/build for `d
 
 The tracker remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. No owner risk decision is inferred. Physical-device/manual app-flow testing remains deferred until the owner declares the app feature-complete. Production security sign-off remains **PENDING**; CI and PR merge are not release approval.
 
-## Current-main reconciliation addendum — 2026-11-07
+## Historical current-main reconciliation addendum — 2026-11-07 (superseded by 2026-11-08 snapshot)
 
 - Current main HEAD: `98f76cdf374eeaf5c8144befad068ef05805a20b`.
 - Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) both passed on that exact SHA.
