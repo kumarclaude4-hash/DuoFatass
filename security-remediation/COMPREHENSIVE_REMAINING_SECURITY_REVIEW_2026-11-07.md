@@ -22,6 +22,8 @@ Merged after the original review:
 - PR #265 — durable successful/failed Settings PIN-change throttle and generic failure response (S06-H5); CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed.
 - PR #267 — App Check / Firestore Rules correction (S10-N1), merged as current main.
 - PR #269 — S10-N2 bodyless helper-return hardening; exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed; merged as `afdf2463c496f14a5c33ee5694fc47eff97d5e3d`. Inheritance/virtual dispatch, reflection, external callbacks and physical release-logcat residuals remain. Exact PR-head CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887), Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988), Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886), and Rules/server transactions [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962) all passed.
+- PR #270 — post-#269 security handoff reconciliation; merged as `1a425ad0aa2e7c36fa66a2afe4e46d85e78ee514`.
+- PR #271 — S07-L2 app-owned buffer/cache cleanup; exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3; merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`. Native key destruction remains finalizer-timed; S07-L2 remains Partial.
 - PR #266 was intentionally closed unmerged; its documentation changes are not on main.
 
 The old #253/#254/#258 table below is historical: #253 was superseded by #261, #254's range-read work was superseded by #256, and #258 is closed. PR #262 was closed unmerged; its PIN-throttle change was carried in #265. Do not reopen those branches without a fresh source review.
@@ -193,15 +195,15 @@ Only HTTP 200/204 confirms remote lock. Permanent 4xx fails without clearing dur
 
 ## 3.5 S07-L2 — Deterministic native key destruction
 
-**Status:** Partial; app cache clearing and native zeroize-on-drop reviewed; deterministic destruction unresolved.  
-**Code:** `SeedPhraseHelper.clearDerivationCache()`, `WipeHelper.eraseLocalData()`, pinned libsignal 0.54.1 Java/Rust bindings.  
-**Evidence:** [S07-L2 session](sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md), PR #240 [run 42172475903](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42172475903).
+**Status:** Partial; PR #271 improves app-owned memory hygiene, but deterministic native-key destruction remains unavailable.  
+**Code:** `SeedPhraseHelper.deriveIdentityKeyPair()`, `SeedPhraseHelper.clearDerivationCache()`, `WipeHelper.eraseLocalData()`, pinned libsignal 0.54.1 Java/Rust bindings.  
+**Evidence:** [S07-L2 session](sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md), PR #271 exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818), both passed.
 
-App cache references are cleared on wipe. Pinned libsignal Java `ECPrivateKey.finalize()` calls native destroy; Rust owns x25519-dalek `StaticSecret`, whose enabled zeroize feature wipes on drop. Java wrapper exposes no deterministic close/destroy API. Native destruction is GC/finalizer-timed; cache clearing does not synchronously wipe every clone/transient copy at wipe return.
+PR #271 serializes identity derivation and cache eviction, stores a defensive copy of the cached seed fingerprint and zeroes it on eviction, and zeroes app-owned derivation-local fingerprint, HKDF info label and serialized private-key input arrays in `finally`. The HKDF helper clears its app-owned salt, PRK and intermediate output arrays; byte-for-byte output is regression-tested and caller inputs remain unchanged. Regressions cover cache defensive-copy/zeroization, monitor serialization, HKDF output and output-length validation.
 
-**Next:** verify pinned upstream source; investigate a supported deterministic API in a compatible upstream version or upstream contribution; assess clone/thread/use-after-destroy semantics; retain cache-clear regression tests. Do not use reflection/unsafe hacks or claim deterministic zeroization. If no safe API exists, prepare explicit owner residual-risk decision.
+This does **not** deterministically destroy native key handles. Pinned libsignal Java `ECPrivateKey.finalize()` invokes native destroy only when finalization occurs; the Rust `StaticSecret` zeroizes on drop, but the Java wrapper exposes no public deterministic `close()`/`destroy()` API. Other callers may retain `IdentityKeyPair` references, native keys can be cloned, Java crypto providers may retain internal copies, and a later post-wipe derivation can repopulate the cache. The app lifecycle must block new identity work after wipe. No complete in-memory erasure or synchronous destruction guarantee is claimed.
 
-**Acceptance:** tested supported deterministic destruction with upstream/API evidence, or approved residual naming GC-timed limitation. Keep Partial.
+**Next:** retain the app-owned cleanup; request/track an upstream-supported explicit destruction API or record an owner-approved residual-risk decision. Do not use reflection, unsafe native access or forced GC. Keep Partial; physical memory/remanence testing remains separate release QA.
 
 ## 3.6 S08-H2 — Screenshot/screen-recording/recents protection
 
