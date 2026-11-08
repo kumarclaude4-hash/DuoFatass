@@ -17,7 +17,7 @@ All source-level PRs identified in the 2026-11-07 handoff are now integrated. Th
 
 PR #265 exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3` passed CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048), including Android unit/lint, Espresso, API 35 predictive-back, debug APK, minified R8/mapping, Server/Worker, CodeQL, Gitleaks, SBOM, AST privacy and dependency integrity. It merged as `32175ccf86342a6c517459a0e2507f14c4d064e8`. Post-merge main workflows [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) (CI) and [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) were queued at the time this handoff was refreshed; recheck them before release.
 
-The canonical tracker remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial because rate limiting and a generic failure response reduce but do not prove elimination of every success/failure observation. S05-H2 remains Partial pending owner and staging acceptance. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**.
+The canonical tracker remains **118 register rows: 87 Fixed, 18 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial because rate limiting and a generic failure response reduce but do not prove elimination of every success/failure observation. S05-H2 remains Partial pending owner and staging acceptance. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**.
 
 The numbered Round 3 schedule is complete at S3-20. Do not invent S3-21 or reopen a fourth audit round. The physical-device matrix remains deferred until the owner declares the app feature-complete.
 
@@ -62,7 +62,7 @@ Recent merged PR evidence:
 - #264 — invalid-invite admin revoke UI action; CI/Firestore/Security passed.
 - #265 — S06-H5 PIN-change attempt throttle; exact-head CI/Security passed.
 
-The canonical tracker remains 116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted. Do not infer staging, provider-console, credential rotation, governance or physical-device sign-off from PR merges or automated CI.
+The canonical tracker remains 118 register rows: 87 Fixed, 18 Partial, 1 Open, 12 Accepted. Do not infer staging, provider-console, credential rotation, governance or physical-device sign-off from PR merges or automated CI.
 
 ## 3. Remaining agentic/operator work — no physical-device acceptance yet
 
