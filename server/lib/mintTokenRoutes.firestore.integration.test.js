@@ -173,7 +173,7 @@ if (!emulatorHost) {
     async function createInvite(label) {
       return inviteStore.create({
         label,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       }, { headers: { "x-request-id": "mint-http-invite-" + suffix } });
     }
 
