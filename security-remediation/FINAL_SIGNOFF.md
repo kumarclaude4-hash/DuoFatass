@@ -7,7 +7,7 @@
 
 The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed. S06-H5 remains Partial: PR #265 added a UID-scoped successful/failed attempt throttle and unified rejection response, but bounded probing is not proof that every side channel is impossible.
 
-Current `main`: `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #269 merged).
+Current `main`: `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #271 merged).
 - PR #267 exact-head CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887): passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests, release-log AST and dependency integrity.
 - PR #267 Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988): passed CodeQL, Gitleaks and SBOM.
 - PR #267 Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886): passed.
