@@ -24,12 +24,41 @@ public class PinChangeThrottleTest {
 
     @Test
     public void thirdChangeAttemptStartsCooldownAndFourthIsBlocked() {
-        // The throttle is outcome-agnostic: these calls represent any mixture
-        // of successful writes and rejected candidate values.
+        // Accepted and rejected candidates consume the same attempt allowance.
         assertTrue(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL, ELAPSED, BOOT));
         assertTrue(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL + 1, ELAPSED + 1, BOOT));
         assertTrue(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL + 2, ELAPSED + 2, BOOT));
         assertFalse(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL + 3, ELAPSED + 3, BOOT));
+    }
+
+    @Test
+    public void attemptWindowResetsWhenFirstTwoAttemptsAreMoreThanFifteenMinutesApart() {
+        assertTrue(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL, ELAPSED, BOOT));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A, WALL + 10 * 60_000L, ELAPSED + 10 * 60_000L, BOOT));
+
+        // More than 15 minutes after the first attempt begins a fresh window,
+        // so this is attempt one rather than an immediate cooldown trigger.
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 1,
+                ELAPSED + PinChangeThrottle.WINDOW_MS + 1,
+                BOOT));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 2,
+                ELAPSED + PinChangeThrottle.WINDOW_MS + 2,
+                BOOT));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 3,
+                ELAPSED + PinChangeThrottle.WINDOW_MS + 3,
+                BOOT));
+        assertFalse(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 4,
+                ELAPSED + PinChangeThrottle.WINDOW_MS + 4,
+                BOOT));
     }
 
     @Test
@@ -39,8 +68,8 @@ public class PinChangeThrottleTest {
                     preferences, ACCOUNT_A, WALL + i, ELAPSED + i, BOOT));
         }
 
-        // A new helper invocation with the same preferences sees the durable
-        // lockout. The fourth attempt is refused until both clocks have passed.
+        // Another helper invocation with the same preferences sees the durable
+        // cooldown. The next attempt is refused until both clocks have passed.
         assertFalse(PinChangeThrottle.tryRecord(
                 preferences, ACCOUNT_A, WALL + 10, ELAPSED + 10, BOOT));
         assertTrue(PinChangeThrottle.tryRecord(
@@ -58,8 +87,6 @@ public class PinChangeThrottleTest {
                     preferences, ACCOUNT_A, WALL + i, ELAPSED + i, BOOT));
         }
 
-        // Move wall time backwards while elapsed time advances. The greater
-        // remaining deadline must still keep the candidate check blocked.
         assertFalse(PinChangeThrottle.tryRecord(
                 preferences, ACCOUNT_A,
                 WALL - 60_000L, ELAPSED + 5 * 60_000L, BOOT));
