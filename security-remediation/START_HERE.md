@@ -56,8 +56,9 @@ security-remediation/NEXT_WORK_REPORT_2026-11-08.md, the agentic handoff and BUG
 ```
 
 If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
-session. Follow the current agentic handoff for bounded code PRs and acceptance preparation; do not
-treat the scheduled-session stop rule as a reason to ignore the active open PRs.
+session. Follow the current 2026-11-08 work report for source-review priorities, owner decisions,
+operator acceptance and feature-complete device deferrals. There are no open code PRs at the
+2026-11-08 snapshot.
 
 
 ---
