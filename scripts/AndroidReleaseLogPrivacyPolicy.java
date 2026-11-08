@@ -287,8 +287,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void unrelatedSameName(Profile profile) { String x = UnsafeOther.isAvailable(profile.getUserId()); Log.w(\"TAG\", x); }\n"
                   + "  void bodylessHelperReturn(UnknownProfileSource source) { String x = source.fetch(); Log.w(\"TAG\", x); }\n"
                   + "}\n"
-                  + "class CrossClassHolder { String payload; void setPayload(String value) { this.payload = value; } }\n"
-                  + "class CrossClassFlow { void storeAndLog(Profile profile) { CrossClassHolder holder = new CrossClassHolder(); holder.setPayload(profile.getUserId()); Log.w(\"TAG\", holder.payload); } }\n"
+                  + "class CrossClassHolder { String memo; void setMemo(String value) { this.memo = value; } }\n"
+                  + "class CrossClassFlow { void storeAndLog(Profile profile) { CrossClassHolder holder = new CrossClassHolder(); holder.setMemo(profile.getUserId()); Log.w(\"TAG\", holder.memo); } }\n"
                   + "abstract class UnknownProfileSource { abstract String fetch(); }\n"
                   + "class SecurityTier { boolean isDurable() { return true; } }\n"
                   + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
@@ -308,7 +308,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message");
             requireViolation(interproceduralResult.violations,
                     "HelperFlow.java:22: method-local sensitive alias/container reaches Log.w message");
-            requireViolation(interproceduralResult.violations, "field:payload");
+            requireViolation(interproceduralResult.violations, "field:memo");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
