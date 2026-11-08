@@ -56,9 +56,7 @@ Return a finding-by-finding disposition (confirmed remaining / newer evidence sa
 
 ## 1. Current baseline and already-completed work
 
-**Current main:** `98f76cdf374eeaf5c8144befad068ef05805a20b` (2026-11-07).  
-**Main CI:** [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) — passed.  
-**Main Security Scan:** [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) — passed.
+**Historical baseline (2026-11-07):** `98f76cdf374eeaf5c8144befad068ef05805a20b`. The current-main baseline and workflow evidence are in the 2026-11-08 addendum at the top of this document.
 
 This report was initially prepared against the earlier `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` baseline. The current mainline includes the subsequent merges below; follow the current tracker and addenda rather than treating the original line-by-line review as current after those changes.
 
@@ -80,7 +78,7 @@ The earlier PR table is retained in prior handoffs only. At the 2026-11-08 curre
 |---|---|---|
 | S03-M3 | Partial | Owner risk decision or versioned protocol |
 | S05-M3 | Partial | Multi-instance staging + Firestore rules/index/TTL read-back |
-| S05-H2 | Partial | Product contract; staging lifecycle/onboarding; authorized legacy UID cleanup; validate PR #253 and #258 after rebase/fix |
+| S05-H2 | Partial | Product contract; synthetic staging lifecycle/onboarding; authorized legacy UID cleanup dry-run/apply/read-back. Core invite lifecycle code and invalid-state fail-closed handling are merged in PRs #261/#264. |
 | S06-L4 | Partial | Staging retry/recovery race + Firestore config + deferred device matrix |
 | S07-L2 | Partial | Supported deterministic native-key destruction or approved residual |
 | S08-H2 | Partial | Screenshot/recording/recents device acceptance |
@@ -171,11 +169,11 @@ Exact PR head `af8f676c6bdbeb125eb46c01e4aa2b56af30c4f0` passed CI [42385827187]
 **Not complete:** historical Firestore rows may still contain raw UID fields. No live migration was run. The operator must execute a staging dry-run, review aggregate counts, explicitly approve `--apply`, then repeat dry-run and confirm zero candidates. The product owner must confirm invite-only onboarding and complete synthetic staging/Android onboarding acceptance. Keep S05-H2 Partial.
  
 
-### Subsequent invite lifecycle work — PRs #253 and #258 are not yet accepted
+### Subsequent invite lifecycle work — PRs #261 and #264 merged
 
-PR #253 adds an explicit active-state/future-expiry requirement and classifies unknown/missing/malformed stored states as invalid; its admin list/count/filter and audited revoke path are extended accordingly. Its tests and originally observed checks passed on its head, but the branch is behind current main and GitHub reports a dirty merge state. Rebase against current main and rerun before merge.
+PR #261 merged explicit `status === "active"` and finite future-expiry requirements; missing, unknown and malformed stored states are invalid, cannot redeem, can be filtered by admins and can be revoked through the audited backend path. PR #264 merged the UI action that exposes Revoke for invalid invite rows and uses generic confirmation wording. The older PR #253 was closed unmerged and superseded; PR #258 was closed. Do not reopen either historical branch without a new source review.
 
-PR #258 normalizes escaped PEM newlines in the migration utility. Its regular CI passed, but Gitleaks flagged the synthetic private-key-shaped test literal and the Firestore integration workflow failed one invite-expiry scenario with `Expiry must be between 1 hour and 90 days from now`. The likely test fix is to use clearly non-PEM placeholder strings and a deterministic injected clock or a wider expiry margin. Do not run the migration in staging/production until the PR passes all gates and an authorized operator approves a dry-run.
+**Remaining:** product owner confirmation that invite-only onboarding is the intended contract; authorized staging create/list/search/paginate/revoke/expiry/validation/one-time redemption; synthetic Android onboarding/restore after feature completion; and an authorized dry-run-first legacy UID cleanup with aggregate review, explicit approval before apply, and a repeat dry-run proving zero candidates. Keep S05-H2 Partial until those external acceptance gates pass.
 
 
 ## 3.4 S06-L4 — Account-lock worker retry/recovery
@@ -389,7 +387,7 @@ Every record must include device/OEM, Android API, app build/commit, install/upg
 | S05-M3 | Multi-instance admin session/revoke/restart/outage + Firestore config | Real admin cookies |
 | S05-H2 | Invite lifecycle + Android staging onboarding | Real users/invites |
 | S06-L4 | Lost-response/unfreeze/retry + Firestore config | Real-user wipe |
-| S10-N1 | App Check metrics, staged rules, console read-back | Blind enforcement |
+| S10-N1 | App Check monitoring metrics, compatible-client adoption, Firebase Console service-level enforcement and isolated real-token staging read-back; never add `request.app` to Firestore Rules | Blind enforcement or Rules-level `request.app` gates |
 | S10-N3 | Worker/R2/B2 cron migration and failures | Production buckets/media |
 | S02-I2 | Render/Worker secret pairing + DO proof | Print secret values |
 | S02-I3 | Firebase revocation on 12 routes | Print bearer tokens |
@@ -409,13 +407,12 @@ Inspect [`migration/MIGRATION_PLAN.md`](migration/MIGRATION_PLAN.md) and related
 4. Confirm feature-complete milestone before device acceptance.
 
 ### Phase B — codeable agent work
-1. Rebase/resolve PR #253 (invite lifecycle invalid-state guard) and PR #254 (range-aware Worker allowance) against current main; rerun all checks on the updated heads.
-2. Fix PR #258's synthetic PEM fixture Gitleaks hit and nondeterministic Firestore expiry test; rerun Gitleaks and Firestore integration.
-3. S06-H5: independently review the residual side channels of the merged PIN-change throttle; do not re-implement the PR #265 throttle.
-4. Add a focused S06-H4 false/true arming UI regression if source/test seams permit without device acceptance.
-5. S10-N1: remove the unsupported `request.app` Rules check and false-positive emulator suite; retain Android provider checks. Remaining work is Firebase Console monitoring, approved service-level enforcement and isolated real-token staging acceptance.
-6. Add missing S05-M3/S05-H2/S06-L4 deterministic harnesses only where fresh source review proves a gap.
-7. Update tracker/session/handoff in the same PR as each change.
+1. S10-N2: perform a targeted residual review of the compiler-AST release-log analyzer's unresolved inter-class/virtual-dispatch/reflection/external-callback paths. Add a regression and fix only if a concrete false negative is reproducible.
+2. S07-L2: investigate whether a supported libsignal API/version exposes deterministic native private-key destruction. Do not use reflection, unsafe native access or GC forcing as a substitute.
+3. S06-H5: independently review residual observability after PR #265's merged throttle; do not re-implement the throttle or promote the finding from rate limiting alone.
+4. Add a focused S06-H4 false/true arming UI regression only if a meaningful source/test seam remains; existing source guard and CI are already merged.
+5. Re-check S05-M3/S05-H2/S06-L4 harness coverage against current source before adding any tests; their remaining acceptance is primarily staging/operator or device-bound.
+6. Update the tracker and current handoff in the same PR as any newly justified code change.
 
 ### Phase C — isolated staging/operator
 S02-I2 and S02-I3; S05-M3; S05-H2 after contract approval; S06-L4; S10-N1 controlled rollout; S10-N3 isolated Worker/R2/B2; credential rotation in runbook order.
@@ -454,7 +451,7 @@ PR merges and green CI are not a coordinated production release. Do not sign whi
 1. [Canonical finding register](../BUG_TRACKER.md) — IDs, statuses, severity, confidence, evidence.
 2. [Final sign-off](FINAL_SIGNOFF.md) — release gates and non-approval status.
 3. [Agent handoff](AGENTIC_WORK_REMAINING_2026-11-06.md) — execution rules; check for drift against main.
-4. [Prioritized next-work report](NEXT_WORK_REPORT_2026-11-07.md) — S10-N2 residual and staging backlog.
+4. [Prioritized next-work report](NEXT_WORK_REPORT_2026-11-08.md) — S10-N2 residual and staging backlog.
 5. [S03-M3 owner decision](S03-M3_MEDIA_CAPABILITY_TOKEN_DECISION.md).
 6. [S10-N2 session](sessions/SESSION-S10-N2-METHOD-LOCAL-TAINT-2026-11-07.md).
 7. [S07-L2 native destruction boundary](sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md).
