@@ -419,7 +419,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             if (node.getExtendsClause() != null) {
                                 info.superTypes.add(simpleTypeName(node.getExtendsClause().toString()));
                             }
-                            for (Tree implemented : node.getImplementsClause()) {
+                            for (com.sun.source.tree.Tree implemented : node.getImplementsClause()) {
                                 info.superTypes.add(simpleTypeName(implemented.toString()));
                             }
                             Map<String, List<MethodTree>> candidates = new HashMap<>();
