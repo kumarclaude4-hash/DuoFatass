@@ -49,7 +49,7 @@ import javax.tools.ToolProvider;
  * sensitive getters unless the value is passed through LogRedact.
  *
  * This includes a conservative method-local alias pass plus bounded summaries for
- * uniquely resolvable app-owned helper returns and same-class field writes/reads.
+ * uniquely resolvable app-owned helper returns, same-class field writes/reads and typed cross-class field writes/reads.
  * It is still syntax-only, not symbol-resolved whole-program analysis: ambiguous
  * overloads, unresolved virtual dispatch, reflection and third-party internals are
  * not guessed. Keep the finding Partial until residual source review and runtime
@@ -287,6 +287,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void unrelatedSameName(Profile profile) { String x = UnsafeOther.isAvailable(profile.getUserId()); Log.w(\"TAG\", x); }\n"
                   + "  void bodylessHelperReturn(UnknownProfileSource source) { String x = source.fetch(); Log.w(\"TAG\", x); }\n"
                   + "}\n"
+                  + "class CrossClassHolder { String memo; void setMemo(String value) { this.memo = value; } }\n"
+                  + "class CrossClassFlow { void storeAndLog(Profile profile) { CrossClassHolder holder = new CrossClassHolder(); holder.setMemo(profile.getUserId()); Log.w(\"TAG\", holder.memo); } }\n"
                   + "abstract class UnknownProfileSource { abstract String fetch(); }\n"
                   + "class SecurityTier { boolean isDurable() { return true; } }\n"
                   + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
@@ -295,10 +297,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 10
-                    || interproceduralResult.violations.size() != 7) {
+            if (interproceduralResult.inspectedCalls != 11
+                    || interproceduralResult.violations.size() != 8) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "7 unsafe helper flows and 3 safe helper flows, got "
+                        + "8 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -306,6 +308,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message");
             requireViolation(interproceduralResult.violations,
                     "HelperFlow.java:22: method-local sensitive alias/container reaches Log.w message");
+            requireViolation(interproceduralResult.violations, "field:memo");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -468,9 +471,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         MethodSummary current = index.summaries.get(definition.key);
                         if (current != null && current.merge(analyzed)) changed = true;
                         if (current != null) {
-                            int before = info.sensitiveFields.size();
-                            info.sensitiveFields.addAll(current.directFieldWrites);
-                            if (info.sensitiveFields.size() != before) changed = true;
+                            for (String fieldKey : current.directFieldWrites) {
+                                if (index.addSensitiveField(fieldKey)) changed = true;
+                            }
                         }
                     }
                 }
@@ -548,6 +551,55 @@ public final class AndroidReleaseLogPrivacyPolicy {
             ClassSummary info = classes.get(owner);
             return info != null && !ambiguousClasses.contains(owner)
                     && info.sensitiveFields.contains(name);
+        }
+
+        boolean isSensitiveField(String callerOwner, ExpressionTree receiver, String name,
+                                 Map<String, String> localTypes) {
+            String fieldOwner = resolveFieldOwner(callerOwner, receiver, localTypes);
+            if (fieldOwner != null) return isSensitiveField(fieldOwner, name);
+
+            // An unresolved app-owned receiver must not erase a field flow already
+            // proven sensitive on another class. Prefer a conservative false positive
+            // over treating an untyped field read as a sanitizer boundary.
+            for (ClassSummary info : classes.values()) {
+                if (!ambiguousClasses.contains(info.owner) && info.sensitiveFields.contains(name)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private String resolveFieldOwner(String callerOwner, ExpressionTree receiver,
+                                         Map<String, String> localTypes) {
+            if (receiver == null) return callerOwner;
+            String receiverText = receiver.toString();
+            if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
+            if ("super".equals(receiverText) || receiverText.endsWith(".super")) return null;
+            if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
+                return receiverText;
+            }
+            String root = MethodLocalTaintScanner.rootIdentifier(receiver);
+            if (root == null) return null;
+            String type = localTypes.get(root);
+            if (type == null) return null;
+            String normalized = type.replaceAll("<.*>", "").replace("[]", "").trim();
+            int dot = normalized.lastIndexOf('.');
+            String simple = dot >= 0 ? normalized.substring(dot + 1) : normalized;
+            return classes.containsKey(simple) && !ambiguousClasses.contains(simple) ? simple : null;
+        }
+
+        private boolean addSensitiveField(String fieldKey) {
+            int separator = fieldKey.indexOf('#');
+            if (separator <= 0 || separator == fieldKey.length() - 1) return false;
+            String owner = fieldKey.substring(0, separator);
+            String name = fieldKey.substring(separator + 1);
+            ClassSummary info = classes.get(owner);
+            return info != null && !ambiguousClasses.contains(owner)
+                    && info.sensitiveFields.add(name);
+        }
+
+        private static String fieldKey(String owner, String name) {
+            return owner + "#" + name;
         }
 
         /**
@@ -760,7 +812,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (field != null) {
                     if (value.direct) {
                         result.directFieldWrites.add(field);
-                        classInfo.sensitiveFields.add(field);
+                        index.addSensitiveField(field);
                     }
                     if (!value.parameters.isEmpty()) {
                         result.fieldWritesFromParameters.computeIfAbsent(field,
@@ -785,8 +837,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (target != null) {
                     MethodSummary called = previous.get(target.key);
                     if (called != null) {
-                        for (String field : called.directFieldWrites) {
-                            classInfo.sensitiveFields.add(field);
+                        // Field-write summaries carry their declaring owner. A setter
+                        // called on another app-owned object must taint the receiver's
+                        // field, never an unrelated same-named field on this caller.
+                        for (String fieldKey : called.directFieldWrites) {
+                            result.directFieldWrites.add(fieldKey);
+                            index.addSensitiveField(fieldKey);
                         }
                         for (Map.Entry<String, Set<Integer>> write
                                 : called.fieldWritesFromParameters.entrySet()) {
@@ -794,7 +850,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                                 if (parameter < node.getArguments().size()) {
                                     ValueTaint argument = evaluate(node.getArguments().get(parameter));
                                     if (argument.direct) {
-                                        classInfo.sensitiveFields.add(write.getKey());
+                                        result.directFieldWrites.add(write.getKey());
+                                        index.addSensitiveField(write.getKey());
                                     }
                                     if (!argument.parameters.isEmpty()) {
                                         result.fieldWritesFromParameters.computeIfAbsent(write.getKey(),
@@ -817,15 +874,17 @@ public final class AndroidReleaseLogPrivacyPolicy {
             private String assignedField(ExpressionTree target) {
                 if (target instanceof IdentifierTree) {
                     String name = ((IdentifierTree) target).getName().toString();
-                    return classInfo.fieldNames.contains(name) && !locals.containsKey(name) ? name : null;
+                    return classInfo.fieldNames.contains(name) && !locals.containsKey(name)
+                            ? MethodReturnSummaryIndex.fieldKey(classInfo.owner, name) : null;
                 }
                 if (target instanceof MemberSelectTree) {
                     MemberSelectTree member = (MemberSelectTree) target;
                     String name = member.getIdentifier().toString();
-                    String receiver = member.getExpression().toString();
-                    return classInfo.fieldNames.contains(name)
-                            && ("this".equals(receiver) || receiver.endsWith(".this")
-                            || classInfo.owner.equals(receiver)) ? name : null;
+                    String fieldOwner = index.resolveFieldOwner(
+                            definition.owner, member.getExpression(), localTypes);
+                    ClassSummary fieldClass = fieldOwner == null ? null : index.classes.get(fieldOwner);
+                    return fieldClass != null && fieldClass.fieldNames.contains(name)
+                            ? MethodReturnSummaryIndex.fieldKey(fieldOwner, name) : null;
                 }
                 return null;
             }
@@ -851,7 +910,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     @Override
                     public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                         String name = node.getIdentifier().toString();
-                        if (classInfo.sensitiveFields.contains(name)
+                        if (index.isSensitiveField(definition.owner, node.getExpression(),
+                                name, localTypes)
                                 || (SENSITIVE_IDENTIFIER.matcher(name).matches()
                                 && !SAFE_OPERATIONAL_COUNTERS.contains(name))) {
                             value.direct = true;
@@ -1238,7 +1298,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 @Override
                 public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                     String name = node.getIdentifier().toString();
-                    if (returnSummaries.isSensitiveField(ownerClass, name)
+                    if (returnSummaries.isSensitiveField(ownerClass, node.getExpression(),
+                            name, localTypes)
                             || (!SAFE_OPERATIONAL_COUNTERS.contains(name)
                             && (SENSITIVE_IDENTIFIER.matcher(name).matches()
                             || SENSITIVE_ACCESSOR.matcher(name).matches()))) {
@@ -1298,7 +1359,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 @Override
                 public Void visitMemberSelect(MemberSelectTree node, Void unused) {
                     String name = node.getIdentifier().toString();
-                    if (returnSummaries.isSensitiveField(ownerClass, name)) found.add("field:" + name);
+                    if (returnSummaries.isSensitiveField(ownerClass, node.getExpression(),
+                            name, localTypes)) found.add("field:" + name);
                     return super.visitMemberSelect(node, unused);
                 }
 

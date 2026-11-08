@@ -4251,7 +4251,7 @@ public class ChatMediaActivity extends BaseActivity {
                     reQueue.add(pending);
                     reQueueSigs.put(id, sigType);
                     Log.w(TAG, "retryPendingDecryption: failed msg=" + com.duoshield.app.util.LogRedact.metadata(id)
-                            + " attempt=" + tries + " sigType=" + sigType + " (" + com.duoshield.app.util.LogRedact.error(ex) + ")");
+                            + " (" + com.duoshield.app.util.LogRedact.error(ex) + ")");
                 }
             }
 
