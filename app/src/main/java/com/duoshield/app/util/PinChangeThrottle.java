@@ -87,16 +87,16 @@ final class PinChangeThrottle {
             long wallNow,
             long elapsedNow,
             long bootId) {
-        if (storedBootId == bootId) {
-            // Within the same boot, elapsed time is authoritative. If it moves
-            // backwards or the anchor is malformed, fail closed and retain the
-            // old window rather than trusting a user-adjustable wall clock.
-            return startWall > 0L && startElapsed >= 0L && elapsedNow >= startElapsed
-                    && elapsedNow - startElapsed >= WINDOW_MS;
+        if (storedBootId == bootId && startElapsed >= 0L && elapsedNow >= startElapsed) {
+            // Within the same boot, elapsed time is authoritative. If the
+            // elapsed clock is now below its persisted anchor, the device has
+            // rebooted (important when BOOT_COUNT itself is unavailable).
+            return startWall > 0L && elapsedNow - startElapsed >= WINDOW_MS;
         }
 
-        // Across boots elapsedRealtime resets, so use wall time. A wall-clock
-        // rollback leaves the old window in force rather than granting attempts.
+        // Across boots (or when the elapsed clock proves a reboot despite an
+        // unavailable boot counter), use wall time. A wall-clock rollback
+        // leaves the old window in force rather than granting attempts.
         return startWall > 0L && wallNow >= startWall
                 && wallNow - startWall >= WINDOW_MS;
     }
@@ -118,8 +118,12 @@ final class PinChangeThrottle {
             long elapsedRemaining = 0L;
             long elapsedDeadline = preferences.getLong(key(scope, "until_elapsed"), 0L);
             long storedBootId = preferences.getLong(key(scope, "boot_id"), Long.MIN_VALUE);
+            long windowElapsed = preferences.getLong(key(scope, "window_elapsed"), -1L);
+            long windowBootId = preferences.getLong(key(scope, "window_boot_id"), Long.MIN_VALUE);
+            boolean sameBoot = windowBootId == bootId
+                    && windowElapsed >= 0L && elapsedNow >= windowElapsed;
             if (elapsedDeadline > 0L && storedBootId == bootId
-                    && elapsedNow >= 0L && elapsedDeadline > elapsedNow) {
+                    && sameBoot && elapsedNow >= 0L && elapsedDeadline > elapsedNow) {
                 elapsedRemaining = elapsedDeadline - elapsedNow;
             }
             return Math.max(wallRemaining, elapsedRemaining);
