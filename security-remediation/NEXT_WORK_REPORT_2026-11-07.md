@@ -12,7 +12,7 @@ PR #265 merged S06-H5's bounded PIN-change attempt throttle. Its exact PR head `
 - Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048): CodeQL, Gitleaks and SBOM passed.
 - Merge commit: `32175ccf86342a6c517459a0e2507f14c4d064e8`.
 
-Post-merge mainline Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) passed. Main CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) is still in progress: Server/Worker, Android unit tests, lint, debug APK, minified R8/mapping, AST privacy and Gradle/libsignal integrity have passed; Espresso and API 35 predictive-back emulator jobs are still running. Recheck both emulator results before release.
+Post-merge mainline CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) and Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) both completed successfully on exact main HEAD `32175ccf86342a6c517459a0e2507f14c4d064e8`. All 10 CI jobs passed, including Server/Worker, Android unit tests/lint, Espresso, API 35 predictive-back, debug APK, minified R8/mapping, AST privacy and dependency integrity. Security checks passed CodeQL, Gitleaks and SBOM.
 
 Recent merged changes now reflected on main:
 - PR #251 — bounded interprocedural Android release-log taint analysis; S10-N2 remains Partial for analysis limitations and physical release-logcat acceptance.
