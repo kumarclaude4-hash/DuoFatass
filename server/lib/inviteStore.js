@@ -48,6 +48,15 @@ function createInviteStore({
 
   const collection = firestore.collection(invitesCollection);
 
+  function safeTimestampMs(value) {
+    try {
+      const valueMs = invite.timestampMs(value);
+      return Number.isFinite(valueMs) && valueMs > 0 ? valueMs : 0;
+    } catch {
+      return 0;
+    }
+  }
+
   async function create(input, requestContext) {
     const normalized = invite.validateCreateInput(input, now());
     const rawToken = randomToken();
@@ -125,7 +134,11 @@ function createInviteStore({
       if (!snapshot.exists) return { status: "missing" };
 
       const current = invite.inviteStatus(snapshot.data(), now());
-      if (current !== "active") return { status: "conflict", current };
+      // Invalid persisted state is not redeemable, but admins may explicitly
+      // revoke it to clean up corrupted/legacy records.
+      if (current !== "active" && current !== "invalid") {
+        return { status: "conflict", current };
+      }
 
       tx.update(ref, {
         status: "revoked",
@@ -142,7 +155,7 @@ function createInviteStore({
     const search = typeof options.search === "string" ? options.search.trim().toLowerCase() : "";
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(10, Number(options.pageSize) || DEFAULT_PAGE_SIZE));
     const cursor = invite.decodeCursor(options.cursor || null);
-    if (!["all", "active", "used", "expired", "revoked"].includes(wantedStatus) || search.length > 80) {
+    if (!["all", "active", "used", "expired", "revoked", "invalid"].includes(wantedStatus) || search.length > 80) {
       throw new TypeError("Invalid filter");
     }
 
@@ -154,10 +167,10 @@ function createInviteStore({
     const nowMs = now();
     let records = snapshot.docs.map((doc) => {
       const data = doc.data();
-      const createdAtMs = invite.timestampMs(data.createdAt);
-      const expiresAtMs = invite.timestampMs(data.expiresAt);
-      const usedAtMs = invite.timestampMs(data.usedAt);
-      const revokedAtMs = invite.timestampMs(data.revokedAt);
+      const createdAtMs = safeTimestampMs(data.createdAt);
+      const expiresAtMs = safeTimestampMs(data.expiresAt);
+      const usedAtMs = safeTimestampMs(data.usedAt);
+      const revokedAtMs = safeTimestampMs(data.revokedAt);
       return {
         id: doc.id,
         label: data.label || "",
@@ -179,7 +192,7 @@ function createInviteStore({
       };
     });
 
-    const counts = { active: 0, used: 0, expired: 0, revoked: 0 };
+    const counts = { active: 0, used: 0, expired: 0, revoked: 0, invalid: 0 };
     for (const record of records) counts[record.status]++;
     records = records
       .filter((record) => wantedStatus === "all" || record.status === wantedStatus)
