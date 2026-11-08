@@ -13,7 +13,7 @@ Current `main`: `8d0082d004993278645f3eb7a72c43a8cdc14e59`.
 - PR #267 Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886): passed.
 - PR #267 Firestore Rules/server transaction integration [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962): passed; log reported 200 Rules tests and 6 server transaction tests.
 - Post-merge main Security [42445582762](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582762), Firestore rules [42445582759](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582759) and Firestore Rules Tests [42445582747](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582747): passed.
-- Post-merge main CI [42445582763](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582763): in progress when this snapshot was prepared. Refresh it before recording a full mainline CI pass.
+- Post-merge main CI [42445582763](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582763): passed on the exact main SHA, including Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests and integrity checks.
 
 Recent merged work:
 - PR #261 — explicit active-state/future-expiry fail-closed checks and audited invalid invite-state revocation (S05-H2).
