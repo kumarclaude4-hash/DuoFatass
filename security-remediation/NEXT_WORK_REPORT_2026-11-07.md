@@ -27,7 +27,7 @@ Recent merged changes now reflected on main:
 
 There are **no open pull requests** at this snapshot. The older PRs #253 and #258 were closed as superseded by #261 and #260; #254 was closed as superseded by #256.
 
-The canonical finding register remains `BUG_TRACKER.md`: **116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial because bounded attempts and a generic failure response reduce probing but do not prove all success/failure observations indistinguishable. S05-H2 remains Partial pending owner/product and staging acceptance.
+The canonical finding register remains `BUG_TRACKER.md`: **118 register rows — 87 Fixed, 18 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial because bounded attempts and a generic failure response reduce probing but do not prove all success/failure observations indistinguishable. S05-H2 remains Partial pending owner/product and staging acceptance.
 
 ## Priority 1 — code PR integration is complete
 
