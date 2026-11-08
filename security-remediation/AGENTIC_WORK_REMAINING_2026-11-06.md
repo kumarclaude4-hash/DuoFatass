@@ -2,7 +2,7 @@
 
 Repository: `kumarclaude4-hash/DuoFatass`  
 Base branch: `main`  
-Current main HEAD: `afdf2463c496f14a5c33ee5694fc47eff97d5e3d` (PR #269 merge).
+Current main HEAD: `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #271 merge).
 
 Recent merged work:
 - PR #261 — invite lifecycle invalid-state fail-closed checks (S05-H2).
@@ -10,9 +10,11 @@ Recent merged work:
 - PR #265 — generic Settings PIN-change failure response and durable successful/failed-attempt throttle (S06-H5); CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed.
 - PR #267 — Firebase App Check / Firestore Rules correction (S10-N1), merged as `8d0082d004993278645f3eb7a72c43a8cdc14e59`. Exact PR-head CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887), Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988), Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886) and Firestore Rules/server transactions [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962) all passed.
 - PR #269 — S10-N2 release-log taint analysis now fails closed for bodyless app-owned abstract/interface/native helper declarations; merged as `afdf2463c496f14a5c33ee5694fc47eff97d5e3d`. Exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed. S10-N2 remains Partial for inheritance/virtual dispatch, reflection, external callbacks and physical release-logcat residuals.
+- PR #270 — refreshed the security handoff/tracker/sign-off snapshot after #269; merged as `1a425ad0aa2e7c36fa66a2afe4e46d85e78ee514`.
+- PR #271 — bounded S07-L2 app-owned memory hygiene (defensive cache fingerprint copy/zeroization, serialized derivation/cache eviction, cleanup of derivation/HKDF intermediate arrays). Exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 jobs; Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3; merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`. S07-L2 remains Partial because native-key destruction is finalizer-timed.
 - PR #266 was intentionally closed unmerged. Its documentation changes are not on main.
 
-There are **no open code PRs** at this snapshot. The old #253/#254/#258 table and their historical CI blockers are superseded: #253's invite lifecycle work was replaced by merged #261, #254's range allowance was superseded by merged #256, and #258 was closed; do not reopen those branches. PR #262 was closed unmerged; its S06-H5 implementation was carried by merged PR #265.
+There are **no open code PRs** after PR #271 merged. Operator/staging, owner-decision and feature-complete physical-device gates remain open. The old #253/#254/#258 table and their historical CI blockers are superseded: #253's invite lifecycle work was replaced by merged #261, #254's range allowance was superseded by merged #256, and #258 was closed; do not reopen those branches. PR #262 was closed unmerged; its S06-H5 implementation was carried by merged PR #265.
 
 The canonical tracker has **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Use `BUG_TRACKER.md` and the refreshed [Next Work Report](NEXT_WORK_REPORT_2026-11-08.md) for the current ordered state; any conflicting 2026-11-06/07 narrative below is historical.
 
@@ -86,7 +88,7 @@ Remaining: live isolated Cloudflare Worker + R2 + B2 acceptance, including cron 
 
 ### D. S07-L2 — document and prove the key destruction boundary
 
-WipeHelper calls SeedPhraseHelper.clearDerivationCache(), and JVM tests prove the AtomicReference is nulled. The exact pinned libsignal 0.54.1 source was checked: Java ECPrivateKey.finalize() releases the native handle, while its Rust PrivateKey owns x25519-dalek 2.0.0 StaticSecret; the default zeroize feature applies Zeroize on drop. However, the Java wrapper exposes no deterministic close/destroy API, finalization is GC-timed, and PrivateKey is Clone. The native key buffer is therefore zeroized on actual drop, not synchronously when the DuoFat wipe clears the cache. See `security-remediation/sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md`. Keep Partial; do not reflectively mutate native internals or invent a synchronous-erasure guarantee.
+WipeHelper calls `SeedPhraseHelper.clearDerivationCache()` on all local wipe paths. PR #271 also serializes derivation with cache eviction, defensively copies and zeroes the cached fingerprint, and zeroes app-owned derivation/HKDF intermediates; its exact-head CI and Security passed (see the current next-work report). The pinned libsignal 0.54.1 `ECPrivateKey.finalize()` still releases the native handle only on finalization; Rust `StaticSecret` zeroizes on drop, but Java exposes no deterministic `close()`/`destroy()` API and the native `PrivateKey` is cloneable. A later derivation after wipe can repopulate the cache, so lifecycle code must block new identity work. Provider-owned copies cannot be cleared by this Java code. Keep Partial; do not reflectively mutate native internals or invent a synchronous-erasure guarantee. See `security-remediation/sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md`.
 
 ### E. S05-M3 — durable admin-session emulator coverage
 

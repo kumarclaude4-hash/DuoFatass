@@ -1,8 +1,8 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-08 (post-PR #269)  
+**Updated:** 2026-11-08 (post-PR #271)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `afdf2463c496f14a5c33ee5694fc47eff97d5e3d` (PR #269 merge; includes PR #267)
+**Current main:** `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #271 merge; includes PR #270, #269 and #267)
 
 ## Current verified mainline
 
@@ -30,9 +30,11 @@ PR #269 exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFata
 - PR #265 — generic Settings PIN-change failure response and durable attempt throttle for accepted and rejected candidates (S06-H5). Exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3`, merge `32175ccf86342a6c517459a0e2507f14c4d064e8`; CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed. PR #262 was closed unmerged; its implementation was carried by #265.
 - PR #267 — corrected the App Check / Firestore Rules boundary (S10-N1); unsupported `request.app` and `appCheckVerified()` removed from executable rules, verbatim Rules emulator testing restored, device registration tests added, and rollout docs corrected. Merge `8d0082d004993278645f3eb7a72c43a8cdc14e59`.
 - PR #269 — S10-N2 release-log analyzer now fails closed on bodyless app-owned abstract/interface/native declarations; exact head `51fc914111d89b1f7f69c1b374910cd1186cdf04`, merge `afdf2463c496f14a5c33ee5694fc47eff97d5e3d`; CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed.
+- PR #270 — reconciled the security handoff/tracker/sign-off after #269; merged as `1a425ad0aa2e7c36fa66a2afe4e46d85e78ee514`.
+- PR #271 — bounded S07-L2 app-owned key-buffer/cache hygiene; exact head `efceb00bc7fac0361804f98cf84458e69a75c0c3`, merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`; CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3. S07-L2 remains Partial because native destruction is still finalizer-timed.
 - PR #266 — intentionally closed unmerged; its documentation changes were not applied to main.
 
-There are **no open code PRs** after PR #269 merged; documentation reconciliation is in progress.
+There are **no open code PRs** after PR #271 merged; this branch is the current documentation-only handoff refresh.
 
 ## Canonical tracker
 
@@ -43,13 +45,14 @@ Notable evidence corrections:
 - **S08-L4 remains Partial:** opaque lock-transition cover and manifest protections are implemented and CI-tested; actual no-flash/touch-blocking/unlock/sign-out flow acceptance is device-deferred.
 - **S10-N1 remains Partial:** the invalid Rules-level App Check expression has been removed and regression-tested. Real enforcement is a Firebase service-layer Console operation and isolated staging acceptance remains outstanding.
 - **S10-N2 remains Partial:** PR #269 closes a concrete bodyless-helper false negative by treating abstract/interface/native app-owned declarations as unknown return sources; the abstract `UnknownProfileSource.fetch()` → `Log.w` regression is rejected. The analyzer remains bounded syntax/AST analysis, not whole-program or symbol-resolved proof; inheritance/virtual dispatch, reflection, external callbacks and physical release-logcat acceptance remain.
+- **S07-L2 remains Partial:** PR #271 clears app-owned fingerprint/derivation/HKDF intermediate arrays and serializes derivation/cache eviction. Native libsignal destruction remains finalizer-timed; callers can retain key objects and later calls can repopulate the cache. No synchronous complete-erasure claim is made.
 
 ## Next work — dependency ordered
 
 ### 1. Source-review / code-analysis candidates
 
 - **S10-N2:** PR #269 closed the bodyless-declaration return-summary gap. Continue only with a targeted residual review of unresolved inter-class field flow, inheritance/virtual dispatch, reflection and external callbacks. Add a narrow regression only where a concrete false negative is reproducible and safely fixable; do not claim whole-program proof.
-- **S07-L2:** check whether a supported upstream libsignal version exposes deterministic native private-key destruction. Do not use reflection, unsafe native access or GC forcing as a fake fix. If no supported API exists, prepare a precise residual-risk decision for the owner.
+- **S07-L2:** source review confirmed pinned libsignal 0.54.1 has no supported deterministic Java destruction API. PR #271 has merged bounded cleanup of app-owned arrays/cache metadata. Do not use reflection, unsafe native access or GC forcing; prepare an explicit owner residual-risk decision for finalizer-timed native destruction and ensure app lifecycle blocks post-wipe identity derivation.
 - Re-check `BUG_TRACKER.md` and current source before taking any additional code task; the 2026-11-07 open-PR list is historical and must not be revived.
 
 ### 2. Owner decisions

@@ -108,7 +108,7 @@ Set `WORKER_SECRET` via `wrangler secret put WORKER_SECRET` before deploying.
 - **FirebaseCostGuard singleton** — all Firestore reads/writes must go through it; prevents quota exhaustion
 - **One listener per screen** — detach in `onDestroy()`; never create multiple listeners for the same path
 - **BaseActivity** — all sensitive activities must extend `BaseActivity` for app-lock enforcement; only pre-auth onboarding screens extend `AppCompatActivity`
-- **libsignal-client must be `implementation`** — it is NOT `compileOnly`; see `app/build.gradle` for the three-line dependency structure and the stripped JAR explanation
+- **libsignal dependency topology is fixed** — `libsignal-android:0.54.1` is `implementation` with its transitive `libsignal-client` excluded; Maven `libsignal-client:0.54.1` is `compileOnly`; `libs/libsignal-client-0.54.1-stripped.jar` is `implementation`. Preserve all three lines and the stripped-JAR workflow exactly as documented in `app/build.gradle`; do not simplify or bump one dependency independently. The stripped JAR removes six `java.lang.Record` subclasses to avoid the D8 desugaring failure.
 - **HKDF off-limits** — use `SeedPhraseHelper.hkdfSha256()` (public, 3 args); never import `org.signal.libsignal.protocol.kdf.HKDF`
 - **No Cloud Functions** — all server logic lives in `server/index.js` on Render
 - **Room DB current version: 22** — always add a migration when bumping; SQLCipher passphrase is a random key managed (not seed-derived) in `DatabaseKeyProvider`

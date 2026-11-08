@@ -1,36 +1,43 @@
 ---
 name: DuoShield libsignal dependency structure
-description: libsignal-android 0.54.x AAR has NO Java classes — they live in libsignal-client JAR which must be `implementation` not `compileOnly`; HKDF class is still off-limits at runtime
+description: Preserve the exact libsignal 0.54.1 Android AAR + compileOnly Maven client + stripped local client JAR topology; never simplify or independently upgrade it; use the public app-owned HKDF helper
 ---
 
 # DuoShield libsignal dependency structure
 
-## The rule
-`libsignal-client` MUST be declared `implementation`, not `compileOnly`.
-Never import or call `org.signal.libsignal.protocol.kdf.HKDF` in any runtime code path (see below).
+## Exact dependency rule
 
-**Why:** `libsignal-android` 0.54.x AAR contains ONLY the native `.so` file. All Java protocol classes (`Curve`, `IdentityKeyPair`, `SessionCipher`, `PreKeyBundle`, etc.) live exclusively in the `libsignal-client` JAR. Using `compileOnly` means the classes are absent from the APK DEX at runtime → `NoClassDefFoundError: Failed resolution of: Lorg/signal/libsignal/protocol/ecc/Curve;` → "Encryption library failed to load. Please reinstall the app."
+The pinned `app/build.gradle` dependency topology is deliberately three-part. Preserve all three entries exactly and keep their versions aligned:
 
-The earlier `compileOnly` workaround avoided a D8 Records desugaring crash ("Attempt to create global synthetic without consumer") that affected AGP < 8.x. AGP 8.6.0 handles Records desugaring in external JARs correctly so `implementation` is safe.
-
-**How to apply:** Keep the build.gradle wiring as:
 ```groovy
 implementation('org.signal:libsignal-android:0.54.1') {
     exclude group: 'org.signal', module: 'libsignal-client'
 }
-implementation 'org.signal:libsignal-client:0.54.1'
+compileOnly 'org.signal:libsignal-client:0.54.1'
+implementation files('libs/libsignal-client-0.54.1-stripped.jar')
 ```
-The exclude prevents Gradle pulling `libsignal-client` twice (once via transitive, once via the explicit line), which would cause duplicate-class dexing errors.
 
-## HKDF still off-limits
-Never call `org.signal.libsignal.protocol.kdf.HKDF` directly — it is a libsignal-internal class not part of the public API surface. Use `SeedPhraseHelper.hkdfSha256(ikm, info, length)` — a private static RFC 5869 HKDF-SHA256 built on `javax.crypto.Mac`.
+- The Android AAR provides the native JNI libraries and does not provide the Java protocol classes in its `classes.jar`.
+- The Maven Java client dependency is `compileOnly`, for compile-time symbol resolution.
+- The local stripped Java client JAR is the runtime/DEX implementation. It is derived from the matching 0.54.1 client JAR with six `java.lang.Record` subclasses removed because those classes trigger the project's D8 desugaring failure when packaged through the normal external-JAR path.
+- The exclusion on the AAR prevents a second transitive copy of `libsignal-client` and duplicate-class dexing.
+
+Do **not** change the Maven client to `implementation`, remove the local stripped JAR, switch the local JAR to `compileOnly`, bump just one of the three versions, or assume a newer AGP makes this workaround unnecessary. Any dependency upgrade must regenerate the stripped artifact, update verification metadata/hash records, and pass the full Android/R8/integrity CI.
+
+## HKDF boundary
+
+Never import or call `org.signal.libsignal.protocol.kdf.HKDF` in application runtime code. It is a libsignal-internal implementation detail and is not the supported application API. Use the public app-owned helper:
 
 ```java
-Mac mac = Mac.getInstance("HmacSHA256");
-mac.init(new SecretKeySpec(new byte[32], "HmacSHA256")); // salt = zeroes
-byte[] prk = mac.doFinal(ikm);
-mac.init(new SecretKeySpec(prk, "HmacSHA256"));
-mac.update(info);
-mac.update((byte) 0x01);
-return Arrays.copyOf(mac.doFinal(), length);
+SeedPhraseHelper.hkdfSha256(ikm, info, length)
 ```
+
+Callers that derive the 32-byte backup key must continue to use length `32`. The helper implements RFC 5869 HKDF-SHA256 with `javax.crypto.Mac`; its byte output is covered by regression tests. Keep the caller-owned input arrays unchanged.
+
+## S07-L2 private-key destruction boundary
+
+`SeedPhraseHelper.clearDerivationCache()` detaches the cached `IdentityKeyPair` reference and zeroes the app-owned cached fingerprint copy. PR #271 also serializes derivation with cache eviction and clears app-owned fingerprint, info, serialized private-key input, HKDF salt, PRK and intermediate output arrays.
+
+This is **not** deterministic native-key destruction. The pinned Java `ECPrivateKey` wrapper exposes no public `close()`/`destroy()`; native destruction remains finalizer/GC-timed, native key objects may be cloned or retained by callers, and crypto providers may retain internal copies. A later derivation call can repopulate the cache, so application lifecycle code must prevent new identity work after wipe. Keep S07-L2 Partial unless upstream adds a supported explicit destruction API or the owner approves the residual.
+
+Primary implementation references: `app/build.gradle`, `SeedPhraseHelper.java`, `SeedPhraseHelperTest.java`, and `security-remediation/sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md`.
