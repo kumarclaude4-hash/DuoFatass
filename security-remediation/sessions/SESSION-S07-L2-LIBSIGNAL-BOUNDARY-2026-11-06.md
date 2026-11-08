@@ -31,3 +31,16 @@ The native `StaticSecret` is zeroized on drop, but Java-side finalization is non
 ## Status
 
 Keep **S07-L2 Partial**. The supported native destruction/zeroization boundary is documented and no unsupported reflection or unsafe memory mutation is introduced. The remaining limitation is deterministic, synchronous destruction of every in-memory copy on wipe. Close only through an upstream-supported explicit destruction API or a recorded owner residual-risk decision; physical-device memory/remanence testing remains separate release QA.
+
+
+## Upstream API re-check — 2026-11-08
+
+The upstream Java wrapper was re-checked after the original 0.54.1 analysis to determine whether a newer supported deterministic destroy/close API could close the residual without reflection or unsafe JNI access.
+
+- Pinned application version remains libsignal 0.54.1; the pinned source commit is \`ee321f2697666fce90f793a876226cad830585b3\`. Its \`ECPrivateKey\` wrapper still has no public deterministic \`close()\`/\`destroy()\` method; native destruction is invoked through finalization.
+- Current upstream source was inspected at commit \`850942581c06fa65c0323fd52029afa02fa1a1ba\`: [ECPrivateKey.kt](https://github.com/signalapp/libsignal/blob/850942581c06fa65c0323fd52029afa02fa1a1ba/java/shared/java/org/signal/libsignal/protocol/ecc/ECPrivateKey.kt) and [NativeHandleGuard.java](https://github.com/signalapp/libsignal/blob/850942581c06fa65c0323fd52029afa02fa1a1ba/java/shared/java/org/signal/libsignal/internal/NativeHandleGuard.java).
+- The newer \`NativeHandleGuard\` contains a generic \`CloseableOwner\`, but \`ECPrivateKey\` still extends \`NativeHandleGuard.SimpleOwner\`; the wrapper does not expose deterministic close/destroy for this key type. This is not a usable API upgrade path for the application.
+- No application source change is justified: reflection, private native-handle mutation or unsafe memory tricks would be unsupported and could corrupt key state. Keep S07-L2 **Partial** until upstream exposes a supported deterministic destruction API for ECPrivateKey or the owner explicitly accepts the GC-timed residual.
+
+This is a source/API review only. It does not claim physical memory-remanence testing or synchronous erasure of Java/native copies. Physical-device acceptance remains deferred until feature-complete.
+
