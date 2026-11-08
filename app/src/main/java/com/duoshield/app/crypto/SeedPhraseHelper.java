@@ -79,26 +79,19 @@ public final class SeedPhraseHelper {
     }
 
     /**
-     * Clears the in-process derivation cache populated by
+     * Clears the in-process identity derivation cache populated by
      * {@link #deriveIdentityKeyPair(byte[])}.
      *
-     * <p>(S07-L2) That cache holds the most recently derived {@link IdentityKeyPair} —
-     * i.e. the plaintext identity private key — in a static field so repeated calls
-     * with the same seed (identity display, restore confirmation, etc.) skip the
-     * KDF. That same property makes it a wipe hazard: {@code WipeHelper.eraseLocalData}
-     * destroys every on-disk copy of key material (SecurePrefs, the SQLCipher DB),
-     * but this cache lives only in the JVM heap, and none of the wipe steps ever
-     * called back into this class — the derived identity private key stayed
-     * resident in process memory for the remaining lifetime of the process even
-     * after a duress wipe, recoverable by a memory-dump/debugger-attach forensic
-     * technique that key destruction is specifically supposed to defeat.
+     * <p>Called from every {@code WipeHelper.eraseLocalData()} path (voluntary wipe,
+     * unpair and duress). This method shares the class monitor with derivation, so a
+     * derivation already in flight completes before the wipe clears its cache entry;
+     * the in-flight operation cannot repopulate the cache after this method returns.
      *
-     * <p>Called from every path that funnels through {@code WipeHelper.eraseLocalData}
-     * (voluntary wipe, unpair, and duress) — see that method's Step 4. Best-effort:
-     * dropping the reference lets the GC reclaim the {@link IdentityKeyPair}, but
-     * this class has no access to zero the key bytes inside libsignal's object graph
-     * before that happens, the same limitation every other in-memory key handle in
-     * this app has once it leaves this class's control.
+     * <p>The cache-owned seed fingerprint copy is zeroed before the entry is released.
+     * The {@link IdentityKeyPair} is then eligible for collection once other callers
+     * release it. This is best-effort only: the pinned libsignal Java wrapper exposes
+     * no public deterministic close/destroy method, and this method cannot zero native
+     * key material or copies retained by the crypto provider/runtime.
      */
     public static synchronized void clearDerivationCache() {
         CachedDerivation cached = derivationCache.getAndSet(null);
@@ -753,7 +746,6 @@ public final class SeedPhraseHelper {
             Arrays.fill(salt, (byte) 0);
             if (prk != null) Arrays.fill(prk, (byte) 0);
             if (okm != null) Arrays.fill(okm, (byte) 0);
-            mac.reset();
         }
     }
 }
