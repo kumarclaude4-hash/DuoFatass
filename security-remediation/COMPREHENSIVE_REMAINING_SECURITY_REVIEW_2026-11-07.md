@@ -32,7 +32,7 @@ Return a finding-by-finding disposition (confirmed remaining / newer evidence sa
 ## 1. Current baseline and already-completed work
 
 **Current main:** `32175ccf86342a6c517459a0e2507f14c4d064e8` (2026-11-08).  
-**Current post-merge CI:** [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) — in progress at this snapshot; eight jobs passed, with Espresso and API 35 predictive-back still running.  
+**Current post-merge CI:** [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) — all 10 jobs passed, including Espresso and API 35 predictive-back.  
 **Current post-merge Security Scan:** [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) — passed.
 
 Earlier main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) validated the prior 2026-11-07 baseline and should be treated as historical evidence, not current-main checks. The current main commit's exact PR #265 head CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed before merge.
