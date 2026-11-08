@@ -1,28 +1,23 @@
-# Agentic Work Remaining — current handoff, 2026-11-07
+# Agentic Work Remaining — current handoff, 2026-11-08
 
-Repository: `kumarclaude4-hash/DuoFatass`
-Base branch: `main`
-Current main HEAD: `98f76cdf374eeaf5c8144befad068ef05805a20b` (PR #256 merged).
+Repository: `kumarclaude4-hash/DuoFatass`  
+Base branch: `main`  
+Current main HEAD: `8d0082d004993278645f3eb7a72c43a8cdc14e59`.
+
 Recent merged work:
-- PR #251 — bounded interprocedural Android release-log taint analysis; S10-N2 remains Partial.
-- PR #255 — invite redemption UID pseudonymization; S05-H2 remains Partial pending legacy-data and staging acceptance.
-- PR #256 — bounded range-read request accounting for encrypted chunked video playback.
-- PR #257 — documentation reconciliation for the S05-H2 privacy closeout.
-Mainline CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) both passed on `98f76cdf`.
+- PR #261 — invite lifecycle invalid-state fail-closed checks (S05-H2).
+- PR #264 — invalid invite rows now expose the audited revoke action (S05-H2).
+- PR #265 — generic Settings PIN-change failure response and durable successful/failed-attempt throttle (S06-H5); CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed.
+- PR #267 — Firebase App Check / Firestore Rules correction (S10-N1), merged as `8d0082d004993278645f3eb7a72c43a8cdc14e59`. Exact PR-head CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887), Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988), Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886) and Firestore Rules/server transactions [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962) all passed.
+- PR #266 was intentionally closed unmerged. Its documentation changes are not on main.
 
-## Current open code PRs — observed 2026-11-07
+There are **no open code PRs** at this snapshot. The old #253/#254/#258 table and their historical CI blockers are superseded: #253's invite lifecycle work was replaced by merged #261, #254's range allowance was superseded by merged #256, and #258 was closed; do not reopen those branches. PR #262 was closed unmerged; its S06-H5 implementation was carried by merged PR #265.
 
-| PR | Scope | Exact head | Base used by PR | Current state |
-|---|---|---|---|---|
-| [#253](https://github.com/kumarclaude4-hash/DuoFatass/pull/253) | Fail closed on invalid invite lifecycle states (S05-H2) | `231af6f3a499b60286d567a6628876abfb5d6d31` | `3d41501cf55d706d47bd7bec1a24ccb82d60ae1a` | CI 10/10 and Security 3/3 passed, but GitHub reports **dirty/non-mergeable**; rebase/resolve against current main and rerun before merge. |
-| [#254](https://github.com/kumarclaude4-hash/DuoFatass/pull/254) | Half-unit accounting for valid single-range Worker GETs (video range playback) | `1d5583584572859bcb07b39bba0628c554226c84` | `3d41501cf55d706d47bd7bec1a24ccb82d60ae1a` | CI 10/10 and Security 3/3 passed, but GitHub reports **dirty/non-mergeable**; rebase/resolve against current main and rerun before merge. |
-| [#258](https://github.com/kumarclaude4-hash/DuoFatass/pull/258) | Normalize escaped PEM newlines in invite UID migration utility | `b20a5bf628c2a58b29b41f5cf71668d88d445b0d` | `89ac44cf85df1c90530196fdbb01bf93ff2e8994` | Mergeable but unstable. CI run [42387218211](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218211) passed; Security [42387218255](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218255) failed Gitleaks on a synthetic PEM-shaped test fixture; Firestore Rules/server transaction run [42387218230](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218230) failed one invite expiry integration test with `Expiry must be between 1 hour and 90 days from now`. Fix the fixture false positive and make the expiry test deterministic (injected clock or safe margin), then rerun all gates. |
+The canonical tracker has **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Use `BUG_TRACKER.md` and the refreshed [Next Work Report](NEXT_WORK_REPORT_2026-11-08.md) for the current ordered state; any conflicting 2026-11-06/07 narrative below is historical.
 
-Do not merge PRs #253/#254 until rebased and fresh checks pass. Do not merge #258 until both failures are corrected. The branches were based before the current mainline; their passing checks are against their then-current merge bases, not the exact current main.
+**S10-N1 correction:** App Check is enforced at the Firebase service layer, before Firestore Rules evaluation. Firestore Rules cannot inspect App Check token metadata; `request.app` is unsupported and must not be added to Rules. PR #267 removed the invalid helper and false-positive emulator test arrangement. Console enforcement, monitoring review and isolated real-token staging acceptance remain operator work.
 
-S10-N2 remains **Partial**: syntax-only analysis is not whole-program proof, and physical-device release-logcat acceptance is deferred until feature-complete. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**.
-
-This is the current execution handoff. Start new work from the latest main on a fresh branch. Physical-device acceptance must wait until the owner declares the app feature-complete.
+`security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. Physical-device acceptance remains deferred until the owner explicitly declares the application feature-complete.
 
 ## 1. Binding instructions
 
@@ -38,18 +33,21 @@ This is the current execution handoff. Start new work from the latest main on a 
 
 ## 2. Verified baseline
 
-Current main HEAD: `98f76cdf374eeaf5c8144befad068ef05805a20b`.
-Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) both completed successfully. The exact mainline check runs include Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server/Worker tests, release-log AST, Cloudflare Worker build validation, CodeQL, Gitleaks, SBOM, Gradle wrapper and vendored libsignal integrity.
+Current main HEAD: `8d0082d004993278645f3eb7a72c43a8cdc14e59` (PR #267 merged).
 
-Latest relevant merged PR evidence:
-- PR #251: bounded interprocedural S10-N2 analyzer; exact head `d6041db2033b1950cdf006b900ef5cd8f2d95eba`, merge `fc3dcd948a2410887c23ff8c29913c6c5d92604a`; CI 10/10, Security 3/3.
-- PR #255: invite redemption UID pseudonymization; exact head `af8f676c6bdbeb125eb46c01e4aa2b56af30c4f0`, merge `89ac44cf85df1c90530196fdbb01bf93ff2e8994`; CI 10/10, Security 3/3.
-- PR #256: range-aware per-holder Worker accounting for valid single-range GET; merge `98f76cdf374eeaf5c8144befad068ef05805a20b`; the latest main CI/security runs above passed.
-- PR #257: documentation-only S05-H2 privacy closeout; merged `7e42005e294a45db4e6ca06c7e4bb100a4a4be72`.
+PR #267 exact-head verification:
+- CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887): passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests, release-log AST, Gradle wrapper and vendored-libsignal integrity.
+- Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988): passed CodeQL, Gitleaks and SBOM.
+- Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886): passed.
+- Firestore Rules/server transaction integration [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962): passed, 200 Rules tests and 6 server transaction tests.
 
-The canonical tracker now restores the previously omitted Session 06 findings S06-H4 and S06-H5. Current reconciled count: **116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 is Fixed on current source; S06-H5 remains Partial because the Settings-based candidate oracle remains distinguishable.
+Post-merge main workflows:
+- Security [42445582762](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582762): passed.
+- Firestore rules [42445582759](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582759): passed.
+- Firestore Rules Tests [42445582747](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582747): passed.
+- Main CI [42445582763](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582763): in progress when this addendum was prepared. Refresh it before claiming full post-merge CI completion.
 
-Do not copy historical workflow totals or treat PR-head checks from outdated merge bases as current-main verification. Always use the exact SHA and current check runs for each new PR.
+Latest PR #265 evidence (S06-H5): exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3`, merge `32175ccf86342a6c517459a0e2507f14c4d064e8`; CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed.
 
 ## 3. Remaining agentic/operator work — no physical-device acceptance yet
 
@@ -111,19 +109,17 @@ PRs #226/#227 provide the opaque invite lifecycle, production-shared HTTP handle
 
 A dry-run-first cleanup script at `server/scripts/pseudonymizeInviteRedemptionUids.js` is available for historical invite documents. It has not been run against any live project. An authorized operator must run `--dry-run` in the intended staging project, review aggregate counts, obtain approval before `--apply`, then repeat dry-run and require zero candidates.
 
-**Subsequent lifecycle hardening:** PR #253 adds explicit `status === "active"` and finite future-expiry requirements, plus an invalid-state admin filter/revocation path and regression coverage. It is open at head `231af6f3a499b60286d567a6628876abfb5d6d31`, currently dirty/non-mergeable against its older base, despite its original CI 10/10 and Security 3/3. Rebase and rerun before merging. PR #258 fixes escaped service-account PEM newlines in the dry-run migration utility; it remains open because Gitleaks flags the synthetic PEM-shaped test literal and one Firestore integration expiry test fails. Do not execute the migration until its code PR is validated and an authorized operator approves a staging dry-run.
+**Subsequent lifecycle hardening:** PR #261 merged explicit `status === "active"` and finite future-expiry requirements, plus invalid-state filtering and audited revoke support. PR #264 merged the missing admin UI revoke action for invalid invite records. The older PR #253 was closed unmerged and superseded; do not revive it. PR #258 was closed; any migration utility execution remains an authorized staging/operator task.
 
 **Remaining:** product owner confirmation that invite-only onboarding is intended; authorized staging create/list/search/paginate/revoke/expiry/validation and one-time redemption; synthetic Android new-user onboarding and existing-account restore after feature completion. Keep S05-H2 Partial until those gates pass.
 
 
-### J. S06-H4 / S06-H5 — restore missing Session 06 findings to the canonical register
+### J. S06-H4 / S06-H5 — Session 06 findings restored and re-verified
 
-The 2026-11-07 tracker reconciliation restored two high-severity IDs that were present in `audit/SESSION-06-DURESS.md` but absent from the row-level BUG_TRACKER:
-- **S06-H4 — Fixed:** `ManageUnlockCodesActivity.onConfirmExplain()` checks the boolean from `DuressManager.setDuressPin()`; failure now produces a generic retry message and does not finish the flow or claim success. `setDuressPin()` validates the common 4–6 digit supported range. The main Android CI is green. A focused UI regression for false/true outcomes is still a worthwhile coverage improvement.
-- **S06-H5 — Partial:** wrong-PIN attempts now have persisted exponential backoff, and primary-PIN changes reject an exact duress match or duress prefix. However, `SecurityPrivacySettingsActivity.doSavePin()` still distinguishes a collision from a successful change. A person who knows the current primary PIN can repeatedly rotate it through candidate values; successful changes do not consume the wrong-PIN counter. The Settings route remains an observable oracle. A non-oracular change flow plus throttling across successful changes and regression tests are still needed.
+- **S06-H4 — Fixed:** `ManageUnlockCodesActivity.onConfirmExplain()` checks the boolean from `DuressManager.setDuressPin()`; failure produces a generic retry message and does not finish the flow or claim success. The setter validates the supported 4–6 digit range. PR #263 added the focused source-wiring regression and was merged.
+- **S06-H5 — Partial:** PR #265 merged the non-oracular Settings PIN-change failure path and durable `PinChangeThrottle`. Every existing-PIN change attempt is recorded before candidate inspection or storage; successful and rejected candidates both consume the same UID-scoped budget (three attempts per 15-minute window), with wall-clock plus same-boot elapsed-time deadlines and fail-closed persistence. Collision, cooldown and storage failures share one generic rejection. `PinChangeThrottleTest` and `SecurityFindingWiringTest` cover the throttle and call-site wiring. PR #265 CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed; PR #267's full Android CI on the newer source also passed. **Residual:** rate limiting reduces candidate-probing bandwidth but does not prove all observability impossible; keep Partial for independent security review and feature-complete device acceptance.
 
-The tracker now has 116 enumerated findings and reconciles to 86 Fixed, 17 Partial, 1 Open and 12 Accepted. Do not drop either ID in future summaries.
-
+The tracker still contains 116 findings: 86 Fixed, 17 Partial, 1 Open and 12 Accepted. Do not drop either Session 06 ID in future summaries.
 
 ## 4. Physical-device acceptance — explicitly deferred
 
@@ -145,7 +141,7 @@ Do not mark these Fixed or Accepted based on JVM tests, emulator build success o
 These require authorized access and must not be performed as side effects of a code PR:
 - Revoke/rotate previously exposed Firebase/GCP, Worker, B2, admin/session and deployment credentials; record secret-manager/audit evidence without values.
 - Verify production Firestore rules revision, indexes, TTL policies, Admin SDK service-account scopes and enforcement state.
-- Review App Check monitoring; enable Firestore/Storage enforcement and rules-side request.app only after compatible client adoption is proven.
+- Review App Check monitoring; enable Firestore/Storage enforcement at the Firebase service layer only after compatible-client adoption and rollback readiness are proven. Do not add `request.app` or an App Check helper to Firestore Rules.
 - Verify Render-to-Worker Durable Object URL/secret pairing and Cloudflare secrets without exposing values.
 - Execute staging Firebase revoked-token, admin-session, invite and duress scenarios using authorized synthetic fixtures.
 - Configure and read back SC-12 branch protections: required approving reviews, CODEOWNERS/last-push policy, required CI/security checks, immutable release tags and protected production-release environment.
