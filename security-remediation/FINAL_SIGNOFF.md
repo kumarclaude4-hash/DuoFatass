@@ -1,8 +1,8 @@
 # FINAL SIGN-OFF
 
 > Status: **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF.**
-> Updated 2026-11-07 after the latest mainline reconciliation. The current evidence snapshot
-> is dated 2026-11-07; older dated evidence sections are historical. This document is the
+> Updated 2026-11-08 after the latest mainline reconciliation. Older dated evidence sections
+> are historical. This document is the
 > release/sign-off gate, not a progress claim.
 
 ## Current evidence snapshot — 2026-11-08
