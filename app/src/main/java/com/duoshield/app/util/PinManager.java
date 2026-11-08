@@ -3,6 +3,7 @@ package com.duoshield.app.util;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.SystemClock;
+import android.provider.Settings;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import java.security.SecureRandom;
@@ -261,7 +262,7 @@ public class PinManager {
             long elapsedRemaining = 0L;
             long untilElapsed = sp.getLong(scopedKey(KEY_FAIL_UNTIL_ELAPSED_PREFIX), 0L);
             if (untilElapsed > 0L
-                    && sp.getLong(scopedKey(KEY_FAIL_BOOT_ID_PREFIX), -1L) == bootId()) {
+                    && sp.getLong(scopedKey(KEY_FAIL_BOOT_ID_PREFIX), -1L) == bootId(ctx)) {
                 // Same boot session, so elapsedRealtime() is comparable to the stored value.
                 elapsedRemaining = Math.max(0L, untilElapsed - SystemClock.elapsedRealtime());
             }
@@ -275,8 +276,24 @@ public class PinManager {
      * from the approximate boot instant (now minus uptime), quantised to 10s to
      * absorb the small jitter between successive computations.
      */
-    private static long bootId() {
-        return (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 10_000L;
+    /**
+     * Stable identifier for the OS boot session. Unlike wall-clock-minus-uptime,
+     * BOOT_COUNT does not change when the user or network adjusts the wall clock.
+     *
+     * <p>BOOT_COUNT is readable by ordinary apps on this app's supported API
+     * range (26+). If the provider is temporarily unavailable, use a stable
+     * sentinel: elapsedRealtime then remains conservative across reboot because
+     * a reset clock cannot advance past an older persisted deadline early.
+     */
+    private static long bootId(Context ctx) {
+        try {
+            int count = Settings.Global.getInt(
+                    ctx.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+            if (count >= 0) return count;
+        } catch (RuntimeException ignored) {
+            // Fall through to the fail-closed sentinel.
+        }
+        return -1L;
     }
 
     /**
@@ -298,7 +315,7 @@ public class PinManager {
                     scopedKey(KEY_PIN_CHANGE_PREFIX),
                     System.currentTimeMillis(),
                     SystemClock.elapsedRealtime(),
-                    bootId());
+                    bootId(ctx));
         } catch (Exception ignored) {
             return false;
         }
@@ -334,7 +351,7 @@ public class PinManager {
                 ed.putLong(failUntilKey(ctx), System.currentTimeMillis() + backoff)
                   .putLong(scopedKey(KEY_FAIL_UNTIL_ELAPSED_PREFIX),
                           SystemClock.elapsedRealtime() + backoff)
-                  .putLong(scopedKey(KEY_FAIL_BOOT_ID_PREFIX), bootId());
+                  .putLong(scopedKey(KEY_FAIL_BOOT_ID_PREFIX), bootId(ctx));
             }
             ed.commit();
         } catch (Exception ignored) {}
