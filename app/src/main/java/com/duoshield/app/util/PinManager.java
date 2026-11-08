@@ -271,12 +271,6 @@ public class PinManager {
     }
 
     /**
-     * Identifies the current boot session, so a stored {@code elapsedRealtime()}
-     * deadline is only trusted when it was written during this same boot. Derived
-     * from the approximate boot instant (now minus uptime), quantised to 10s to
-     * absorb the small jitter between successive computations.
-     */
-    /**
      * Historical boot-session identifier used by the pre-existing wrong-PIN
      * backoff fields. Retained for compatibility with values already persisted
      * under that format; do not reuse for new security windows.
