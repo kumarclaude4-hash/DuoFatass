@@ -31,3 +31,19 @@ The native `StaticSecret` is zeroized on drop, but Java-side finalization is non
 ## Status
 
 Keep **S07-L2 Partial**. The supported native destruction/zeroization boundary is documented and no unsupported reflection or unsafe memory mutation is introduced. The remaining limitation is deterministic, synchronous destruction of every in-memory copy on wipe. Close only through an upstream-supported explicit destruction API or a recorded owner residual-risk decision; physical-device memory/remanence testing remains separate release QA.
+
+## Implementation addendum — PR #271 (2026-11-08)
+
+The source review found no public deterministic `close()`/`destroy()` API on the pinned 0.54.1 Java `ECPrivateKey` wrapper. No dependency upgrade, reflection, forced GC or JNI/native-memory workaround was introduced because the build uses an exact three-part Gradle dependency arrangement and a specially stripped client JAR for D8 compatibility.
+
+PR #271 (`efceb00bc7fac0361804f98cf84458e69a75c0c3`, merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`) adds bounded best-effort cleanup of **app-owned** memory:
+
+- `CachedDerivation` stores its own defensive copy of the seed fingerprint and zeros that copy when evicted.
+- `deriveIdentityKeyPair()` and `clearDerivationCache()` share the class monitor so cache eviction cannot overlap an executing derivation.
+- Derivation-local fingerprint, HKDF info label and serialized private-key input are zeroed in `finally` blocks.
+- HKDF clears its app-owned salt, PRK and intermediate output arrays and rejects null inputs / output lengths outside 0–32 bytes; byte-for-byte derivation output is unchanged.
+- Regressions cover cache defensive-copy/zeroization, shared-monitor serialization, HKDF output stability, caller-input preservation and output-length checks.
+
+Verification on exact PR head `efceb00bc7fac0361804f98cf84458e69a75c0c3`: CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed all 10 jobs (unit, lint, debug APK, R8, Espresso, API 35 predictive-back, Server + Worker, AST privacy guard, vendored libsignal integrity and Gradle wrapper integrity); Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed CodeQL, Gitleaks and SBOM.
+
+**Residual remains:** cache eviction does not synchronously destroy native key handles; other callers may retain `IdentityKeyPair` references, native handles can be cloned, Java crypto providers may retain internal copies, and a later derivation call can repopulate the cache. The application lifecycle must prevent new identity work after wipe. Native zeroization occurs when each native secret is actually dropped/finalized, not necessarily at wipe return. S07-L2 remains **Partial** pending a supported upstream destruction API or explicit owner residual-risk approval; physical memory/remanence testing is separate release QA.
