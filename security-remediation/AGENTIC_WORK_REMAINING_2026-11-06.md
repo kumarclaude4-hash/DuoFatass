@@ -1,8 +1,8 @@
 # Agentic Work Remaining — current handoff, 2026-11-08
 
-Repository: \`kumarclaude4-hash/DuoFatass\`
-Base branch: \`main\`
-Current main HEAD: \`32175ccf86342a6c517459a0e2507f14c4d064e8\`.
+Repository: `kumarclaude4-hash/DuoFatass`
+Base branch: `main`
+Current main HEAD: `32175ccf86342a6c517459a0e2507f14c4d064e8`.
 
 ## Current closeout
 
@@ -15,9 +15,9 @@ All source-level PRs identified in the 2026-11-07 handoff are now integrated. Th
 - PR #256 had already superseded the older PR #254 range-read allowance.
 - PRs #253/#258 were closed as superseded by #261/#260.
 
-PR #265 exact head \`ed8e47550763cf7766acb0f6ef3d53dc15039df3\` passed CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048), including Android unit/lint, Espresso, API 35 predictive-back, debug APK, minified R8/mapping, Server/Worker, CodeQL, Gitleaks, SBOM, AST privacy and dependency integrity. It merged as \`32175ccf86342a6c517459a0e2507f14c4d064e8\`. Post-merge main workflows [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) (CI) and [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) were queued at the time this handoff was refreshed; recheck them before release.
+PR #265 exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3` passed CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048), including Android unit/lint, Espresso, API 35 predictive-back, debug APK, minified R8/mapping, Server/Worker, CodeQL, Gitleaks, SBOM, AST privacy and dependency integrity. It merged as `32175ccf86342a6c517459a0e2507f14c4d064e8`. Post-merge main workflows [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) (CI) and [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) were queued at the time this handoff was refreshed; recheck them before release.
 
-The canonical tracker remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial because rate limiting and a generic failure response reduce but do not prove elimination of every success/failure observation. S05-H2 remains Partial pending owner and staging acceptance. \`security-remediation/FINAL_SIGNOFF.md\` remains **PENDING**.
+The canonical tracker remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial because rate limiting and a generic failure response reduce but do not prove elimination of every success/failure observation. S05-H2 remains Partial pending owner and staging acceptance. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**.
 
 The numbered Round 3 schedule is complete at S3-20. Do not invent S3-21 or reopen a fourth audit round. The physical-device matrix remains deferred until the owner declares the app feature-complete.
 
@@ -29,7 +29,7 @@ There is no unmerged source-code PR waiting for agent implementation. Remaining 
 3. **Repository governance:** SC-12 requires effective review/check enforcement, protected version tags and production-release environment read-back. Current ruleset has zero required approving reviews and no required status checks; keep SC-12 Open.
 4. **Feature-complete physical-device acceptance:** keep deferred per owner instruction; automated emulator CI remains required and has passed the current source batch.
 
-Follow \`security-remediation/NEXT_WORK_REPORT_2026-11-07.md\`, \`COMPREHENSIVE_REMAINING_SECURITY_REVIEW_2026-11-07.md\` and \`BUG_TRACKER.md\` as current. The dated sections lower in this file are retained as historical investigation/runbook evidence; do not follow stale PR lists or old baseline SHAs from them.
+Follow `security-remediation/NEXT_WORK_REPORT_2026-11-07.md`, `COMPREHENSIVE_REMAINING_SECURITY_REVIEW_2026-11-07.md` and `BUG_TRACKER.md` as current. The dated sections lower in this file are retained as historical investigation/runbook evidence; do not follow stale PR lists or old baseline SHAs from them.
 
 ---
 
@@ -47,13 +47,13 @@ Follow \`security-remediation/NEXT_WORK_REPORT_2026-11-07.md\`, \`COMPREHENSIVE_
 
 ## 2. Verified baseline — 2026-11-08
 
-Current main HEAD: \`32175ccf86342a6c517459a0e2507f14c4d064e8\`.
-PR #265 exact-head CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed all jobs on \`ed8e47550763cf7766acb0f6ef3d53dc15039df3\`; that head is merged as current main. The CI included Server/Worker tests, Android unit/lint, debug APK, Espresso, API 35 predictive-back, R8/mapping, AST privacy, wrapper/libsignal integrity and Worker build. Security included CodeQL, Gitleaks and SBOM.
+Current main HEAD: `32175ccf86342a6c517459a0e2507f14c4d064e8`.
+PR #265 exact-head CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed all jobs on `ed8e47550763cf7766acb0f6ef3d53dc15039df3`; that head is merged as current main. The CI included Server/Worker tests, Android unit/lint, debug APK, Espresso, API 35 predictive-back, R8/mapping, AST privacy, wrapper/libsignal integrity and Worker build. Security included CodeQL, Gitleaks and SBOM.
 Post-merge main workflows 42440446625 (CI) and 42440446649 (Security Scan) were queued at the time of this snapshot. Recheck before release.
 
 Recent merged PR evidence:
-- #251 — bounded interprocedural S10-N2 analyzer, merge \`fc3dcd948a2410887c23ff8c29913c6c5d92604a\`.
-- #255 — invite redemption UID pseudonymization, merge \`89ac44cf85df1c90530196fdbb01bf93ff2e8994\`.
+- #251 — bounded interprocedural S10-N2 analyzer, merge `fc3dcd948a2410887c23ff8c29913c6c5d92604a`.
+- #255 — invite redemption UID pseudonymization, merge `89ac44cf85df1c90530196fdbb01bf93ff2e8994`.
 - #256 — range-aware per-holder Worker accounting for valid single-range GET.
 - #257 — S05-H2 privacy documentation.
 - #260 — Firebase credential newline normalization; CI/Firestore/Security all passed.
@@ -128,8 +128,8 @@ The old PR #253 and #258 branches are closed as superseded by #261 and #260. All
 
 ### J. S06-H4 / S06-H5 — duress PIN arming and Settings candidate probing
 
-- **S06-H4 — Fixed:** \`ManageUnlockCodesActivity.onConfirmExplain()\` checks the boolean result of \`DuressManager.setDuressPin()\`; a failed secure write produces a generic retry message and returns before the success toast or finish. Only success produces “Code saved.” and exits. PR #263 adds a source-wiring regression for the false path; exact-head Android CI and Security passed.
-- **S06-H5 — Partial, mitigation merged in PR #265:** the Settings PIN-change flow records a persisted UID-scoped attempt before checking or writing the proposed PIN. Three attempts are permitted per fixed 15-minute window; the third starts a 15-minute cooldown. Successful and rejected candidates consume the same allowance. The throttle uses Android \`Settings.Global.BOOT_COUNT\`, same-boot elapsed-time anchors, an elapsed-reset fallback when BOOT_COUNT is unavailable, and fails closed on preference read/write errors. Collision, cooldown and storage failures share one generic response; the collision-specific message is removed. PR #265 merged at \`32175ccf86342a6c517459a0e2507f14c4d064e8\`; exact-head CI and Security passed (runs 42440025067 and 42440025048).
+- **S06-H4 — Fixed:** `ManageUnlockCodesActivity.onConfirmExplain()` checks the boolean result of `DuressManager.setDuressPin()`; a failed secure write produces a generic retry message and returns before the success toast or finish. Only success produces “Code saved.” and exits. PR #263 adds a source-wiring regression for the false path; exact-head Android CI and Security passed.
+- **S06-H5 — Partial, mitigation merged in PR #265:** the Settings PIN-change flow records a persisted UID-scoped attempt before checking or writing the proposed PIN. Three attempts are permitted per fixed 15-minute window; the third starts a 15-minute cooldown. Successful and rejected candidates consume the same allowance. The throttle uses Android `Settings.Global.BOOT_COUNT`, same-boot elapsed-time anchors, an elapsed-reset fallback when BOOT_COUNT is unavailable, and fails closed on preference read/write errors. Collision, cooldown and storage failures share one generic response; the collision-specific message is removed. PR #265 merged at `32175ccf86342a6c517459a0e2507f14c4d064e8`; exact-head CI and Security passed (runs 42440025067 and 42440025048).
 
 Keep S06-H5 Partial: the throttle bounds candidate probing and hides the collision-specific message but does not prove every success/failure observation indistinguishable; it is local protection rather than server-side throttling. Independent security review and later feature-complete physical-device acceptance remain.
 
