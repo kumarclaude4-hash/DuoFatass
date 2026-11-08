@@ -208,15 +208,12 @@ public class SeedPhraseHelperTest {
 
     // ── derivationCache lifecycle (S07-L2 regression coverage) ───────────────
     //
-    // deriveIdentityKeyPair() caches the derived IdentityKeyPair (private key
-    // material) in a static field. clearDerivationCache() is called from every
-    // WipeHelper.eraseLocalData() path (voluntary wipe, unpair, duress) so that
-    // key material does not stay resident in the JVM heap after a wipe.
-    // deriveIdentityKeyPair() itself needs libsignal's native Curve25519 code
-    // and cannot run in a plain JVM unit test (see class javadoc), so this
-    // proves the cache-clearing contract at the level this test file CAN
-    // exercise: the backing field is actually nulled out, via reflection —
-    // not just that the public method returns without throwing.
+    // deriveIdentityKeyPair() caches an IdentityKeyPair containing private-key
+    // material. clearDerivationCache() is called from every WipeHelper wipe path.
+    // The cache reference and its app-owned fingerprint copy are released/zeroed;
+    // this does NOT synchronously destroy libsignal's native key or other copies.
+    // Derivation itself needs libsignal's native Curve25519 code and cannot run in
+    // a plain JVM test, so these tests cover only cache ownership/eviction behavior.
 
     @Test
     public void clearDerivationCache_dropsEntryAndZeroesItsFingerprintCopy() throws Exception {
@@ -270,16 +267,34 @@ public class SeedPhraseHelperTest {
     }
 
     @Test
+    public void identityDerivationAndCacheClearShareTheClassMonitor() throws Exception {
+        java.lang.reflect.Method derive = SeedPhraseHelper.class.getDeclaredMethod(
+                "deriveIdentityKeyPair", byte[].class);
+        java.lang.reflect.Method clear = SeedPhraseHelper.class.getDeclaredMethod(
+                "clearDerivationCache");
+        assertTrue("identity derivation must serialize with cache eviction",
+                java.lang.reflect.Modifier.isSynchronized(derive.getModifiers()));
+        assertTrue("cache eviction must serialize with identity derivation",
+                java.lang.reflect.Modifier.isSynchronized(clear.getModifiers()));
+    }
+
+    @Test
     public void hkdfSha256_preservesOutputAndRejectsInvalidLengths() throws Exception {
         byte[] ikm = new byte[32];
         for (int i = 0; i < ikm.length; i++) ikm[i] = (byte) i;
         byte[] info = "DuoShield HKDF cleanup test".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] expectedIkm = ikm.clone();
+        byte[] expectedInfo = info.clone();
         byte[] expected = hexToBytes(
                 "268ba483b84a2cf92922eaa1e036d8d9fcd78328b05258e36c767eb4b5433df8");
 
         try {
             assertArrayEquals("HKDF output must remain byte-for-byte stable",
                     expected, SeedPhraseHelper.hkdfSha256(ikm, info, 32));
+            assertArrayEquals("HKDF must not modify caller-owned input key material",
+                    expectedIkm, ikm);
+            assertArrayEquals("HKDF must not modify caller-owned context info",
+                    expectedInfo, info);
             assertEquals("zero-length HKDF output is supported", 0,
                     SeedPhraseHelper.hkdfSha256(ikm, info, 0).length);
             try {
@@ -297,6 +312,8 @@ public class SeedPhraseHelperTest {
         } finally {
             Arrays.fill(ikm, (byte) 0);
             Arrays.fill(info, (byte) 0);
+            Arrays.fill(expectedIkm, (byte) 0);
+            Arrays.fill(expectedInfo, (byte) 0);
             Arrays.fill(expected, (byte) 0);
         }
     }
