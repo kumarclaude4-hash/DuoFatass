@@ -9,14 +9,15 @@ import android.content.SharedPreferences;
  * the hidden secondary code or attempts to persist the replacement. Successful
  * changes and rejected candidates therefore consume the same allowance.
  *
- * <p>Three attempts are permitted in a 15-minute window. The cooldown uses
- * both wall-clock and elapsed-realtime deadlines, taking the longer remainder
- * while the device remains in the same boot session. A wall-clock rollback
- * during that session cannot shorten the active cooldown.
+ * <p>Three attempts are permitted in a fixed 15-minute window beginning with
+ * the first attempt. Reaching the limit starts a further 15-minute cooldown.
+ * Both windows use wall-clock and same-boot elapsed-realtime anchors; a
+ * wall-clock rollback during the same boot cannot shorten either window.
  */
 final class PinChangeThrottle {
 
     static final int MAX_ATTEMPTS = 3;
+    static final long WINDOW_MS = 15 * 60_000L;
     static final long COOLDOWN_MS = 15 * 60_000L;
 
     private PinChangeThrottle() {}
@@ -38,13 +39,29 @@ final class PinChangeThrottle {
             }
 
             int attempts = Math.max(0, preferences.getInt(key(scope, "count"), 0));
-            // The previous three-attempt window has fully expired. Begin a
-            // fresh window rather than carrying an old count forward forever.
-            if (attempts >= MAX_ATTEMPTS) attempts = 0;
-            attempts++;
+            long windowWall = preferences.getLong(key(scope, "window_wall"), 0L);
+            long windowElapsed = preferences.getLong(key(scope, "window_elapsed"), 0L);
+            long windowBootId = preferences.getLong(key(scope, "window_boot_id"), Long.MIN_VALUE);
 
-            SharedPreferences.Editor editor = preferences.edit()
-                    .putInt(key(scope, "count"), attempts);
+            if (attempts > 0 && windowExpired(
+                    windowWall, windowElapsed, windowBootId, wallNow, elapsedNow, bootId)) {
+                attempts = 0;
+            }
+
+            SharedPreferences.Editor editor = preferences.edit();
+            if (attempts == 0) {
+                // Start a fresh fixed window. A successful or rejected change
+                // consumes this slot because this method runs before inspection.
+                windowWall = wallNow;
+                windowElapsed = elapsedNow;
+                windowBootId = bootId;
+                editor.putLong(key(scope, "window_wall"), windowWall)
+                        .putLong(key(scope, "window_elapsed"), windowElapsed)
+                        .putLong(key(scope, "window_boot_id"), windowBootId);
+            }
+
+            attempts++;
+            editor.putInt(key(scope, "count"), attempts);
             if (attempts >= MAX_ATTEMPTS) {
                 editor.putLong(key(scope, "until_wall"), saturatedAdd(wallNow, COOLDOWN_MS))
                         .putLong(key(scope, "until_elapsed"), saturatedAdd(elapsedNow, COOLDOWN_MS))
@@ -61,6 +78,27 @@ final class PinChangeThrottle {
         } catch (RuntimeException ignored) {
             return false;
         }
+    }
+
+    private static boolean windowExpired(
+            long startWall,
+            long startElapsed,
+            long storedBootId,
+            long wallNow,
+            long elapsedNow,
+            long bootId) {
+        if (storedBootId == bootId) {
+            // Within the same boot, elapsed time is authoritative. If it moves
+            // backwards or the anchor is malformed, fail closed and retain the
+            // old window rather than trusting a user-adjustable wall clock.
+            return startElapsed > 0L && elapsedNow >= startElapsed
+                    && elapsedNow - startElapsed >= WINDOW_MS;
+        }
+
+        // Across boots elapsedRealtime resets, so use wall time. A wall-clock
+        // rollback leaves the old window in force rather than granting attempts.
+        return startWall > 0L && wallNow >= startWall
+                && wallNow - startWall >= WINDOW_MS;
     }
 
     static synchronized long remainingMs(
@@ -80,8 +118,9 @@ final class PinChangeThrottle {
             long elapsedRemaining = 0L;
             long elapsedDeadline = preferences.getLong(key(scope, "until_elapsed"), 0L);
             long storedBootId = preferences.getLong(key(scope, "boot_id"), Long.MIN_VALUE);
-            if (elapsedDeadline > 0L && storedBootId == bootId) {
-                elapsedRemaining = Math.max(0L, elapsedDeadline - elapsedNow);
+            if (elapsedDeadline > 0L && storedBootId == bootId
+                    && elapsedNow >= 0L && elapsedDeadline > elapsedNow) {
+                elapsedRemaining = elapsedDeadline - elapsedNow;
             }
             return Math.max(wallRemaining, elapsedRemaining);
         } catch (RuntimeException ignored) {
