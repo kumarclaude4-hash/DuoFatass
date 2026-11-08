@@ -14,7 +14,7 @@ As of 2026-11-08, current main is `32175ccf86342a6c517459a0e2507f14c4d064e8`. PR
 
 PR #265's exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3` passed CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048), including Android unit tests/lint, debug/R8 builds, Espresso, API 35 predictive-back, Server/Worker, CodeQL, Gitleaks and SBOM. Post-merge main CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) and Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) both passed on exact main HEAD `32175ccf86342a6c517459a0e2507f14c4d064e8`. All 10 CI jobs passed, including Espresso and API 35 predictive-back.
 
-The canonical `../BUG_TRACKER.md` contains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial after the merged PIN-change throttle because the mitigation bounds candidate probing but does not prove every success/failure observation indistinguishable. S05-H2 remains Partial pending invite-only product-contract confirmation, authorized legacy UID cleanup and isolated staging onboarding.
+The canonical `../BUG_TRACKER.md` contains **118 register rows: 87 Fixed, 18 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial after the merged PIN-change throttle because the mitigation bounds candidate probing but does not prove every success/failure observation indistinguishable. S05-H2 remains Partial pending invite-only product-contract confirmation, authorized legacy UID cleanup and isolated staging onboarding.
 
 `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF** until residual-risk decisions, staging/operator configuration and testing, credential rotation, governance controls and deferred physical-device acceptance are evidenced or formally approved.
 
@@ -28,7 +28,7 @@ PR #265: merged; exact-head CI and Security Scan passed.
 OPEN PULL REQUESTS: none.
 MERGED THIS CLOSEOUT: #260 Firebase migration credential normalization; #261 invite-state fail-closed; #263 S06-H4 arming regression; #264 invalid invite revoke UI; #265 S06-H5 PIN-change attempt throttle.
 SUPERSEDED BRANCHES: #253 -> #261; #258 -> #260; #254 -> #256.
-TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted.
+TRACKER: 118 register rows — 87 Fixed, 18 Partial, 1 Open, 12 Accepted.
 NEXT: operator/staging owner acceptance, residual-risk decisions and release governance; see NEXT_WORK_REPORT_2026-11-07.md and COMPREHENSIVE_REMAINING_SECURITY_REVIEW_2026-11-07.md.
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
