@@ -144,6 +144,91 @@ describe('/users/{uid}', () => {
   });
 });
 
+describe('/users/{uid}/devices/{deviceId}', () => {
+  const devicePath = 'users/alice/devices/device-1';
+
+  function validRegistration() {
+    return {
+      fcmToken: 'synthetic-fcm-token',
+      platform: 'android',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+  }
+
+  test('owner can create and read their own device registration without Rules-level App Check metadata', async () => {
+    await assertSucceeds(
+      asUser('alice').doc(devicePath).set(validRegistration())
+    );
+    await assertSucceeds(asUser('alice').doc(devicePath).get());
+  });
+
+  test('owner can update an allowed device registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertSucceeds(
+      asUser('alice').doc(devicePath).update({
+        fcmToken: 'rotated-synthetic-token',
+        updatedAt: 3,
+      })
+    );
+  });
+
+  test('owner can delete their own device registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertSucceeds(asUser('alice').doc(devicePath).delete());
+  });
+
+  test('another user cannot read, create or delete the registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertFails(asUser('bob').doc(devicePath).get());
+    await assertFails(
+      asUser('bob').doc(devicePath).set(validRegistration())
+    );
+    await assertFails(asUser('bob').doc(devicePath).delete());
+  });
+
+  test('unauthenticated callers cannot read or create the registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertFails(asAnon().doc(devicePath).get());
+    await assertFails(
+      asAnon().doc(devicePath).set(validRegistration())
+    );
+  });
+
+  test('owner cannot add fields outside the device-registration allow-list', async () => {
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        secret: 'must-not-be-stored',
+      })
+    );
+  });
+
+  test('owner cannot write an oversized FCM token', async () => {
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        fcmToken: 'x'.repeat(4097),
+      })
+    );
+  });
+
+  test('owner cannot write a non-string FCM token or platform', async () => {
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        fcmToken: { token: 'invalid' },
+      })
+    );
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        platform: { name: 'android' },
+      })
+    );
+  });
+});
+
 describe('/users/{uid}/public_keys/{doc}', () => {
   beforeEach(async () => {
     await seed('users/alice/public_keys/bundle', {
