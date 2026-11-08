@@ -305,7 +305,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message");
             requireViolation(interproceduralResult.violations,
-                    "helper-return:fetch");
+                    "HelperFlow.java:22: method-local sensitive alias/container reaches Log.w message");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
