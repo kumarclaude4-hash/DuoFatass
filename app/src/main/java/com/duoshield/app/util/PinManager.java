@@ -217,6 +217,7 @@ public class PinManager {
     private static final String KEY_FAIL_HIGH_PREFIX      = "pin_fail_high_";
     private static final String KEY_FAIL_UNTIL_ELAPSED_PREFIX = "pin_fail_until_elapsed_";
     private static final String KEY_FAIL_BOOT_ID_PREFIX   = "pin_fail_boot_id_";
+    private static final String KEY_PIN_CHANGE_PREFIX     = "pin_change_";
     private static final int    LOCKOUT_THRESHOLD         = 5;
     private static final long   LOCKOUT_BASE_MS           = 2_000L;
     private static final long   LOCKOUT_MAX_MS            = 5 * 60_000L;
@@ -276,6 +277,31 @@ public class PinManager {
      */
     private static long bootId() {
         return (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 10_000L;
+    }
+
+    /**
+     * Atomically records a primary-PIN change attempt for the current account.
+     *
+     * <p>Settings calls this before checking whether the proposed primary PIN
+     * collides with the hidden secondary code and before attempting the write.
+     * Therefore accepted and rejected candidates consume the same allowance.
+     * The helper persists its counter and wall/elapsed deadlines in SecurePrefs;
+     * failure to persist is fail-closed.
+     *
+     * @return true when the attempt was recorded and may proceed, false while
+     *         the account is cooling down or when durable storage failed.
+     */
+    public static boolean tryRecordPinChangeAttempt(Context ctx) {
+        try {
+            return PinChangeThrottle.tryRecord(
+                    SecurePrefs.get(ctx),
+                    scopedKey(KEY_PIN_CHANGE_PREFIX),
+                    System.currentTimeMillis(),
+                    SystemClock.elapsedRealtime(),
+                    bootId());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     /**
