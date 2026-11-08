@@ -1,34 +1,30 @@
 # FINAL SIGN-OFF
 
 > Status: **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF.**
-> Updated 2026-11-07 after the latest mainline reconciliation. The current evidence snapshot
-> is dated 2026-11-07; older dated evidence sections are historical. This document is the
-> release/sign-off gate, not a progress claim.
+> Updated 2026-11-08 after PR #267. The current evidence snapshot is dated 2026-11-08; older dated sections below are historical. This document is the release/sign-off gate, not a progress claim.
 
-## Current evidence snapshot — 2026-11-07
+## Current evidence snapshot — 2026-11-08
 
-The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its current row-level roll-up is
-**116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27;
-Low 31; Informational 23). The two previously omitted Session 06 high-severity rows S06-H4
-(Fixed) and S06-H5 (Partial) have been restored. S06-H5 remains Partial because the
-Settings-based PIN-change candidate oracle is still observable.
+The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed. S06-H5 remains Partial: PR #265 added a UID-scoped successful/failed attempt throttle and unified rejection response, but bounded probing is not proof that every side channel is impossible.
 
-Current `main`: `98f76cdf374eeaf5c8144befad068ef05805a20b`.
-- Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365): passed.
-- Main Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135): passed.
+Current `main`: `8d0082d004993278645f3eb7a72c43a8cdc14e59`.
+- PR #267 exact-head CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887): passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests, release-log AST and dependency integrity.
+- PR #267 Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988): passed CodeQL, Gitleaks and SBOM.
+- PR #267 Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886): passed.
+- PR #267 Firestore Rules/server transaction integration [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962): passed; log reported 200 Rules tests and 6 server transaction tests.
+- Post-merge main Security [42445582762](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582762), Firestore rules [42445582759](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582759) and Firestore Rules Tests [42445582747](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582747): passed.
+- Post-merge main CI [42445582763](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582763): in progress when this snapshot was prepared. Refresh it before recording a full mainline CI pass.
 
 Recent merged work:
-- PR #251 — bounded interprocedural release-log taint summaries; S10-N2 remains Partial for syntax-only analysis limits and deferred physical release-logcat acceptance.
-- PR #255 — invite redemption UID pseudonymization and dry-run-first cleanup utility; no Firestore migration was run.
-- PR #256 — range-aware per-holder request accounting for valid single-range media GETs; global daily request/mutation guards remain unchanged.
-- PR #257 — documentation reconciliation for the S05-H2 privacy correction.
+- PR #261 — explicit active-state/future-expiry fail-closed checks and audited invalid invite-state revocation (S05-H2).
+- PR #264 — invalid invite rows expose an audited revoke action (S05-H2).
+- PR #265 — generic PIN-change failure response and durable attempt throttle (S06-H5); CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed.
+- PR #267 — correct Firebase App Check enforcement boundary (S10-N1); merged as current main. Firestore Rules no longer reference unsupported `request.app` or `appCheckVerified()`; emulator tests load the committed rules verbatim. Actual App Check enforcement remains a Firebase service-layer operator/staging gate.
+- PR #266 was intentionally closed unmerged; its documentation changes are not part of main.
 
-Open code PRs at the current snapshot:
-- #253: invite lifecycle invalid-state guard; its original CI 10/10, Security 3/3 and Firestore tests passed, but GitHub reports dirty/non-mergeable against an older base. Rebase and rerun.
-- #254: range-read Worker allowance; its original CI 10/10 and Security 3/3 passed, but GitHub reports dirty/non-mergeable against an older base. Rebase and rerun.
-- #258: migration utility credential-newline normalization; regular CI passed, but Gitleaks flagged a synthetic PEM-shaped test fixture and the Firestore integration run failed one invite-expiry test at the exact one-hour boundary. Fix both and rerun.
+There are no open code PRs at this snapshot. Historical PRs #253/#254/#258 were closed; the invite lifecycle scope from #253 was superseded by merged #261, and the range-read allowance from #254 was superseded by merged #256. Do not reopen old branches without fresh source review.
 
-This evidence snapshot is not production sign-off. No live production deployment, credential rotation, provider-console read-back, legacy Firestore migration or physical-device acceptance is claimed here.
+This evidence snapshot is not production sign-off. No live production deployment, credential rotation, Firebase Console enforcement change, provider-console read-back, historical Firestore UID migration, isolated live R2/B2 cron acceptance or physical-device acceptance is claimed here.
 
 
 ## Historical evidence snapshot — 2026-11-04
@@ -100,12 +96,12 @@ emulator-backed Espresso job all passed. This closes the previously documented A
 ## Why this remains PENDING
 
 The remediation has materially advanced: all 20 scheduled Round 3 sessions have been worked through
-at source/documentation level, the S3-15b Firestore Rules catch-up passed, the security PR batch is
-merged, PR #200's Espresso job passed, and post-merge CI plus security scanning are green. That is
-not the same as end-to-end assurance. S3-19b is now verified on main CI. S02-I3 still needs live Firebase revoked-token integration
-verification; S02-I2 needs confirmation that Render/Worker shared credentials are set correctly;
-SC-12 branch protection still needs authorized verification; credentials must be rotated;
-App Check/Firestore settings and coordinated production release need live evidence.
+at source/documentation level, Firestore Rules and Android CI emulator/build gates have passed on
+recent PR heads, and PR #267 corrected the App Check Rules defect. That is not end-to-end assurance.
+S02-I3 still needs live Firebase revoked-token integration verification; S02-I2 needs authorized
+Render/Worker Durable Object pairing read-back; SC-12 branch protection still needs authorized
+verification; credentials must be rotated; App Check service enforcement and coordinated production
+release need live evidence. Main post-merge CI run 42445582763 must also be refreshed to completion.
 
 Do not change this status to COMPLETE based solely on merged PRs or CI. Sign only after every
 unchecked criterion above is either satisfied with evidence or formally deferred with an explicit,
