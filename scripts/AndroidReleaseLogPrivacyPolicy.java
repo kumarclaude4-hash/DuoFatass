@@ -36,6 +36,7 @@ import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import javax.lang.model.element.Modifier;
 
 /**
  * Compiler-AST policy guard for Android release-surviving warning/error logs.
@@ -49,7 +50,7 @@ import javax.tools.ToolProvider;
  * sensitive getters unless the value is passed through LogRedact.
  *
  * This includes a conservative method-local alias pass plus bounded summaries for
- * uniquely resolvable app-owned helper returns, same-class field writes/reads and typed cross-class field writes/reads.
+ * uniquely resolvable app-owned helper returns, same-class and typed cross-class field writes/reads, and conservative known-override handling.
  * It is still syntax-only, not symbol-resolved whole-program analysis: ambiguous
  * overloads, unresolved virtual dispatch, reflection and third-party internals are
  * not guessed. Keep the finding Partial until residual source review and runtime
@@ -289,6 +290,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "}\n"
                   + "class CrossClassHolder { String memo; void setMemo(String value) { this.memo = value; } }\n"
                   + "class CrossClassFlow { void storeAndLog(Profile profile) { CrossClassHolder holder = new CrossClassHolder(); holder.setMemo(profile.getUserId()); Log.w(\"TAG\", holder.memo); } }\n"
+                  + "class SafeBaseSource { String fetch(Profile profile) { return \"safe\"; } }\n"
+                  + "class SensitiveDerivedSource extends SafeBaseSource { @Override String fetch(Profile profile) { return profile.getUserId(); } }\n"
+                  + "class VirtualDispatchFlow { void log(Profile profile) { SafeBaseSource source = new SensitiveDerivedSource(); String value = source.fetch(profile); Log.w(\"TAG\", value); } }\n"
                   + "abstract class UnknownProfileSource { abstract String fetch(); }\n"
                   + "class SecurityTier { boolean isDurable() { return true; } }\n"
                   + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
@@ -297,10 +301,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 11
-                    || interproceduralResult.violations.size() != 8) {
+            if (interproceduralResult.inspectedCalls != 12
+                    || interproceduralResult.violations.size() != 9) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "8 unsafe helper flows and 3 safe helper flows, got "
+                        + "9 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -309,6 +313,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(interproceduralResult.violations,
                     "HelperFlow.java:22: method-local sensitive alias/container reaches Log.w message");
             requireViolation(interproceduralResult.violations, "field:memo");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [value]");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -409,6 +415,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         String owner = node.getSimpleName().toString();
                         if (!owner.isEmpty()) {
                             ClassSummary info = new ClassSummary(owner);
+                            info.isFinal = node.getModifiers().getFlags().contains(Modifier.FINAL);
+                            if (node.getExtendsClause() != null) {
+                                info.superTypes.add(simpleTypeName(node.getExtendsClause().toString()));
+                            }
+                            for (com.sun.source.tree.Tree implemented : node.getImplementsClause()) {
+                                info.superTypes.add(simpleTypeName(implemented.toString()));
+                            }
                             Map<String, List<MethodTree>> candidates = new HashMap<>();
                             for (com.sun.source.tree.Tree member : node.getMembers()) {
                                 if (member instanceof MethodTree) {
@@ -457,6 +470,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 }.scan(unit, null);
             }
 
+            // A call through a base/interface declaration may dispatch to any
+            // app-owned override. If a known subtype redeclares that virtual
+            // signature, the base method's local body is not enough to prove the
+            // runtime return safe. Mark the base summary unknown so every caller
+            // that resolves only the declared type fails closed.
+            index.markOverriddenVirtualReturnsUnknown();
+
             boolean converged = false;
             int rounds = Math.min(MAX_FIXED_POINT_ROUNDS,
                     Math.max(1, index.summaries.size() + 1));
@@ -492,6 +512,62 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 }
             }
             return index;
+        }
+
+        private void markOverriddenVirtualReturnsUnknown() {
+            for (ClassSummary base : classes.values()) {
+                if (ambiguousClasses.contains(base.owner) || base.isFinal) continue;
+                for (Map.Entry<String, MethodDefinition> entry : base.methods.entrySet()) {
+                    MethodDefinition baseMethod = entry.getValue();
+                    if (!isOverridable(baseMethod)) continue;
+
+                    for (ClassSummary candidate : classes.values()) {
+                        if (candidate.owner.equals(base.owner)) continue;
+                        if (!isSubtypeOf(candidate.owner, base.owner, new HashSet<>())) continue;
+                        if (candidate.ambiguousMethods.contains(entry.getKey())) {
+                            MethodSummary summary = summaries.get(baseMethod.key);
+                            if (summary != null) summary.unknownReturn = true;
+                            break;
+                        }
+                        MethodDefinition override = candidate.methods.get(entry.getKey());
+                        if (override != null && isInstanceMethod(override)) {
+                            MethodSummary summary = summaries.get(baseMethod.key);
+                            if (summary != null) summary.unknownReturn = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        private boolean isSubtypeOf(String candidate, String expectedBase, Set<String> visited) {
+            if (!visited.add(candidate)) return false;
+            ClassSummary info = classes.get(candidate);
+            if (info == null) return false;
+            for (String superType : info.superTypes) {
+                if (expectedBase.equals(superType) || isSubtypeOf(superType, expectedBase, visited)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static boolean isOverridable(MethodDefinition definition) {
+            Set<Modifier> flags = definition.method.getModifiers().getFlags();
+            return !flags.contains(Modifier.STATIC)
+                    && !flags.contains(Modifier.PRIVATE)
+                    && !flags.contains(Modifier.FINAL);
+        }
+
+        private static boolean isInstanceMethod(MethodDefinition definition) {
+            Set<Modifier> flags = definition.method.getModifiers().getFlags();
+            return !flags.contains(Modifier.STATIC) && !flags.contains(Modifier.PRIVATE);
+        }
+
+        private static String simpleTypeName(String type) {
+            String normalized = type.replaceAll("<.*>", "").replace("[]", "").trim();
+            int dot = normalized.lastIndexOf('.');
+            return dot >= 0 ? normalized.substring(dot + 1) : normalized;
         }
 
         private static Map<String, MethodSummary> copySummaries(Map<String, MethodSummary> source) {
@@ -645,6 +721,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
 
         private static final class ClassSummary {
             final String owner;
+            final Set<String> superTypes = new HashSet<>();
+            boolean isFinal;
             final Set<String> fieldNames = new HashSet<>();
             final Set<String> sensitiveFields = new HashSet<>();
             final Set<String> ambiguousMethods = new HashSet<>();
