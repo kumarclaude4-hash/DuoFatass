@@ -167,31 +167,27 @@ public class SecurityPrivacySettingsActivity extends BaseActivity {
         tvPinStatus.setText("Saving PIN…");
 
         bgExecutor.execute(() -> {
-            // Catches an exact match against the existing secondary code and the
-            // secondary code being a leading prefix of this new primary PIN. See
-            // DuressManager.isDuressPinOrPrefixOfIt for the residual direction this
-            // does not cover and why it can't be closed here.
-            boolean clashWithDuress = DuressManager.isDuressPinOrPrefixOfIt(this, pin);
-            // setPin()'s result was previously discarded, so a failed write (no
-            // signed-in user, or a Keystore/EncryptedSharedPreferences error) still
-            // reported "PIN set" and flipped the UI into its pin-is-set state while
-            // no hash existed.
-            boolean stored = !clashWithDuress && PinManager.setPin(this, pin);
+            // A Settings PIN change is a candidate-probing surface for anyone who
+            // knows the current primary PIN. Count every attempted replacement
+            // before inspecting the proposed value or writing it, including
+            // successful changes and hidden-secondary-code collisions.
+            boolean changingExistingPin = PinManager.hasPinSet(this);
+            boolean attemptAllowed = !changingExistingPin
+                    || PinManager.tryRecordPinChangeAttempt(this);
+            // Only an allowed attempt reaches the secondary-code collision check.
+            // The UI below deliberately gives the same failure response for a
+            // collision, active cooldown, or storage failure.
+            boolean clashWithDuress = attemptAllowed
+                    && DuressManager.isDuressPinOrPrefixOfIt(this, pin);
+            boolean stored = attemptAllowed && !clashWithDuress
+                    && PinManager.setPin(this, pin);
 
             runOnUiThread(() -> {
                 if (btnSetPin != null) btnSetPin.setEnabled(true);
-                if (!clashWithDuress && !stored) {
+                if (!stored) {
                     refreshPinStatus();
                     Toast.makeText(this,
-                        "Couldn't save your PIN. Try again.",
-                        Toast.LENGTH_LONG).show();
-                } else if (clashWithDuress) {
-                    // Deliberately says nothing about *why* — "another unlock code"
-                    // confirmed to anyone testing PINs here that a second code
-                    // exists and that they'd just guessed it.
-                    refreshPinStatus();
-                    Toast.makeText(this,
-                        "That PIN can't be used. Choose a different one.",
+                        "Couldn't update your PIN. Try again later.",
                         Toast.LENGTH_LONG).show();
                 } else {
                     if (etNewPin != null) etNewPin.setText("");
