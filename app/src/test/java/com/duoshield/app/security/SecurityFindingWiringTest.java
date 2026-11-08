@@ -83,6 +83,32 @@ public class SecurityFindingWiringTest {
                 source.contains("return MAX_PIN_LEN;"));
     }
 
+    @Test
+    public void settingsPinChangeUsesAThrottleAndOneGenericFailureOutcome() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/SecurityPrivacySettingsActivity.java");
+        int saveAt = source.indexOf("private void doSavePin(String pin)");
+        int throttleAt = source.indexOf("PinManager.tryRecordPinChangeAttempt(this)", saveAt);
+        int duressAt = source.indexOf("DuressManager.isDuressPinOrPrefixOfIt(this, pin)", saveAt);
+        int genericFailureAt = source.indexOf("Couldn't update your PIN. Try again later.", saveAt);
+        int successAt = source.indexOf("R.string.settings_pin_set", saveAt);
+        int nextMethodAt = source.indexOf("private void promptCurrentPin(", saveAt);
+
+        assertTrue("Settings PIN change must record the attempt first", throttleAt > saveAt);
+        assertTrue("the throttle must run before the secondary-code candidate check",
+                duressAt > throttleAt);
+        assertTrue("all rejected change paths must use one generic message",
+                genericFailureAt > duressAt);
+        assertTrue("the ordinary success path must remain available", successAt > genericFailureAt);
+        assertTrue("the checked method body must be well bounded",
+                nextMethodAt > successAt);
+        String body = source.substring(saveAt, nextMethodAt);
+        assertTrue("the old collision-specific response must be removed",
+                !body.contains("That PIN can't be used"));
+        assertTrue("the old collision-specific branch must be removed",
+                !body.contains("else if (clashWithDuress)"));
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 8 && dir != null; i++) {
