@@ -91,7 +91,7 @@ final class PinChangeThrottle {
             // Within the same boot, elapsed time is authoritative. If it moves
             // backwards or the anchor is malformed, fail closed and retain the
             // old window rather than trusting a user-adjustable wall clock.
-            return startElapsed > 0L && elapsedNow >= startElapsed
+            return startWall > 0L && startElapsed >= 0L && elapsedNow >= startElapsed
                     && elapsedNow - startElapsed >= WINDOW_MS;
         }
 
