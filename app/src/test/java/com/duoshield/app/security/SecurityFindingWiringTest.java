@@ -119,10 +119,16 @@ public class SecurityFindingWiringTest {
                 source.contains("scopedKey(KEY_PIN_CHANGE_PREFIX)"));
         assertTrue("a throttle storage error must fail closed",
                 source.contains("return false;"));
-        assertTrue("boot identity must come from stable OS boot count, not wall time minus uptime",
+        assertTrue("PIN-change cooldown must use the stable OS boot counter",
                 source.contains("Settings.Global.BOOT_COUNT"));
-        assertTrue("the old wall-clock-derived boot identifier must not return",
-                !source.contains("(System.currentTimeMillis() - SystemClock.elapsedRealtime())"));
+        int pinChangeBootAt = source.indexOf("private static long pinChangeBootId(Context ctx)");
+        int pinChangeAttemptAt = source.indexOf("public static boolean tryRecordPinChangeAttempt(Context ctx)");
+        int pinChangeBootEnd = source.indexOf("private static long bootId()", pinChangeBootAt);
+        assertTrue("the stable boot-count helper must be present", pinChangeBootAt >= 0);
+        assertTrue("the PIN-change attempt must use its stable boot-count helper",
+                source.substring(pinChangeAttemptAt).contains("pinChangeBootId(ctx)"));
+        assertTrue("the pre-existing wrong-PIN boot-id format must remain separate",
+                pinChangeBootEnd > pinChangeBootAt && pinChangeBootEnd < pinChangeAttemptAt);
 
     }
 
