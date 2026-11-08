@@ -107,6 +107,56 @@ public class SecurityFindingWiringTest {
                 !source.substring(failureAt, successMessageAt).contains("finish();"));
     }
 
+    @Test
+    public void settingsPinChangeUsesAThrottleAndOneGenericFailureOutcome() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/SecurityPrivacySettingsActivity.java");
+        int saveAt = source.indexOf("private void doSavePin(String pin)");
+        int throttleAt = source.indexOf("PinManager.tryRecordPinChangeAttempt(this)", saveAt);
+        int duressAt = source.indexOf("DuressManager.isDuressPinOrPrefixOfIt(this, pin)", saveAt);
+        int genericFailureAt = source.indexOf("Couldn't update your PIN. Try again later.", saveAt);
+        int successAt = source.indexOf("R.string.settings_pin_set", saveAt);
+        int nextMethodAt = source.indexOf("private void promptCurrentPin(", saveAt);
+
+        assertTrue("Settings PIN change must record the attempt first", throttleAt > saveAt);
+        assertTrue("the throttle must run before the secondary-code candidate check",
+                duressAt > throttleAt);
+        assertTrue("all rejected change paths must use one generic message",
+                genericFailureAt > duressAt);
+        assertTrue("the ordinary success path must remain available", successAt > genericFailureAt);
+        assertTrue("the checked method body must be well bounded",
+                nextMethodAt > successAt);
+        String body = source.substring(saveAt, nextMethodAt);
+        assertTrue("the old collision-specific response must be removed",
+                !body.contains("That PIN can't be used"));
+        assertTrue("the old collision-specific branch must be removed",
+                !body.contains("else if (clashWithDuress)"));
+    }
+
+    @Test
+    public void pinManagerUsesUidScopedDurablePinChangeThrottle() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinManager.java");
+        assertTrue("Settings changes must use the dedicated durable throttle",
+                source.contains("PinChangeThrottle.tryRecord("));
+        assertTrue("attempt state must be scoped to the current account",
+                source.contains("scopedKey(KEY_PIN_CHANGE_PREFIX)"));
+        assertTrue("a throttle storage error must fail closed",
+                source.contains("return false;"));
+        assertTrue("PIN-change cooldown must use the stable OS boot counter",
+                source.contains("Settings.Global.BOOT_COUNT"));
+        int legacyBootAt = source.indexOf("private static long bootId()");
+        int pinChangeBootAt = source.indexOf("private static long pinChangeBootId(Context ctx)");
+        int pinChangeAttemptAt = source.indexOf("public static boolean tryRecordPinChangeAttempt(Context ctx)");
+        assertTrue("the legacy wrong-PIN boot-id helper must remain available", legacyBootAt >= 0);
+        assertTrue("the stable boot-count helper must follow the legacy helper",
+                pinChangeBootAt > legacyBootAt);
+        assertTrue("the PIN-change attempt must follow and use its stable boot-count helper",
+                pinChangeAttemptAt > pinChangeBootAt
+                        && source.substring(pinChangeAttemptAt).contains("pinChangeBootId(ctx)"));
+
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 8 && dir != null; i++) {
