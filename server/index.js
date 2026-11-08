@@ -1860,7 +1860,7 @@ async function loadInvites(reset) {
       usedByTd.textContent = item.usedByUserIdTag || "—";
       tr.appendChild(usedByTd);
       const actionTd = document.createElement("td");
-      if (item.status === "active") {
+      if (item.status === "active" || item.status === "invalid") {
         const revokeBtn = document.createElement("button");
         revokeBtn.className = "action danger";
         revokeBtn.textContent = "Revoke";
@@ -1904,7 +1904,7 @@ async function createInvite(event) {
 }
 
 async function revokeInvite(inviteId, btn) {
-  if (!confirm("Revoke this unused invitation?")) return;
+  if (!confirm("Revoke this invitation? This action cannot be undone.")) return;
   btn.disabled = true;
   try {
     await api("/admin/api/invites/revoke", { method: "POST", body: JSON.stringify({ inviteId }) });
