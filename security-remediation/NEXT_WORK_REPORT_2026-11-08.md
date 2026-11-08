@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-08 (post-PR #271)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #269 merge; includes PR #267)
+**Current main:** `87e558c25bd810dafb8b47d97e52c2022a4a94fe` (PR #271 merge; includes PR #270, #269 and #267)
 
 ## Current verified mainline
 
