@@ -109,6 +109,18 @@ public class SecurityFindingWiringTest {
                 !body.contains("else if (clashWithDuress)"));
     }
 
+    @Test
+    public void pinManagerUsesUidScopedDurablePinChangeThrottle() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinManager.java");
+        assertTrue("Settings changes must use the dedicated durable throttle",
+                source.contains("PinChangeThrottle.tryRecord("));
+        assertTrue("attempt state must be scoped to the current account",
+                source.contains("scopedKey(KEY_PIN_CHANGE_PREFIX)"));
+        assertTrue("a throttle storage error must fail closed",
+                source.contains("return false;"));
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 8 && dir != null; i++) {
