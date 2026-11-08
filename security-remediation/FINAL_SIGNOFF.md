@@ -159,3 +159,8 @@ The tracker remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**.
 
 All sign-off criteria remain unchecked until the described evidence exists or the owner formally approves a residual-risk disposition. Keep **PENDING**.
 
+
+
+## Current repository verification snapshot — 2026-11-08
+
+Current main is `b596e965d4be54b4ea8079b4036012e68188f865` after PRs #275–#277. All three exact-head CI workflows passed 10/10 jobs and Security workflows passed 3/3: #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) / Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810); #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) / Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152); #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) / Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761). GitHub returned zero open PRs and zero open issues at this snapshot. The active default-branch ruleset still enforces no required reviews or status checks (SC-12); the 116-finding tracker remains 86 Fixed, 17 Partial, 1 Open, 12 Accepted. **This evidence does not change the sign-off decision: keep PENDING.** See `BUG_TRACKER.md` and `INDEPENDENT_REVERIFICATION_2026-11-08.md`.
