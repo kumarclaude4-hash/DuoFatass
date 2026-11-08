@@ -17,7 +17,7 @@ Post-merge workflows on current main `8d0082d004993278645f3eb7a72c43a8cdc14e59`:
 - Security [42445582762](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582762) — passed.
 - Firestore rules [42445582759](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582759) — passed.
 - Firestore Rules Tests [42445582747](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582747) — passed.
-- CI [42445582763](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582763) — still running when this report was prepared; do not describe post-merge full CI as complete until this run concludes.
+- CI [42445582763](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582763) — passed on the exact current main SHA, including Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests, release-log AST, Gradle wrapper and libsignal integrity.
 
 ## Recent merged work
 
