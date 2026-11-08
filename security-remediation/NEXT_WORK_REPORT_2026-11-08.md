@@ -34,7 +34,7 @@ PR #269 exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFata
 - PR #271 — bounded S07-L2 app-owned key-buffer/cache hygiene; exact head `efceb00bc7fac0361804f98cf84458e69a75c0c3`, merged as `87e558c25bd810dafb8b47d97e52c2022a4a94fe`; CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3. S07-L2 remains Partial because native destruction is still finalizer-timed.
 - PR #266 — intentionally closed unmerged; its documentation changes were not applied to main.
 
-There are **no open code PRs** after PR #269 merged; documentation reconciliation is in progress.
+There are **no open code PRs** after PR #271 merged; this branch is the current documentation-only handoff refresh.
 
 ## Canonical tracker
 
