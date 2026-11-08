@@ -69,35 +69,38 @@ public final class SeedPhraseHelper {
         final IdentityKeyPair pair;
 
         CachedDerivation(byte[] seedFingerprint, IdentityKeyPair pair) {
-            this.seedFingerprint = seedFingerprint;
+            this.seedFingerprint = seedFingerprint.clone();
             this.pair = pair;
+        }
+
+        void clearSeedFingerprint() {
+            Arrays.fill(seedFingerprint, (byte) 0);
         }
     }
 
     /**
-     * Clears the in-process derivation cache populated by
+     * Clears the in-process identity derivation cache populated by
      * {@link #deriveIdentityKeyPair(byte[])}.
      *
-     * <p>(S07-L2) That cache holds the most recently derived {@link IdentityKeyPair} —
-     * i.e. the plaintext identity private key — in a static field so repeated calls
-     * with the same seed (identity display, restore confirmation, etc.) skip the
-     * KDF. That same property makes it a wipe hazard: {@code WipeHelper.eraseLocalData}
-     * destroys every on-disk copy of key material (SecurePrefs, the SQLCipher DB),
-     * but this cache lives only in the JVM heap, and none of the wipe steps ever
-     * called back into this class — the derived identity private key stayed
-     * resident in process memory for the remaining lifetime of the process even
-     * after a duress wipe, recoverable by a memory-dump/debugger-attach forensic
-     * technique that key destruction is specifically supposed to defeat.
+     * <p>Called from every {@code WipeHelper.eraseLocalData()} path (voluntary wipe,
+     * unpair and duress). This method shares the class monitor with derivation, so cache
+     * eviction cannot overlap an executing derivation. A later derivation call can still
+     * populate a fresh cache entry; callers must prevent new identity work after wipe.
      *
-     * <p>Called from every path that funnels through {@code WipeHelper.eraseLocalData}
-     * (voluntary wipe, unpair, and duress) — see that method's Step 4. Best-effort:
-     * dropping the reference lets the GC reclaim the {@link IdentityKeyPair}, but
-     * this class has no access to zero the key bytes inside libsignal's object graph
-     * before that happens, the same limitation every other in-memory key handle in
-     * this app has once it leaves this class's control.
+     * <p>The cache-owned seed fingerprint copy is zeroed before the entry is released.
+     * The {@link IdentityKeyPair} is then eligible for collection once other callers
+     * release it. This is best-effort only: the pinned libsignal Java wrapper exposes
+     * no public deterministic close/destroy method, and this method cannot zero native
+     * key material or copies retained by the crypto provider/runtime.
      */
-    public static void clearDerivationCache() {
-        derivationCache.set(null);
+    public static synchronized void clearDerivationCache() {
+        CachedDerivation cached = derivationCache.getAndSet(null);
+        if (cached != null) {
+            // The fingerprint is an app-owned byte-array copy. Clear it before
+            // dropping the entry; the libsignal key object itself has no public
+            // deterministic destruction API in the pinned dependency.
+            cached.clearSeedFingerprint();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -554,43 +557,54 @@ public final class SeedPhraseHelper {
      * @return Deterministic {@link IdentityKeyPair}. Same seed → same key pair, always.
      * @throws InvalidKeyException if libsignal rejects the derived private key.
      */
-    public static IdentityKeyPair deriveIdentityKeyPair(byte[] seed)
+    public static synchronized IdentityKeyPair deriveIdentityKeyPair(byte[] seed)
             throws InvalidKeyException {
         if (seed == null || seed.length < 32) {
             throw new IllegalArgumentException("seed must be at least 32 bytes");
         }
 
-        byte[] fingerprint;
+        byte[] fingerprint = null;
+        byte[] info = null;
+        byte[] privateBytes = null;
         try {
-            fingerprint = sha256(seed);
-        } catch (Exception e) {
-            throw new RuntimeException("SHA-256 unavailable", e);
-        }
+            try {
+                fingerprint = sha256(seed);
+            } catch (Exception e) {
+                throw new RuntimeException("SHA-256 unavailable", e);
+            }
 
-        CachedDerivation cached = derivationCache.get();
-        if (cached != null && Arrays.equals(cached.seedFingerprint, fingerprint)) {
-            return cached.pair;
-        }
+            CachedDerivation cached = derivationCache.get();
+            if (cached != null && Arrays.equals(cached.seedFingerprint, fingerprint)) {
+                return cached.pair;
+            }
 
-        // Domain-separated HKDF expansion: info = ASCII label, no explicit salt
-        // (HKDF default: salt = HashLen zeroes as per RFC 5869 §2.2).
-        // Pure javax.crypto.Mac implementation — avoids runtime dependency on
-        // libsignal-client's HKDF class which is compileOnly and absent from the APK DEX.
-        byte[] info = "DuoShield Identity Key v1".getBytes(StandardCharsets.UTF_8);
-        byte[] privateBytes;
-        try {
-            privateBytes = hkdfSha256(seed, info, 32);
-        } catch (java.security.GeneralSecurityException e) {
-            // HmacSHA256 is mandated by Android — this path is unreachable in practice.
-            throw new InvalidKeyException("HKDF-SHA256 unavailable: " + e.getMessage());
-        }
-        ECPrivateKey privateKey = Curve.decodePrivatePoint(privateBytes);
-        ECPublicKey  publicKey  = privateKey.publicKey();
-        IdentityKey  identityKey = new IdentityKey(publicKey);
-        IdentityKeyPair pair = new IdentityKeyPair(identityKey, privateKey);
+            // Domain-separated HKDF expansion: info = ASCII label, no explicit salt
+            // (HKDF default: salt = HashLen zeroes as per RFC 5869 §2.2).
+            // Pure javax.crypto.Mac implementation — avoids runtime dependency on
+            // libsignal-client's HKDF class which is compileOnly and absent from the APK DEX.
+            info = "DuoShield Identity Key v1".getBytes(StandardCharsets.UTF_8);
+            try {
+                privateBytes = hkdfSha256(seed, info, 32);
+            } catch (java.security.GeneralSecurityException e) {
+                // HmacSHA256 is mandated by Android — this path is unreachable in practice.
+                throw new InvalidKeyException("HKDF-SHA256 unavailable: " + e.getMessage());
+            }
+            // decodePrivatePoint imports the scalar into libsignal's native key handle.
+            // Clear the app-owned serialized input immediately after the import completes.
+            ECPrivateKey privateKey = Curve.decodePrivatePoint(privateBytes);
+            ECPublicKey  publicKey  = privateKey.publicKey();
+            IdentityKey  identityKey = new IdentityKey(publicKey);
+            IdentityKeyPair pair = new IdentityKeyPair(identityKey, privateKey);
 
-        derivationCache.set(new CachedDerivation(fingerprint, pair));
-        return pair;
+            // CachedDerivation retains its own fingerprint copy; the local copy is
+            // zeroed in finally on both cache hits and new derivations.
+            derivationCache.set(new CachedDerivation(fingerprint, pair));
+            return pair;
+        } finally {
+            if (fingerprint != null) Arrays.fill(fingerprint, (byte) 0);
+            if (info != null) Arrays.fill(info, (byte) 0);
+            if (privateBytes != null) Arrays.fill(privateBytes, (byte) 0);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -704,17 +718,34 @@ public final class SeedPhraseHelper {
      */
     public static byte[] hkdfSha256(byte[] ikm, byte[] info, int length)
             throws java.security.GeneralSecurityException {
+        if (ikm == null || info == null) {
+            throw new IllegalArgumentException("ikm and info must not be null");
+        }
+        if (length < 0 || length > 32) {
+            throw new IllegalArgumentException("length must be between 0 and 32 bytes");
+        }
+
         final String ALGO = "HmacSHA256";
         Mac mac = Mac.getInstance(ALGO);
-        // Extract
         byte[] salt = new byte[32]; // RFC 5869 §2.2: default salt = zeroes of HashLen
-        mac.init(new SecretKeySpec(salt, ALGO));
-        byte[] prk = mac.doFinal(ikm);
-        // Expand (one block only — length ≤ 32 = HashLen)
-        mac.init(new SecretKeySpec(prk, ALGO));
-        mac.update(info);
-        mac.update((byte) 0x01);
-        byte[] okm = mac.doFinal();
-        return Arrays.copyOf(okm, length);
+        byte[] prk = null;
+        byte[] okm = null;
+        try {
+            // Extract
+            mac.init(new SecretKeySpec(salt, ALGO));
+            prk = mac.doFinal(ikm);
+            // Expand (one block only — length ≤ 32 = HashLen)
+            mac.init(new SecretKeySpec(prk, ALGO));
+            mac.update(info);
+            mac.update((byte) 0x01);
+            okm = mac.doFinal();
+            return Arrays.copyOf(okm, length);
+        } finally {
+            // Clear app-owned intermediate arrays. Mac/SecretKeySpec providers may
+            // retain implementation-internal copies that Java does not expose.
+            Arrays.fill(salt, (byte) 0);
+            if (prk != null) Arrays.fill(prk, (byte) 0);
+            if (okm != null) Arrays.fill(okm, (byte) 0);
+        }
     }
 }
