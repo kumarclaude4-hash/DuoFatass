@@ -5,31 +5,43 @@
 > is dated 2026-11-07; older dated evidence sections are historical. This document is the
 > release/sign-off gate, not a progress claim.
 
-## Current evidence snapshot — 2026-11-07
+## Current evidence snapshot — 2026-11-08
 
-The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its current row-level roll-up is
-**116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27;
-Low 31; Informational 23). The two previously omitted Session 06 high-severity rows S06-H4
-(Fixed) and S06-H5 (Partial) have been restored. S06-H5 remains Partial because the
-Settings-based PIN-change candidate oracle is still observable.
+The canonical register is [\`../BUG_TRACKER.md\`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed; S06-H5 is Partial after the merged PIN-change attempt throttle; S05-H2 remains Partial pending product-contract and staging acceptance.
 
-Current `main`: `98f76cdf374eeaf5c8144befad068ef05805a20b`.
-- Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365): passed.
-- Main Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135): passed.
+Current \`main\`: \`32175ccf86342a6c517459a0e2507f14c4d064e8\`.
 
-Recent merged work:
+### Exact-head validation
+
+PR #265's exact head \`ed8e47550763cf7766acb0f6ef3d53dc15039df3\`, merged as current main, passed:
+- CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067): **all jobs passed**, including Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8/mapping, Server/Worker tests, AST privacy and dependency-integrity checks.
+- Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048): **all jobs passed** (CodeQL, Gitleaks, SBOM).
+
+Post-merge mainline CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) and Security Scan [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) were queued when this snapshot was drafted. Recheck these exact mainline workflows before release.
+
+### Recent merged work
+
 - PR #251 — bounded interprocedural release-log taint summaries; S10-N2 remains Partial for syntax-only analysis limits and deferred physical release-logcat acceptance.
-- PR #255 — invite redemption UID pseudonymization and dry-run-first cleanup utility; no Firestore migration was run.
+- PR #255 — invite redemption UID pseudonymization and dry-run-first legacy cleanup utility; no Firestore migration was run.
 - PR #256 — range-aware per-holder request accounting for valid single-range media GETs; global daily request/mutation guards remain unchanged.
-- PR #257 — documentation reconciliation for the S05-H2 privacy correction.
+- PR #257 — S05-H2 privacy documentation.
+- PR #260 — Firebase credential newline normalization in the legacy UID cleanup utility; CI, Firestore integration and Security passed.
+- PR #261 — fail-closed invite lifecycle and audited invalid-state revocation; CI, Firestore and Security passed.
+- PR #263 — S06-H4 duress-code save-failure regression; CI and Security passed.
+- PR #264 — invalid-invite admin Revoke action; CI, Firestore and Security passed.
+- PR #265 — S06-H5 PIN-change attempt throttle and generic failure behavior; exact-head CI and Security passed.
 
-Open code PRs at the current snapshot:
-- #253: invite lifecycle invalid-state guard; its original CI 10/10, Security 3/3 and Firestore tests passed, but GitHub reports dirty/non-mergeable against an older base. Rebase and rerun.
-- #254: range-read Worker allowance; its original CI 10/10 and Security 3/3 passed, but GitHub reports dirty/non-mergeable against an older base. Rebase and rerun.
-- #258: migration utility credential-newline normalization; regular CI passed, but Gitleaks flagged a synthetic PEM-shaped test fixture and the Firestore integration run failed one invite-expiry test at the exact one-hour boundary. Fix both and rerun.
+There are **no open pull requests**. PRs #253/#258 were closed as superseded by #261/#260; #254 was closed as superseded by #256.
 
-This evidence snapshot is not production sign-off. No live production deployment, credential rotation, provider-console read-back, legacy Firestore migration or physical-device acceptance is claimed here.
+### Deployment and what is not proven
 
+Render service \`DuoFat\` is on the Free plan with auto-deploy from \`main\`. The latest verified live server deploy is commit \`bff993d32d39f7d084aa24f5dece159f176f2ebb\` (PR #264); subsequent main commits in this snapshot are Android-side/tests/documentation and do not add server-root runtime changes. A successful Render deploy is not a substitute for staging lifecycle or provider-console acceptance.
+
+No live credential rotation, Firebase/Firestore rules or TTL deployment, App Check enforcement change, Render/Worker secret-pair read-back, Firebase revoked-token staging test, Cloudflare Worker/R2/B2 cron migration acceptance, historical Firestore UID migration or physical-device acceptance is claimed.
+
+Repository governance remains incomplete. Default ruleset \`Hello\` (ID \`26629873\`) has zero required approving reviews and no required status checks; classic branch-protection enforcement is off in the available read-back. SC-12 therefore remains Open pending authorized admin configuration/read-back of review/check requirements, immutable version tags and a protected production-release environment.
+
+S03-M3 still requires the owner's written choice on 10-minute reusable READ/WRITE tokens versus a versioned one-shot protocol. S07-L2 still lacks a supported deterministic ECPrivateKey destroy API in the checked upstream wrapper; keep the GC-timed residual Partial unless an owner approves the residual or upstream adds a supported API.
 
 ## Historical evidence snapshot — 2026-11-04
 
