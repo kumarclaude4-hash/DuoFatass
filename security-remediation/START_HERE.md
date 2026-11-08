@@ -8,41 +8,32 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 ## What this program is
 
-All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level.
-That is not equivalent to end-to-end sign-off. S3-15b Firestore Rules emulator coverage passed
-**186/186 tests**, and S3-19b Android catch-up is verified on main CI (Android unit tests, lint,
-debug APK, Espresso and minified R8).
+All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. S3-15b Firestore Rules emulator coverage passed **186/186 tests**; the Android CI catch-up includes unit tests, lint, debug APK, Espresso, API 35 predictive-back and minified R8.
 
-As of 2026-11-07, main is `98f76cdf374eeaf5c8144befad068ef05805a20b`. Main CI
-[42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and
-Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135)
-passed. PR #255 (invite UID pseudonymization), PR #256 (Worker range-read rate accounting) and
-documentation PR #257 are merged. Current code PRs #253, #254 and #258 remain open; their exact
-heads, stale merge bases and CI blockers are recorded in
-[`AGENTIC_WORK_REMAINING_2026-11-06.md`](AGENTIC_WORK_REMAINING_2026-11-06.md).
+As of 2026-11-08, current main is \`32175ccf86342a6c517459a0e2507f14c4d064e8\`. PRs #260, #261, #263, #264 and #265 are merged. The earlier #253/#258 branches were closed as superseded by #261/#260; #254 was closed as superseded by #256. There are **no open pull requests** at this snapshot.
 
-The canonical `../BUG_TRACKER.md` now contains **116 findings: 86 Fixed, 17 Partial, 1 Open,
-12 Accepted**. The two restored Session 06 findings S06-H4 and S06-H5 are included in that
-count. `FINAL_SIGNOFF.md` remains **PENDING** until residual test, staging, operator, governance
-and deferred physical-device acceptance gates have been evidenced or formally approved.
+PR #265's exact head \`ed8e47550763cf7766acb0f6ef3d53dc15039df3\` passed CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048), including Android unit tests/lint, debug/R8 builds, Espresso, API 35 predictive-back, Server/Worker, CodeQL, Gitleaks and SBOM. Post-merge main runs [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) (CI) and [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) (Security) were queued when this handoff was refreshed; recheck them before release.
+
+The canonical \`../BUG_TRACKER.md\` contains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 remains Fixed; S06-H5 remains Partial after the merged PIN-change throttle because the mitigation bounds candidate probing but does not prove every success/failure observation indistinguishable. S05-H2 remains Partial pending invite-only product-contract confirmation, authorized legacy UID cleanup and isolated staging onboarding.
+
+\`FINAL_SIGNOFF.md\` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF** until residual-risk decisions, staging/operator configuration and testing, credential rotation, governance controls and deferred physical-device acceptance are evidenced or formally approved.
 
 ---
 
-## Current state — 2026-11-07
+## Current state — 2026-11-08
 
-```
-MAIN: 98f76cdf374eeaf5c8144befad068ef05805a20b
-CI: 42387261365 — passed
-SECURITY: 42387261135 — passed
-MERGED: PR #255 (invite UID pseudonymization), #256 (range-read rate accounting), #257 (docs).
-OPEN: PR #253 (invite-state fail-closed; stale/dirty base), #254 (range-read allowance; stale/dirty base),
-      #258 (migration credential normalizer; Gitleaks fixture + Firestore expiry test failures).
+\`\`\`
+MAIN: 32175ccf86342a6c517459a0e2507f14c4d064e8
+PR #265: merged; exact-head CI and Security Scan passed.
+OPEN PULL REQUESTS: none.
+MERGED THIS CLOSEOUT: #260 Firebase migration credential normalization; #261 invite-state fail-closed; #263 S06-H4 arming regression; #264 invalid invite revoke UI; #265 S06-H5 PIN-change attempt throttle.
+SUPERSEDED BRANCHES: #253 -> #261; #258 -> #260; #254 -> #256.
 TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted.
-NEXT: Follow AGENTIC_WORK_REMAINING_2026-11-06.md for the active PRs and current acceptance gaps.
+NEXT: operator/staging owner acceptance, residual-risk decisions and release governance; see NEXT_WORK_REPORT_2026-11-07.md and COMPREHENSIVE_REMAINING_SECURITY_REVIEW_2026-11-07.md.
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
 FINAL SIGN-OFF: PENDING.
-```
+\`\`\`
 
 ## Chain state — historical Round 3 schedule
 
