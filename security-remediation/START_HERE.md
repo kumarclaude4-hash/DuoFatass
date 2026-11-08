@@ -10,11 +10,11 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Current main (2026-11-08):** `d1ee9ac01e0809a6e398958be423097bc082e9d7` (PR #274 merged; includes #272, #271, #270, #269 and #267).
+**Current main (2026-11-08):** `b596e965d4be54b4ea8079b4036012e68188f865` (PR #277 merged; includes #276 and #275). See `INDEPENDENT_REVERIFICATION_2026-11-08.md` for the fresh tracker reconciliation.
 
 PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
 
-PR #265 merged the successful/failed PIN-change throttle and generic failure contract for S06-H5. PR #267 subsequently passed the full CI and Security/Firestore workflows on its exact PR head before merging. PR #269 then hardened S10-N2 bodyless helper returns; its exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed before merge. PR #270 refreshed the handoff on the then-current main. PR #271 added bounded app-owned buffer/cache hygiene for S07-L2; exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 jobs and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3 before merge. PR #272 refreshed agent instructions and handoff evidence; PR #273 was closed as a duplicate unmerged. PR #274 then fixed a reproduced typed cross-class sensitive-field logging gap in the AST analyzer; exact-head CI [42450251567](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251567) passed 10/10 and Security [42450251553](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251553) passed 3/3.
+PR #265 merged the successful/failed PIN-change throttle and generic failure contract for S06-H5. PR #267 subsequently passed the full CI and Security/Firestore workflows on its exact PR head before merging. PR #269 then hardened S10-N2 bodyless helper returns; its exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed before merge. PR #270 refreshed the handoff on the then-current main. PR #271 added bounded app-owned buffer/cache hygiene for S07-L2; exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 jobs and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3 before merge. PR #272 refreshed agent instructions and handoff evidence; PR #273 was closed as a duplicate unmerged. PR #274 fixed a reproduced typed cross-class sensitive-field logging gap. PR #275 refreshed the handoff. PR #276 added fail-closed handling for known app-owned virtual overrides (CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10; Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3). PR #277 added fail-closed handling for ambiguous same-name/same-arity app-owned overloads (CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10; Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3).
 
 The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. The remaining Partial/Open items are not all code defects: they include staging/operator acceptance, owner decisions, upstream API limits and physical-device checks explicitly deferred until feature-complete. `FINAL_SIGNOFF.md` remains **PENDING**.
 
@@ -23,17 +23,17 @@ The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 
 ## Current state — 2026-11-08
 
 ```
-MAIN: d1ee9ac01e0809a6e398958be423097bc082e9d7
-MERGED: PR #265 (S06-H5 durable Settings PIN-change throttle); PR #267 (S10-N1 Firestore App Check correction); PR #269 (S10-N2 bodyless helper-return hardening); PR #270 (security handoff reconciliation); PR #271 (S07-L2 app-owned key-buffer/cache hygiene); PR #272 (agent handoff/dependency/route reconciliation); PR #274 (S10-N2 typed cross-class field taint coverage).
+MAIN: b596e965d4be54b4ea8079b4036012e68188f865
+MERGED: PR #275 (security handoff refresh); PR #276 (S10-N2 known app-owned virtual override handling); PR #277 (S10-N2 ambiguous app-owned overload handling), in addition to earlier merged remediations listed above.
 PR #267 head: 213442825113013a85650de9ac24edf0e9ec9211
 CI: 42443323887 — passed (Android unit, lint, debug APK, Espresso, API 35 predictive-back, R8, Server + Worker).
 SECURITY: 42443323988 — passed (CodeQL, Gitleaks, SBOM).
 FIRESTORE RULES: 42443323886 — passed.
 FIRESTORE RULES + SERVER TRANSACTIONS: 42443323962 — passed (200 Rules tests + 6 server transaction tests).
-OPEN CODE PRS: none in the latest repository issue/PR snapshot after PR #274 merged.
+OPEN CODE PRS: none after PR #277 merged; OPEN ISSUES: none.
 PR #266: intentionally closed unmerged; its documentation changes were not applied to main.
 TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted.
-NEXT: use NEXT_WORK_REPORT_2026-11-08.md and BUG_TRACKER.md; the old 2026-11-07 worklists are historical.
+NEXT: use BUG_TRACKER.md, NEXT_WORK_REPORT_2026-11-08.md and INDEPENDENT_REVERIFICATION_2026-11-08.md; older dated worklists are historical.
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
 FINAL SIGN-OFF: PENDING.
@@ -57,7 +57,7 @@ security-remediation/NEXT_WORK_REPORT_2026-11-08.md, the agentic handoff and BUG
 
 If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
 session. Follow the current 2026-11-08 work report for source-review priorities, owner decisions,
-operator acceptance and feature-complete device deferrals. There are no open code PRs in the latest repository issue/PR snapshot after PR #274 merged. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
+operator acceptance and feature-complete device deferrals. There are no open code PRs or issues after PR #277 merged. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
 
 
 ---
