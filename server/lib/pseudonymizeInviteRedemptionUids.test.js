@@ -6,8 +6,33 @@ const {
   TAG_PATTERN,
   createRunTagger,
   buildLegacyInviteUpdate,
+  normalizeServiceAccountPrivateKey,
   runMigration,
 } = require("../scripts/pseudonymizeInviteRedemptionUids");
+
+test("service-account credentials normalize escaped private-key newlines without mutation", () => {
+  const input = {
+    project_id: "synthetic-project",
+    private_key: "segment-one\\nsegment-two\\nsegment-three\\n",
+  };
+
+  const normalized = normalizeServiceAccountPrivateKey(input);
+  assert.notEqual(normalized, input);
+  assert.equal(normalized.project_id, input.project_id);
+  assert.equal(normalized.private_key, "segment-one\nsegment-two\nsegment-three\n");
+  assert.equal(input.private_key, "segment-one\\nsegment-two\\nsegment-three\\n");
+});
+
+test("service-account normalization preserves already-normalized keys", () => {
+  const privateKey = "segment-one\nsegment-two\n";
+  const normalized = normalizeServiceAccountPrivateKey({ private_key: privateKey });
+  assert.equal(normalized.private_key, privateKey);
+});
+
+test("service-account normalization rejects non-object credentials", () => {
+  assert.throws(() => normalizeServiceAccountPrivateKey(null), /JSON object/);
+  assert.throws(() => normalizeServiceAccountPrivateKey([]), /JSON object/);
+});
 
 test("migration replaces legacy raw UID with a short non-reversible display tag", () => {
   const tagUserId = createRunTagger(Buffer.alloc(32, 7));

@@ -13,6 +13,18 @@ const COLLECTION = "invites";
 const PAGE_SIZE = 200;
 const TAG_PATTERN = /^[0-9a-f]{12}$/;
 
+function normalizeServiceAccountPrivateKey(serviceAccount) {
+  if (!serviceAccount || typeof serviceAccount !== "object" || Array.isArray(serviceAccount)) {
+    throw new TypeError("Service-account credentials must be a JSON object");
+  }
+
+  const normalized = { ...serviceAccount };
+  if (typeof normalized.private_key === "string") {
+    normalized.private_key = normalized.private_key.replace(/\\n/g, "\n");
+  }
+  return normalized;
+}
+
 function createRunTagger(pepper = crypto.randomBytes(32)) {
   return (uid) => crypto.createHmac("sha256", pepper)
     .update(String(uid), "utf8")
@@ -94,12 +106,13 @@ async function main() {
   const rawCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
   let credential;
   if (rawCredentials) {
-    let serviceAccount;
+    let parsedServiceAccount;
     try {
-      serviceAccount = JSON.parse(rawCredentials);
+      parsedServiceAccount = JSON.parse(rawCredentials);
     } catch {
       throw new Error("GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON");
     }
+    const serviceAccount = normalizeServiceAccountPrivateKey(parsedServiceAccount);
     credential = admin.credential.cert(serviceAccount);
   } else {
     credential = admin.credential.applicationDefault();
@@ -132,5 +145,6 @@ module.exports = {
   TAG_PATTERN,
   createRunTagger,
   buildLegacyInviteUpdate,
+  normalizeServiceAccountPrivateKey,
   runMigration,
 };
