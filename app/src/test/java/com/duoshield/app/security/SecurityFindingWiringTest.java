@@ -119,6 +119,11 @@ public class SecurityFindingWiringTest {
                 source.contains("scopedKey(KEY_PIN_CHANGE_PREFIX)"));
         assertTrue("a throttle storage error must fail closed",
                 source.contains("return false;"));
+        assertTrue("boot identity must come from stable OS boot count, not wall time minus uptime",
+                source.contains("Settings.Global.BOOT_COUNT"));
+        assertTrue("the old wall-clock-derived boot identifier must not return",
+                !source.contains("(System.currentTimeMillis() - SystemClock.elapsedRealtime())"));
+
     }
 
     private static String readProjectFile(String relativePath) throws IOException {
