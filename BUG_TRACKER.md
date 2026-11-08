@@ -59,7 +59,7 @@ match what the old index already claimed, re-confirmed against source.
 | SC-01 | **Fixed** (S3-02) | Verified | Vendored `libsignal-client-*-stripped.jar` not reproducible/hashed/validated in CI | Claim re-derived from source this session, then fixed. **Root cause confirmed live:** the committed `scripts/strip_signal_records.py` declared a 6-entry `STRIP` set, but an entry-by-entry diff of the shipped JAR against upstream `org.signal:libsignal-client:0.54.1` (fetched from Maven Central, sha256 `9605b9c6…87d4a`, matching the audit) showed **10 removed, 0 added, 0 CRC-changed** — `ChatService`, `Svr3`, `GroupSendEndorsementsResponse` and `ChatService$InternalRequest` had no documented provenance. **Fix:** `STRIP` corrected to the 10 real entries; the source JAR is now fetched from Maven Central and hash-pinned (`UPSTREAM_SHA256`) instead of scraped from `~/.gradle/caches`; the output is asserted against `EXPECTED_OUTPUT_SHA256` = `fa7d3afe…d89e3`; new `--check` mode. Hash recorded in-repo at `app/libs/libsignal-client-0.54.1-stripped.jar.sha256`. Gate wired as a dedicated `verify-libsignal-jar` job in `ci.yml` that `lint` needs (so `build-debug`/`instrumented-tests` inherit it) **and** in `release.yml` before the keystore is decoded. **Evidence (commands run this session):** full regenerate printed `Output : sha256 fa7d3afe…d89e3 (38466351 B) — matches recorded hash` and `git status` then showed the JAR **unmodified** — i.e. the documented procedure now reproduces the shipped binary byte-for-byte; `--check` exits 0 on the committed JAR, exits 1 with a `::error::` on a 1-byte append (`908298e2…62f5`), and exits 1 when the `.sha256` sidecar is absent; `js-yaml` parse of both workflows OK. Note: strip-by-prefix (the audit's alternative) would remove **37** entries and would *not* reproduce the artifact, so the explicit 10-entry list is intentional — do not "simplify" it. Commit `dcf85c5`. Residual (audit rec. 4, not this finding): deleting the vendored JAR entirely by raising `minSdk` to 34 remains the preferred long-term fix. |
 | SC-02 | **Fixed** (S3-01) | Verified | Release workflow baked full backend secret set into shipped APK | `release.yml` and `ci.yml` write `local.properties` with non-secret routing values only (`b2.bucket`/`b2.region`/`push.server.url`/`worker.url`); `app/build.gradle` no longer reads the B2 credential pair (`B2_KEY_ID`/`B2_APPLICATION_KEY` emitted as `""`). `release.yml` "Assert no secrets in packaged build inputs" guard blocks `b2.key.id`/`b2.application.key`/`worker.secret`/private-key blocks. This session (S3-01) added the **same guard to `ci.yml`'s `build-debug` job**, which also uploads an APK artifact — closing the enforcement gap on the PR-facing job. Guard logic functionally tested: passes clean/empty-value, fails on real `worker.secret` value and on a private-key block. |
 
-## High (31)
+## High (33)
 
 | ID | Status | Confidence | Issue | Evidence |
 |---|---|---|---|---|
@@ -199,7 +199,7 @@ match what the old index already claimed, re-confirmed against source.
 
 ## Summary
 
-> **Current mainline recount — 2026-11-08, after PRs #260/#261/#263/#264/#265 and tracker-row restoration.** The five severity sections now contain **116 unique finding rows**: Critical 4, High 31, Medium 27, Low 31, Informational 23. The disposition cells reconcile to **86 Fixed, 17 Partial, 1 Open, 12 Accepted**. The two previously omitted Session 06 high-severity findings, S06-H4 and S06-H5, are restored above: H4 is Fixed on current source; H5 remains Partial because the Settings-based candidate oracle is still observable. This reconciled roll-up matches the table immediately below; older dated recounts remain historical snapshots.
+> **Current mainline recount — 2026-11-08, after PRs #260/#261/#263/#264/#265 and tracker-row restoration.** The five severity sections contain **118 register rows**: Critical 4, High 33, Medium 27, Low 31, Informational 23. Counting the current Status cells yields **87 Fixed, 18 Partial, 1 Open, 12 Accepted**. The two previously omitted Session 06 high-severity findings, S06-H4 and S06-H5, are restored above: H4 is Fixed on current source; H5 remains Partial because the Settings-based candidate oracle is still observable. This reconciled roll-up matches the table immediately below; older dated recounts remain historical snapshots.
 
 > **Current row-level recount — 2026-11-06 (before this branch's CI).** The five severity sections contain 116 finding rows: Critical 4, High 31, Medium 27, Low 31, Informational 23. Counting the current disposition cells yields **83 Fixed, 20 Partial, 1 Open, 12 Accepted**. This supersedes the older 2026-11-04 roll-up (74/29/1/12), which is retained as a historical snapshot. Follow-up wiring/log-regression tests on the current branch are not yet counted as verified; dispositions remain Partial until the branch CI runs.
 
@@ -210,11 +210,11 @@ match what the old index already claimed, re-confirmed against source.
 | Sev | Total | Fixed | Partial | Open | Accepted |
 |---|---:|---:|---:|---:|---:|
 | Critical | 4 | 4 | 0 | 0 | 0 |
-| High | 31 | 26 | 5 | 0 | 0 |
+| High | 33 | 27 | 6 | 0 | 0 |
 | Medium | 27 | 22 | 4 | 0 | 1 |
 | Low | 31 | 23 | 6 | 1 | 1 |
 | Info | 23 | 11 | 2 | 0 | 10 |
-| **Total** | **116** | **86** | **17** | **1** | **12** |
+| **Total** | **118** | **87** | **18** | **1** | **12** |
 
 > **Current status addendum — 2026-11-04.** The row counts above were independently recounted
 > from the table rows on branch `security/operator-closeout-verification`: **116 total: 74 Fixed,
@@ -275,7 +275,7 @@ match what the old index already claimed, re-confirmed against source.
 >    the `## High` section precisely because their *governing* severity
 >    (per this file's own Legend: "Sev — governing severity") is High despite
 >    the `-M1` in their ID — both are counted in the High row above (`S04-M1`
->    → Fixed, `S07-M1` → Open, matching `S08-H5`'s disposition since they are
+>    → Fixed, `S07-M1` → Partial, matching `S08-H5`'s disposition since they are
 >    the same underlying defect).
 >
 > No row's individual Status/Confidence/Evidence text was changed by this
