@@ -101,7 +101,7 @@ recent PR heads, and PR #267 corrected the App Check Rules defect. That is not e
 S02-I3 still needs live Firebase revoked-token integration verification; S02-I2 needs authorized
 Render/Worker Durable Object pairing read-back; SC-12 branch protection still needs authorized
 verification; credentials must be rotated; App Check service enforcement and coordinated production
-release need live evidence. Main post-merge CI run 42445582763 must also be refreshed to completion.
+release need live evidence. Main post-merge CI run 42445582763 has passed on the exact main SHA.
 
 Do not change this status to COMPLETE based solely on merged PRs or CI. Sign only after every
 unchecked criterion above is either satisfied with evidence or formally deferred with an explicit,
