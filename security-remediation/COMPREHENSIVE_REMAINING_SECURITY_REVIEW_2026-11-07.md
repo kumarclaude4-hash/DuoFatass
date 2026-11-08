@@ -235,23 +235,26 @@ Lock screen excluded from recents/singleTask. Opaque touch-consuming cover is in
 
 **Acceptance:** API/OEM transition evidence. Keep Partial.
 
-## 3.10 S10-N1 — Firebase App Check rollout
+## 3.10 S10-N1 — Firebase App Check service-layer rollout
 
-**Status:** Partial; Android provider wiring and monitoring helper exist, enforcement not enabled.  
-**Code:** `DuoShieldApp.java`, `app/build.gradle`, `firestore.rules` helper `appCheckVerified()`.  
-**Rules evidence:** S3-15b emulator 186/186; helper is deliberately not wired into allow clauses yet.
+**Status:** Partial; Android provider wiring exists, but live monitoring, service-level enforcement and staging acceptance remain pending.
 
-**Operator rollout:**
-1. Confirm released client registers Play Integrity provider before Firebase SDK use; debug provider is debug-only.
-2. Review Firebase App Check monitoring for Firestore/Storage; do not enforce blindly.
-3. Measure adoption/missing-token traffic across supported clients/install channels.
-4. Agree minimum adoption and support/exception policy.
-5. Stage rules adding `request.app != null` to exact affected allow clauses; run positive/negative tests including missing App Check.
-6. Deploy compatible clients first, then rules, then console enforcement with rollback.
-7. Read back deployed rules version and console state.
+**Important Rules-language correction (2026-11-08):** Firebase App Check is enforced by the Firebase service layer before Firestore Security Rules are evaluated. Firestore Rules cannot inspect App Check token metadata. The `request.app` field is not supported in Firestore Rules; referencing it causes rule evaluation errors and denies access even for requests carrying valid App Check tokens. A Firebase contributor in the official Firebase Android SDK issue thread clarified the service-level boundary; the issue reporter subsequently confirmed that the field itself is not evaluable and causes denial even for valid tokens ([Firebase Android SDK issue #8393](https://github.com/firebase/firebase-android-sdk/issues/8393), comments dated 2026-07-07 and 2026-07-10).
 
-App Check is defense in depth, not a trust boundary against compromised clients. **Acceptance:** redacted metrics, staged rules tests and deployment read-back. Keep Partial.
+The earlier `appCheckVerified()` implementation and its emulator denial suite were therefore incorrect: the rules expression itself caused denials, while the test interpreted those denials as evidence of missing App Check. The corrective branch removes the helper and every invocation, restores verbatim-rule emulator testing, and adds a static guard against executable `request.app`/`appCheckVerified()` expressions. Android Play Integrity provider wiring is retained; the debug provider remains debug-only.
 
+**Rules invariant:** keep Firestore authorization in `firestore.rules` limited to Firebase Auth, ownership, data validation and account-lock checks. Never reference `request.app` or add an App Check wrapper function to Firestore Rules.
+
+**Authorized rollout:**
+1. Confirm the released Android client registers Play Integrity before any Firestore token request; confirm the debug provider is debug-only.
+2. Review Firebase App Check monitoring metrics for Cloud Firestore (and Cloud Storage separately only if that service is used).
+3. Measure verified, outdated, unknown and invalid traffic across supported client/install channels; investigate missing-token traffic before enforcement.
+4. Agree the minimum adoption threshold, support/exception policy and rollback procedure.
+5. Enable App Check enforcement for the relevant Firebase service in the Console only after compatible-client adoption and rollback readiness are proven. Do not modify Firestore Rules to enforce App Check.
+6. Use synthetic identities in isolated staging to prove a valid token is accepted and missing/invalid tokens are rejected after service enforcement; record redacted route/resource, app version and timestamps.
+7. Read back the deployed service enforcement state and retain redacted evidence.
+
+The Firestore emulator cannot mint/validate real App Check tokens or model the Firebase Console enforcement toggle. Emulator tests now validate the exact committed Firestore Rules and keep App Check token validation out of Rules; source tests guard the Android provider packaging and ensure the unsupported Rules expression cannot return. **Acceptance:** redacted monitoring metrics, staged positive/negative token evidence, service enforcement read-back and rollback readiness. Keep Partial.
 ## 3.11 S10-N2 — Release-log data-flow residual
 
 **Status:** Partial; bounded interprocedural extension merged, syntax-only and physical logcat residuals remain.  
@@ -393,7 +396,7 @@ Inspect [`migration/MIGRATION_PLAN.md`](migration/MIGRATION_PLAN.md) and related
 2. Fix PR #258's synthetic PEM fixture Gitleaks hit and nondeterministic Firestore expiry test; rerun Gitleaks and Firestore integration.
 3. Design/implement S06-H5's non-oracular PIN-change contract and durable throttle with focused regressions.
 4. Add a focused S06-H4 false/true arming UI regression if source/test seams permit without device acceptance.
-5. S10-N1: prepare staged rules/test diff, but do not deploy/enforce.
+5. S10-N1: remove the unsupported `request.app` Rules check and false-positive emulator suite; retain Android provider checks. Remaining work is Firebase Console monitoring, approved service-level enforcement and isolated real-token staging acceptance.
 6. Add missing S05-M3/S05-H2/S06-L4 deterministic harnesses only where fresh source review proves a gap.
 7. Update tracker/session/handoff in the same PR as each change.
 

@@ -13,7 +13,6 @@ const {
 } = require('@firebase/rules-unit-testing');
 const { readFileSync } = require('fs');
 const { resolve } = require('path');
-const { loadRulesWithAppCheckStubbed } = require('./appCheckRules');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,23 +34,15 @@ function asAnon() {
 // ── setup / teardown ──────────────────────────────────────────────────────────
 
 beforeAll(async () => {
-  // Suite A: load the REAL rules but with appCheckVerified() forced to `true`.
-  //
-  // S08-H5 item 4a attached appCheckVerified() (== `request.app != null`) to the
-  // seed-derived recovery/backup + duress paths. @firebase/rules-unit-testing v3
-  // has no App Check support — request.app is ALWAYS null in the emulator — so
-  // loading the rules verbatim would make every existing test against those paths
-  // fail for a reason that has nothing to do with the auth/lock logic they cover.
-  //
-  // Stubbing the helper to `return true;` isolates this suite to exactly the
-  // property it has always tested: that the auth/ownership/lock logic is correct.
-  // The complementary proof — that the gate actually denies when App Check is
-  // absent — lives in appcheck.test.js (Suite B), and the proof that every gated
-  // path still carries the gate lives in appcheck-static.test.js (Suite C).
+  // Load the committed Firestore Rules verbatim. App Check enforcement is
+  // applied by Firebase at the service layer before Rules evaluation; Rules
+  // cannot inspect App Check token metadata. The emulator does not simulate
+  // the Firebase Console enforcement toggle, so real-token acceptance remains
+  // an isolated staging/operator check rather than an emulator assertion.
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
-      rules: loadRulesWithAppCheckStubbed(RULES_PATH),
+      rules: readFileSync(RULES_PATH, 'utf8'),
       host: '127.0.0.1',
       port: 8080,
     },
@@ -148,6 +139,91 @@ describe('/users/{uid}', () => {
       asUser('alice').doc('users/alice').set({
         displayName: 'Alice',
         fcmToken: { evil: true },
+      })
+    );
+  });
+});
+
+describe('/users/{uid}/devices/{deviceId}', () => {
+  const devicePath = 'users/alice/devices/device-1';
+
+  function validRegistration() {
+    return {
+      fcmToken: 'synthetic-fcm-token',
+      platform: 'android',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+  }
+
+  test('owner can create and read their own device registration without Rules-level App Check metadata', async () => {
+    await assertSucceeds(
+      asUser('alice').doc(devicePath).set(validRegistration())
+    );
+    await assertSucceeds(asUser('alice').doc(devicePath).get());
+  });
+
+  test('owner can update an allowed device registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertSucceeds(
+      asUser('alice').doc(devicePath).update({
+        fcmToken: 'rotated-synthetic-token',
+        updatedAt: 3,
+      })
+    );
+  });
+
+  test('owner can delete their own device registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertSucceeds(asUser('alice').doc(devicePath).delete());
+  });
+
+  test('another user cannot read, create or delete the registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertFails(asUser('bob').doc(devicePath).get());
+    await assertFails(
+      asUser('bob').doc(devicePath).set(validRegistration())
+    );
+    await assertFails(asUser('bob').doc(devicePath).delete());
+  });
+
+  test('unauthenticated callers cannot read or create the registration', async () => {
+    await seed(devicePath, validRegistration());
+    await assertFails(asAnon().doc(devicePath).get());
+    await assertFails(
+      asAnon().doc(devicePath).set(validRegistration())
+    );
+  });
+
+  test('owner cannot add fields outside the device-registration allow-list', async () => {
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        secret: 'must-not-be-stored',
+      })
+    );
+  });
+
+  test('owner cannot write an oversized FCM token', async () => {
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        fcmToken: 'x'.repeat(4097),
+      })
+    );
+  });
+
+  test('owner cannot write a non-string FCM token or platform', async () => {
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        fcmToken: { token: 'invalid' },
+      })
+    );
+    await assertFails(
+      asUser('alice').doc(devicePath).set({
+        ...validRegistration(),
+        platform: { name: 'android' },
       })
     );
   });

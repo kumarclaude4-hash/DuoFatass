@@ -130,3 +130,13 @@ scaffold (S10-N1)".
 `S07-L3`; lane AND, verify BLOCKED → S3-19b), per `ROUND3_REMEDIATION_PLAN.md`'s ordering. S3-15b
 and S3-19b remain open catch-up gates, unchanged — this session did not run them and does not claim
 to have.
+
+---
+
+## Retrospective correction — 2026-11-08 (not a new numbered Round 3 session)
+
+A later change wired `appCheckVerified()` into sensitive Firestore `allow` clauses. That design assumption was incorrect and is superseded by this correction. Firestore Security Rules do not expose App Check token metadata through `request.app`; the field is unsupported and its use causes rule-evaluation failure/denial. A Firebase contributor in the official Firebase Android SDK issue thread clarified that App Check enforcement is performed by the Firebase service layer before Rules evaluation; the issue reporter subsequently confirmed that `request.app` is not evaluable and causes denial ([Firebase Android SDK issue #8393](https://github.com/firebase/firebase-android-sdk/issues/8393)).
+
+The former emulator Suite B treated denials from those invalid Rules expressions as proof that App Check was working. Suite A hid the invalid expression by rewriting the helper body. Neither was a valid App Check enforcement test. The corrective work removes `request.app` and the helper from executable Firestore Rules, loads the exact committed rules verbatim in emulator tests, and adds source guards against reintroducing unsupported expressions. Provider packaging/registration remains an Android source-level concern and is retained.
+
+`S10-N1` remains **Partial**. Real App Check enforcement must be enabled at the Firebase service layer by an authorized operator only after reviewing monitoring metrics, compatible-client adoption and rollback readiness. Valid/missing/invalid token behavior must then be verified with synthetic identities in isolated staging and console state read back. No production Console setting or rules deployment is changed by the corrective PR.

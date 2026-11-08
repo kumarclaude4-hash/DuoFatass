@@ -86,22 +86,17 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
         // "debug token" for this app in the Firebase console — until then it
         // just fails open exactly like the Play Integrity factory does below.
         //
-        // NOTE — this call alone does not enforce anything. Enforcement is a
-        // two-part operator step, deliberately NOT flipped on by this change:
-        //   1. Firebase console → App Check → Firestore/Storage → "Enforce"
-        //      (roll out in monitoring/metrics mode first, per the audit's own
-        //      recommendation, before switching to Enforce — flipping this
-        //      blind risks locking out real traffic).
-        //   2. firestore.rules' appCheckVerified() helper is now attached to the
-        //      seed-derived recovery/backup + duress `allow` clauses (S08-H5
-        //      item 4a). Those rules are committed but only take effect once the
-        //      console step above is switched from monitoring to Enforce — until
-        //      then request.app is populated but never required, so this APK and
-        //      the rules can ship independently of the enforcement toggle.
-        // Sideloaded/rooted-device installs can still pass Play Integrity
-        // verdicts on some devices and are accepted as a residual gap per the
-        // audit (App Check raises attacker cost, it is not a control of record
-        // for a compromised client — see README.md's threat model).
+        // NOTE — provider registration supplies tokens; it does not itself
+        // enable enforcement. Firebase App Check enforces tokens at the service
+        // layer when an authorized operator enables Firestore/Storage enforcement
+        // in Firebase Console after reviewing monitoring metrics, compatible-client
+        // adoption and rollback readiness. Firestore Security Rules cannot inspect
+        // App Check token state: request.app is not a supported Rules field. Do not
+        // add request.app checks or App Check helper functions to firestore.rules.
+        // With service enforcement enabled, Firebase rejects missing/invalid tokens
+        // before Firestore Rules are evaluated. Until then, App Check remains in
+        // monitoring mode. App Check raises attacker cost but is not a trust
+        // boundary against a compromised client (see README.md threat model).
         try {
             FirebaseAppCheck appCheck = FirebaseAppCheck.getInstance(FirebaseApp.getInstance());
             appCheck.installAppCheckProviderFactory(
