@@ -95,6 +95,54 @@ public class PinChangeThrottleTest {
     }
 
     @Test
+    public void unavailableBootCounterUsesElapsedResetToDetectRebootForWindow() {
+        assertTrue(PinChangeThrottle.tryRecord(preferences, ACCOUNT_A, WALL, ELAPSED, -1L));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A, WALL + 1, ELAPSED + 1, -1L));
+
+        // A reboot resets elapsedRealtime below the stored window anchor. When
+        // BOOT_COUNT is unavailable, the helper falls back to wall time and
+        // expires the old window instead of carrying attempts across the reboot.
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 1,
+                1_000L,
+                -1L));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 2,
+                1_001L,
+                -1L));
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 3,
+                1_002L,
+                -1L));
+        assertFalse(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.WINDOW_MS + 4,
+                1_003L,
+                -1L));
+    }
+
+    @Test
+    public void unavailableBootCounterDoesNotCarryOldElapsedCooldownAcrossReboot() {
+        for (int i = 0; i < PinChangeThrottle.MAX_ATTEMPTS; i++) {
+            assertTrue(PinChangeThrottle.tryRecord(
+                    preferences, ACCOUNT_A, WALL + i, ELAPSED + i, -1L));
+        }
+
+        // The device reboots after the third attempt. Once the wall-clock
+        // cooldown has elapsed, a reset elapsedRealtime value must not extend
+        // the previous boot's deadline by the old uptime.
+        assertTrue(PinChangeThrottle.tryRecord(
+                preferences, ACCOUNT_A,
+                WALL + PinChangeThrottle.COOLDOWN_MS + 20,
+                1_000L,
+                -1L));
+    }
+
+    @Test
     public void cooldownIsPersistedAndWindowResetsAfterExpiry() {
         for (int i = 0; i < PinChangeThrottle.MAX_ATTEMPTS; i++) {
             assertTrue(PinChangeThrottle.tryRecord(
