@@ -67,7 +67,7 @@ PR #251 extends PRs #244/#246/#248 with bounded fixed-point summaries for unique
 ## Priority 4 — upstream/API and owner decisions
 
 - **S03-M3:** owner must ratify the current 10-minute, reusable READ/WRITE, single-use DELETE policy or approve a versioned one-shot design. Do not change v1 semantics or shorten TTL without tracing Android retries, range reads and re-fetches.
-- **S07-L2:** investigate a supported deterministic native-key destroy API in a compatible upstream libsignal version. Do not use reflection/unsafe hacks or claim synchronous native erasure. Otherwise obtain explicit owner acceptance of the GC-timed residual.
+- **S07-L2:** the 2026-11-08 upstream re-check found no supported caller-facing deterministic ECPrivateKey close/destroy API in either pinned libsignal 0.54.1 or the checked current upstream wrapper. Keep Partial; do not use reflection/unsafe hacks or claim synchronous native erasure. Obtain explicit owner acceptance of the GC-timed residual or wait for upstream API support. See `security-remediation/sessions/SESSION-S07-L2-LIBSIGNAL-BOUNDARY-2026-11-06.md`.
 - **S05-H2 product contract:** owner confirms invite-only onboarding is the intended model.
 
 ## Priority 5 — physical-device acceptance after feature completion
