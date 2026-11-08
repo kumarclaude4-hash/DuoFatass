@@ -245,5 +245,63 @@ if (!emulatorHost) {
     });
     assert.equal((await dbB.collection(invitesCollection).doc(expiring.id).get()).exists, true,
       "expiry must not depend on physical TTL cleanup");
+
+    // Corrupt/legacy states must never inherit eligibility from a future
+    // expiry. Missing and unknown status/expiry values remain visible as
+    // invalid, cannot validate/redeem, and can be explicitly revoked.
+    const pendingToken = "dsi_" + "b".repeat(64);
+    const missingStatusToken = "dsi_" + "c".repeat(64);
+    const malformedExpiryToken = "dsi_" + "d".repeat(64);
+    const pendingRef = dbA.collection(invitesCollection).doc("it_invalid_pending_" + suffix);
+    const missingStatusRef = dbA.collection(invitesCollection).doc("it_invalid_missing_" + suffix);
+    const malformedExpiryRef = dbA.collection(invitesCollection).doc("it_invalid_expiry_" + suffix);
+    const futureExpiry = Timestamp.fromMillis(clock.now + 24 * 60 * 60 * 1000);
+    await pendingRef.set({
+      tokenHash: invite.hashInviteToken(pendingToken),
+      tokenFingerprint: invite.tokenFingerprint(pendingToken),
+      status: "pending",
+      label: "Invalid pending state",
+      createdAt: Timestamp.fromMillis(clock.now),
+      expiresAt: futureExpiry,
+    });
+    await missingStatusRef.set({
+      tokenHash: invite.hashInviteToken(missingStatusToken),
+      tokenFingerprint: invite.tokenFingerprint(missingStatusToken),
+      label: "Invalid missing state",
+      createdAt: Timestamp.fromMillis(clock.now),
+      expiresAt: futureExpiry,
+    });
+    await malformedExpiryRef.set({
+      tokenHash: invite.hashInviteToken(malformedExpiryToken),
+      tokenFingerprint: invite.tokenFingerprint(malformedExpiryToken),
+      status: "active",
+      label: "Invalid expiry state",
+      createdAt: Timestamp.fromMillis(clock.now),
+      expiresAt: "not-a-date",
+    });
+
+    assert.equal(await storeA.isActive(pendingToken), false,
+      "a future expiry must not make an unknown status active");
+    assert.equal(await storeB.isActive(missingStatusToken), false,
+      "a missing status must fail closed");
+    assert.equal(await storeA.isActive(malformedExpiryToken), false,
+      "a malformed expiry must fail closed");
+    await assert.rejects(
+      () => dbA.runTransaction((tx) =>
+        storeA.redeemInTransaction(tx, "synthetic-invalid-state-user", pendingToken, requestContext)),
+      (error) => error && error.code === "INVITE_INVALID"
+    );
+    const invalidPage = await storeA.list({ status: "invalid", search: "invalid" });
+    assert.equal(invalidPage.items.length, 3);
+    assert.equal(invalidPage.counts.invalid, 3);
+    assert.ok(invalidPage.items.some((item) => item.id === pendingRef.id));
+    assert.ok(invalidPage.items.some((item) => item.id === missingStatusRef.id));
+    assert.ok(invalidPage.items.some((item) => item.id === malformedExpiryRef.id));
+
+    assert.deepEqual(await storeA.revoke(pendingRef.id, "invalid state cleanup", requestContext), {
+      status: "revoked",
+    });
+    assert.equal(await storeA.isActive(pendingToken), false);
+    assert.equal((await dbB.collection(invitesCollection).doc(pendingRef.id).get()).data().status, "revoked");
   });
 }
