@@ -285,7 +285,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "  void fieldHelper(Profile profile) { saveField(profile); String x = readField(); Log.w(\"TAG\", x); }\n"
                   + "  void operationalScalars() { boolean available = SecurePrefs.isAvailable(); SecurityTier tier = SecurePrefs.getTier(); boolean due = PendingLockStore.isRotationDue(null); int keyId = SignalKeyManager.getCurrentKyberPreKeyId(null); Log.w(\"TAG\", \"ops=\" + available + \"/\" + tier + \"/\" + due + \"/\" + keyId); }\n"
                   + "  void unrelatedSameName(Profile profile) { String x = UnsafeOther.isAvailable(profile.getUserId()); Log.w(\"TAG\", x); }\n"
+                  + "  void bodylessHelperReturn(UnknownProfileSource source) { String x = source.fetch(); Log.w(\"TAG\", x); }\n"
                   + "}\n"
+                  + "abstract class UnknownProfileSource { abstract String fetch(); }\n"
                   + "class SecurityTier { boolean isDurable() { return true; } }\n"
                   + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
                   + "class PendingLockStore { static boolean isRotationDue(Object context) { return true; } }\n"
@@ -293,15 +295,17 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 9
-                    || interproceduralResult.violations.size() != 6) {
+            if (interproceduralResult.inspectedCalls != 10
+                    || interproceduralResult.violations.size() != 7) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "6 unsafe helper flows and 3 safe helper flows, got "
+                        + "7 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message");
+            requireViolation(interproceduralResult.violations,
+                    "helper-return:fetch");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -406,7 +410,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             for (com.sun.source.tree.Tree member : node.getMembers()) {
                                 if (member instanceof MethodTree) {
                                     MethodTree method = (MethodTree) member;
-                                    if (method.getBody() == null || method.getReturnType() == null) continue;
+                                    if (method.getReturnType() == null) continue;
+                                    // Abstract/interface/native app-owned declarations still
+                                    // describe a possible helper return. Keep them in the index
+                                    // even without a body so callers fail closed instead of
+                                    // treating an unresolved zero-argument getter as safe.
                                     String signature = method.getName() + "/" + method.getParameters().size();
                                     candidates.computeIfAbsent(signature, ignored -> new ArrayList<>())
                                             .add(method);
@@ -419,7 +427,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
                                     MethodTree method = entry.getValue().get(0);
                                     String key = methodKey(owner, method);
                                     info.methods.put(entry.getKey(), new MethodDefinition(owner, key, method));
-                                    index.summaries.put(key, new MethodSummary());
+                                    MethodSummary initial = new MethodSummary();
+                                    if (method.getBody() == null) {
+                                        // There is no source body to prove this return safe.
+                                        // Abstract/interface/native app-owned declarations are
+                                        // unknown data sources, not sanitizer boundaries.
+                                        initial.unknownReturn = true;
+                                    }
+                                    index.summaries.put(key, initial);
                                 } else {
                                     info.ambiguousMethods.add(entry.getKey());
                                 }
