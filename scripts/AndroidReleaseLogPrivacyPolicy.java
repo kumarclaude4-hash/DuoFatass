@@ -293,6 +293,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class SafeBaseSource { String fetch(Profile profile) { return \"safe\"; } }\n"
                   + "class SensitiveDerivedSource extends SafeBaseSource { @Override String fetch(Profile profile) { return profile.getUserId(); } }\n"
                   + "class VirtualDispatchFlow { void log(Profile profile) { SafeBaseSource source = new SensitiveDerivedSource(); String value = source.fetch(profile); Log.w(\"TAG\", value); } }\n"
+                  + "class AmbiguousReturnSource { String fetch(Profile profile) { return profile.getUserId(); } String fetch(String selector) { return \"safe\"; } }\n"
+                  + "class AmbiguousOverloadFlow { void log(AmbiguousReturnSource source) { String result = source.fetch(\"ordinary\"); Log.w(\"TAG\", result); } }\n"
                   + "abstract class UnknownProfileSource { abstract String fetch(); }\n"
                   + "class SecurityTier { boolean isDurable() { return true; } }\n"
                   + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
@@ -301,10 +303,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 12
-                    || interproceduralResult.violations.size() != 9) {
+            if (interproceduralResult.inspectedCalls != 13
+                    || interproceduralResult.violations.size() != 10) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "9 unsafe helper flows and 3 safe helper flows, got "
+                        + "10 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -315,6 +317,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(interproceduralResult.violations, "field:memo");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [value]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [result]");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -588,6 +592,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
                               Map<String, String> localTypes) {
             MethodDefinition definition = resolveDefinition(callerOwner, invocation, localTypes);
             return definition == null ? null : summaries.get(definition.key);
+        }
+
+        boolean isAmbiguousAppOwnedCall(String callerOwner, MethodInvocationTree invocation,
+                                         Map<String, String> localTypes) {
+            String owner = resolveOwner(callerOwner, invocation, localTypes);
+            if (owner == null || ambiguousClasses.contains(owner)) return false;
+            ClassSummary info = classes.get(owner);
+            if (info == null) return false;
+            String signature = methodName(invocation) + "/" + invocation.getArguments().size();
+            return info.ambiguousMethods.contains(signature);
         }
 
         private MethodDefinition resolveDefinition(String callerOwner, MethodInvocationTree invocation,
@@ -1014,6 +1028,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             value.direct = true;
                             return null;
                         }
+                        if (index.isAmbiguousAppOwnedCall(definition.owner, node, localTypes)) {
+                            value.direct = true;
+                            return null;
+                        }
                         MethodDefinition target = index.resolveDefinition(definition.owner, node, localTypes);
                         if (target != null) {
                             MethodSummary called = previous.get(target.key);
@@ -1338,6 +1356,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         found[0] = true;
                         return null;
                     }
+                    if (returnSummaries.isAmbiguousAppOwnedCall(ownerClass, node, localTypes)) {
+                        // Multiple app-owned declarations share this name/arity signature.
+                        // Without type-aware overload resolution, fail closed on the
+                        // unknown return even when its visible arguments look harmless.
+                        found[0] = true;
+                        return null;
+                    }
                     MethodReturnSummaryIndex.MethodSummary helperSummary =
                             returnSummaries.resolve(ownerClass, node, localTypes);
                     if (helperSummary != null) {
@@ -1415,6 +1440,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     }
                     if (isSafeThrowableClassNameCall(node)
                             || returnSummaries.isSafeOperationalHelper(ownerClass, node, localTypes)) return null;
+                    if (returnSummaries.isAmbiguousAppOwnedCall(ownerClass, node, localTypes)) {
+                        found.add("ambiguous-helper-return:" + method);
+                        return null;
+                    }
                     MethodReturnSummaryIndex.MethodSummary helperSummary =
                             returnSummaries.resolve(ownerClass, node, localTypes);
                     if (helperSummary != null) {
