@@ -841,6 +841,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         // called on another app-owned object must taint the receiver's
                         // field, never an unrelated same-named field on this caller.
                         for (String fieldKey : called.directFieldWrites) {
+                            result.directFieldWrites.add(fieldKey);
                             index.addSensitiveField(fieldKey);
                         }
                         for (Map.Entry<String, Set<Integer>> write
@@ -849,6 +850,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                                 if (parameter < node.getArguments().size()) {
                                     ValueTaint argument = evaluate(node.getArguments().get(parameter));
                                     if (argument.direct) {
+                                        result.directFieldWrites.add(write.getKey());
                                         index.addSensitiveField(write.getKey());
                                     }
                                     if (!argument.parameters.isEmpty()) {
