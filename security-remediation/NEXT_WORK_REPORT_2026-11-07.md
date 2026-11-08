@@ -1,72 +1,78 @@
 # DuoShield — Next Work Report
-**Updated:** 2026-11-07  
+
+**Updated:** 2026-11-08  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `98f76cdf374eeaf5c8144befad068ef05805a20b`
+**Current main:** `8d0082d004993278645f3eb7a72c43a8cdc14e59` (PR #267 merge)
 
 ## Current verified mainline
 
-Main CI [42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135) both completed successfully on the exact current main SHA.
+PR #267 was merged after its exact head `213442825113013a85650de9ac24edf0e9ec9211` passed all required pull-request workflows:
 
-The current main CI check set passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server/Worker tests, Android release-log AST, Cloudflare Worker build validation, Gradle-wrapper integrity and vendored-libsignal integrity. Security checks passed CodeQL, Gitleaks and SBOM.
+- CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887) — passed: Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests, release-log AST, Gradle wrapper and vendored-libsignal integrity.
+- Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988) — passed: CodeQL, Gitleaks and SBOM.
+- Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886) — passed.
+- Firestore Rules + server transactions [42443323962](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323962) — passed; log reported 200 Rules tests and 6 server transaction/integration tests.
 
-Recent merged changes:
-- PR #251: bounded interprocedural release-log taint analysis; S10-N2 remains Partial for syntax-only analysis limits and physical release-logcat acceptance.
-- PR #255: new invite redemptions store a 12-hex pseudonymous UID tag; admin listing masks legacy raw UID; a dry-run-first cleanup script exists.
-- PR #256: valid single-range Worker GETs cost half a request unit in the shared per-holder minute bucket, allowing chunked encrypted-video playback without adding a second quota bucket.
-- PR #257: S05-H2 privacy closeout documentation.
+Post-merge workflows on current main `8d0082d004993278645f3eb7a72c43a8cdc14e59`:
+- Security [42445582762](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582762) — passed.
+- Firestore rules [42445582759](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582759) — passed.
+- Firestore Rules Tests [42445582747](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582747) — passed.
+- CI [42445582763](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42445582763) — still running when this report was prepared; do not describe post-merge full CI as complete until this run concludes.
 
-The canonical finding register is `BUG_TRACKER.md`: **116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. S06-H4 and S06-H5 are restored as high-severity rows; H4 is Fixed on current source and H5 remains Partial because the Settings-based candidate oracle is not fully closed.
+## Recent merged work
 
-## Priority 1 — get the three open code PRs current and green
+- PR #261 — explicit active-state/future-expiry validation for invite redemption and audited invalid-state handling (S05-H2).
+- PR #264 — admin UI revoke action for invalid invite rows (S05-H2).
+- PR #265 — generic Settings PIN-change failure response and durable attempt throttle for accepted and rejected candidates (S06-H5). Exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3`, merge `32175ccf86342a6c517459a0e2507f14c4d064e8`; CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed. PR #262 was closed unmerged; its implementation was carried by #265.
+- PR #267 — corrected the App Check / Firestore Rules boundary (S10-N1); unsupported `request.app` and `appCheckVerified()` removed from executable rules, verbatim Rules emulator testing restored, device registration tests added, and rollout docs corrected. Merge `8d0082d004993278645f3eb7a72c43a8cdc14e59`.
+- PR #266 — intentionally closed unmerged; its documentation changes were not applied to main.
 
-| PR | Scope | Current evidence | Required next action |
-|---|---|---|---|
-| [#253](https://github.com/kumarclaude4-hash/DuoFatass/pull/253) | Reject missing/unknown/corrupt invite lifecycle states; add invalid-state admin filter and audited revoke | Exact head `231af6f3a499b60286d567a6628876abfb5d6d31`; CI 10/10, Security 3/3 and Firestore Rules/server transaction suite passed | The branch is based on `3d41501` and GitHub reports it **dirty/non-mergeable** against current main. Rebase/resolve current changes and rerun all checks. |
-| [#254](https://github.com/kumarclaude4-hash/DuoFatass/pull/254) | Range-read request allowance for 1 MiB encrypted video chunks | Exact head `1d5583584572859bcb07b39bba0628c554226c84`; CI 10/10 and Security 3/3 passed | The branch is also based on `3d41501` and **dirty/non-mergeable**. Rebase onto current main (including PR #255 and #256) and rerun. |
-| [#258](https://github.com/kumarclaude4-hash/DuoFatass/pull/258) | Normalize escaped PEM newlines in the invite UID cleanup utility | Exact head `b20a5bf628c2a58b29b41f5cf71668d88d445b0d`; regular CI passed | Security failed because Gitleaks flagged a synthetic PEM-shaped test fixture in `pseudonymizeInviteRedemptionUids.test.js`. Firestore integration failed one mintToken test because its invite expiry hit the exact one-hour minimum during test execution. Replace the fixture with non-secret placeholder data that does not resemble a private key; make the expiry deterministic with a fixed injected clock or a safe margin. Rerun Security and Firestore integration. |
+There are **no open code PRs** at this snapshot.
 
-Workflow evidence for PR #258: CI [42387218211](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218211), Security [42387218255](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218255), Firestore Rules/server transactions [42387218230](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218230).
+## Canonical tracker
 
-Do not merge any of these three until the exact updated PR head has fresh green CI/Security/Firestore checks. Do not use production credentials or run the historical UID cleanup as part of PR validation.
+The five severity sections of `BUG_TRACKER.md` retain **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). The register is authoritative; this report does not promote findings based on PR merge alone.
 
-## Priority 2 — close the remaining source-level gaps
+Notable evidence corrections:
+- **S06-H5 remains Partial:** PR #265's durable three-attempt/15-minute, UID-scoped throttle counts successful and failed replacement attempts and uses a generic failure response. This bounds probing but does not prove every success/failure side channel impossible.
+- **S08-L4 remains Partial:** opaque lock-transition cover and manifest protections are implemented and CI-tested; actual no-flash/touch-blocking/unlock/sign-out flow acceptance is device-deferred.
+- **S10-N1 remains Partial:** the invalid Rules-level App Check expression has been removed and regression-tested. Real enforcement is a Firebase service-layer Console operation and isolated staging acceptance remains outstanding.
+- **S10-N2 remains Partial:** bounded syntax/AST taint analysis is useful regression protection but is not whole-program, symbol-resolved analysis; physical release-logcat acceptance is deferred until feature-complete.
 
-### S06-H5 — PIN-change duress oracle (Partial; source mitigation prepared in PR #262)
-The Settings PIN-change flow now records a durable, UID-scoped attempt before checking the candidate against the hidden secondary code or writing the replacement. The throttle permits three attempts per 15-minute window, counts both successful and rejected candidates, uses wall-clock plus same-boot elapsed-time deadlines, with Android `Settings.Global.BOOT_COUNT` as the stable boot identifier (rather than a wall-clock-derived approximation), and fails closed on preference read/write errors. Collision, cooldown and storage failures share one generic rejection message; the previous collision-specific toast/branch is removed. PR #262 adds JVM coverage for the attempt limit, persistence/expiry, same-boot wall-clock rollback and per-account separation, plus a source-wiring regression. Keep Partial: this materially bounds candidate probing and hides collision-specific failure text, but does not establish that every success/failure observation is impossible. Promote only after exact-head Android CI and independent security review; physical-device acceptance remains deferred until feature-complete.
+## Next work — dependency ordered
 
-### S06-H4 — arming failure (Fixed; source-wiring regression added in PR #263)
-`ManageUnlockCodesActivity.onConfirmExplain()` captures the result of `DuressManager.setDuressPin()`. On false, the UI reports a generic retry message and returns before the success toast or `finish()`; only a true result produces “Code saved.” and exits. `setDuressPin()` accepts the shared 4–6 digit range. PR #263 adds a JVM source-wiring regression proving the failure branch returns before the success path and contains no finish call. Keep the behavioral disposition Fixed, but require exact-head Android CI to validate the new coverage.
+### 1. Source-review / code-analysis candidates
 
-### S10-N2 — release-log data flow (code merged)
-PR #251 extends PRs #244/#246/#248 with bounded fixed-point summaries for uniquely resolvable app-owned helper returns, parameter pass-through and same-class field writes/reads. The exact head passed CI 10/10 and Security 3/3; the production AST pass scanned 204 Java files and 414 warning/error/fatal log sinks with zero violations. Residuals remain for reflection, inheritance/virtual dispatch, cross-class aliasing, native methods and third-party callbacks. Physical release-logcat acceptance remains deferred until feature-complete.
+- **S10-N2:** perform a targeted residual review of the compiler-AST release-log analyzer against unresolved inter-class field flow, inheritance/virtual dispatch, reflection and external callbacks. Add a narrow regression only where a concrete false negative is reproducible and safely fixable; do not claim whole-program proof.
+- **S07-L2:** check whether a supported upstream libsignal version exposes deterministic native private-key destruction. Do not use reflection, unsafe native access or GC forcing as a fake fix. If no supported API exists, prepare a precise residual-risk decision for the owner.
+- Re-check `BUG_TRACKER.md` and current source before taking any additional code task; the 2026-11-07 open-PR list is historical and must not be revived.
 
-## Priority 3 — isolated staging/operator acceptance
+### 2. Owner decisions
+
+- **S03-M3:** ratify reusable READ/WRITE media-token semantics and the 10-minute TTL, or approve a versioned protocol redesign. Do not silently change retry/range semantics.
+- **S05-H2:** owner confirmation that invite-only onboarding is the intended product contract.
+
+### 3. Authorized staging / operator acceptance
 
 | Finding | Required acceptance |
 |---|---|
-| **S05-H2** | Confirm invite-only product contract; test full create/list/search/paginate/revoke/expiry/validate and one-time redemption with synthetic identities; Android new-account invite onboarding and existing-account restore after feature completion. Historical UID cleanup: authorized staging dry-run, review aggregate counts, approved apply only, then repeat dry-run and require zero candidates. |
-| **S05-M3** | Multi-instance admin-session create/validate/revoke/global revoke/restart/outage/expiry in staging; read back deployed Firestore rules, indexes and TTL. Synthetic sessions only. |
-| **S06-L4** | Staging lost-response/admin-unfreeze replay, retry exhaustion, permanent invalid nonce and Firestore config read-back; device wipe/reboot/sign-in/network recovery after feature-complete. |
-| **S10-N1** | App Check service-level monitoring metrics, compatible-client adoption and Firebase Console enforcement read-back; do not add `request.app` or App Check helper expressions to Firestore Rules. Validate real-token acceptance/rejection only in isolated staging after operator-approved enforcement. |
-| **S10-N3** | Isolated Cloudflare Worker + R2 + B2 scheduled migration, cron retry and interleaved delete/ETag/HEAD/B2 failure acceptance. Never use production buckets/media. |
-| **S02-I2** | Authorized read-back that Render `ADMIN_LOCKOUT_WORKER_URL` / `ADMIN_LOCKOUT_WORKER_SECRET` match the Worker secret and exercise the Durable Object path without exposing values. |
-| **S02-I3** | Synthetic Firebase staging token: revoke refresh tokens, prove old token rejected across all 12 protected routes and newly issued token accepted. |
-| **SC-12** | Require appropriate approving reviews, required CI/Security checks, protected version tags and production-release environment; read effective rules back after an authorized admin changes them. |
+| **S05-H2** | Synthetic invite create/list/search/paginate/revoke/expiry/validate/one-time redemption and Android onboarding/restore after feature-complete; authorized legacy UID migration dry-run, review, approved apply if safe, and repeat dry-run showing zero candidates. |
+| **S05-M3** | Multi-instance admin-session create/validate/revoke/global revoke/restart/outage/expiry; read back deployed Firestore rules/indexes/TTL. Synthetic sessions only. |
+| **S06-L4** | Staging lost-response/admin-unfreeze replay, retry exhaustion, permanent invalid nonce and Firestore configuration read-back. |
+| **S10-N1** | Review App Check monitoring and client adoption; enable service-level enforcement only after rollback readiness; verify valid/missing/invalid tokens with synthetic identities and read back Console state. Never add `request.app` to Firestore Rules. |
+| **S10-N3** | Isolated Cloudflare Worker + R2 + B2 cron/retry and interleaved delete/ETag/HEAD/B2 failure acceptance. Never use production buckets/media. |
+| **S02-I2** | Authorized, redacted Render/Worker Durable Object URL-secret pairing read-back and an actual synthetic Durable Object path test. Never print secret values. |
+| **S02-I3** | Synthetic Firebase staging token revocation: old token rejected across all 12 protected routes and newly issued token accepted. |
+| **SC-12** | Authorized GitHub administrator configures and reads back required approving reviews, required CI/Security checks, CODEOWNERS/last-push policy, immutable version tags and protected production-release environment. |
 
-## Priority 4 — upstream/API and owner decisions
-
-- **S03-M3:** owner must ratify the current 10-minute, reusable READ/WRITE, single-use DELETE policy or approve a versioned one-shot design. Do not change v1 semantics or shorten TTL without tracing Android retries, range reads and re-fetches.
-- **S07-L2:** investigate a supported deterministic native-key destroy API in a compatible upstream libsignal version. Do not use reflection/unsafe hacks or claim synchronous native erasure. Otherwise obtain explicit owner acceptance of the GC-timed residual.
-- **S05-H2 product contract:** owner confirms invite-only onboarding is the intended model.
-
-## Priority 5 — physical-device acceptance after feature completion
+### 4. Physical-device acceptance — deferred
 
 Do not start this matrix until the owner explicitly declares the app feature-complete:
-- S11-H1 predictive-back edge gestures and no-skip gates across OEM/API versions.
+- S11-H1 predictive-back edge gestures on LockScreenActivity and all no-skip gates across supported OEM/API versions.
 - S11-M1 call minimize/timeout/notification return/authentication and in-call continuation.
 - S08-H2 screenshot, screen-recording and recents behavior on fresh install and explicit opt-in.
 - S08-L3 4/5/6-digit PIN, debounce, backspace, interrupted entry and duress flows.
-- S08-L4 lock cover no-flash/touch blocking/clear on unlock, duress, no-PIN and sign-out.
+- S08-L4 lock-cover no-flash/touch-blocking/removal after unlock, duress, no-PIN and sign-out.
 - S08-H5/S07-M1 real Keystore migration, interrupted upgrade, retry and recovery.
 - S06-L4 wipe/reboot/sign-in/network-loss/lost-response behavior.
 - S05-H2 complete Android invite onboarding and existing-account restore.
@@ -74,4 +80,4 @@ Do not start this matrix until the owner explicitly declares the app feature-com
 
 ## Sign-off
 
-`security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. No PR merge, green CI run, source review or emulator pass constitutes production deployment, credential rotation, provider-console acceptance or physical-device sign-off. Historical handoff instructions remain useful only where they do not conflict with this current report.
+`security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. No PR merge, green CI run, source review or emulator pass constitutes production deployment, credential rotation, provider-console acceptance, live staging evidence or physical-device sign-off.
