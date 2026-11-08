@@ -8,41 +8,38 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 ## What this program is
 
-All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level.
-That is not equivalent to end-to-end sign-off. S3-15b Firestore Rules emulator coverage passed
-**186/186 tests**, and S3-19b Android catch-up is verified on main CI (Android unit tests, lint,
-debug APK, Espresso and minified R8).
+All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-As of 2026-11-07, main is `98f76cdf374eeaf5c8144befad068ef05805a20b`. Main CI
-[42387261365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261365) and
-Security Scan [42387261135](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387261135)
-passed. PR #255 (invite UID pseudonymization), PR #256 (Worker range-read rate accounting) and
-documentation PR #257 are merged. Current code PRs #253, #254 and #258 remain open; their exact
-heads, stale merge bases and CI blockers are recorded in
-[`AGENTIC_WORK_REMAINING_2026-11-06.md`](AGENTIC_WORK_REMAINING_2026-11-06.md).
+**Current main (2026-11-08):** `afdf2463c496f14a5c33ee5694fc47eff97d5e3d` (PR #269 merged; includes PR #267).
 
-The canonical `../BUG_TRACKER.md` now contains **116 findings: 86 Fixed, 17 Partial, 1 Open,
-12 Accepted**. The two restored Session 06 findings S06-H4 and S06-H5 are included in that
-count. `FINAL_SIGNOFF.md` remains **PENDING** until residual test, staging, operator, governance
-and deferred physical-device acceptance gates have been evidenced or formally approved.
+PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
+
+PR #265 merged the successful/failed PIN-change throttle and generic failure contract for S06-H5. PR #267 subsequently passed the full CI and Security/Firestore workflows on its exact PR head before merging. PR #269 then hardened S10-N2 bodyless helper returns; its exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed before merge.
+
+The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. The remaining Partial/Open items are not all code defects: they include staging/operator acceptance, owner decisions, upstream API limits and physical-device checks explicitly deferred until feature-complete. `FINAL_SIGNOFF.md` remains **PENDING**.
 
 ---
 
-## Current state — 2026-11-07
+## Current state — 2026-11-08
 
 ```
-MAIN: 98f76cdf374eeaf5c8144befad068ef05805a20b
-CI: 42387261365 — passed
-SECURITY: 42387261135 — passed
-MERGED: PR #255 (invite UID pseudonymization), #256 (range-read rate accounting), #257 (docs).
-OPEN: PR #253 (invite-state fail-closed; stale/dirty base), #254 (range-read allowance; stale/dirty base),
-      #258 (migration credential normalizer; Gitleaks fixture + Firestore expiry test failures).
+MAIN: afdf2463c496f14a5c33ee5694fc47eff97d5e3d
+MERGED: PR #265 (S06-H5 durable Settings PIN-change throttle); PR #267 (S10-N1 Firestore App Check correction); PR #269 (S10-N2 bodyless helper-return hardening).
+PR #267 head: 213442825113013a85650de9ac24edf0e9ec9211
+CI: 42443323887 — passed (Android unit, lint, debug APK, Espresso, API 35 predictive-back, R8, Server + Worker).
+SECURITY: 42443323988 — passed (CodeQL, Gitleaks, SBOM).
+FIRESTORE RULES: 42443323886 — passed.
+FIRESTORE RULES + SERVER TRANSACTIONS: 42443323962 — passed (200 Rules tests + 6 server transaction tests).
+OPEN CODE PRS: none after PR #269 merged; documentation reconciliation is in progress.
+PR #266: intentionally closed unmerged; its documentation changes were not applied to main.
 TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted.
-NEXT: Follow AGENTIC_WORK_REMAINING_2026-11-06.md for the active PRs and current acceptance gaps.
+NEXT: use NEXT_WORK_REPORT_2026-11-08.md and BUG_TRACKER.md; the old 2026-11-07 worklists are historical.
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
 FINAL SIGN-OFF: PENDING.
 ```
+
+The PR #267 workflows above passed against its exact head before merge. Separate post-merge workflows on the new main commit should be read back before relying on them; do not claim their completion merely from PR-head evidence.
 
 ## Chain state — historical Round 3 schedule
 
@@ -55,12 +52,12 @@ S3-15b Firestore Rules catch-up: 186/186 emulator tests passed.
 S3-19b Android catch-up: verified on main CI (lint, unit tests, debug APK, Espresso and release R8).
 The 2026-11-04 main commit/run references in the original session notes are historical.
 Remaining security, staging and operator actions are enumerated in
-security-remediation/AGENTIC_WORK_REMAINING_2026-11-06.md and BUG_TRACKER.md.
+security-remediation/NEXT_WORK_REPORT_2026-11-08.md, the agentic handoff and BUG_TRACKER.md.
 ```
 
 If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
-session. Follow the current agentic handoff for bounded code PRs and acceptance preparation; do not
-treat the scheduled-session stop rule as a reason to ignore the active open PRs.
+session. Follow the current 2026-11-08 work report for source-review priorities, owner decisions,
+operator acceptance and feature-complete device deferrals. There are no open code PRs after PR #269 merged; documentation reconciliation is in progress.
 
 
 ---
@@ -70,8 +67,9 @@ treat the scheduled-session stop rule as a reason to ignore the active open PRs.
 1. **Read the rules of engagement.** Open [`SESSION_PROTOCOL.md`](./SESSION_PROTOCOL.md) and read it
    in full. It is binding: source beats tracker, ≤4 tasks/session, never fabricate a PASS, never make
    `/mintToken` auth fields optional.
-2. **Open the current handoff.** Use [`AGENTIC_WORK_REMAINING_2026-11-06.md`](./AGENTIC_WORK_REMAINING_2026-11-06.md)
-   for current code PRs, source-only tasks, operator blockers and feature-complete device deferrals.
+2. **Open the current handoff.** Use [`NEXT_WORK_REPORT_2026-11-08.md`](./NEXT_WORK_REPORT_2026-11-08.md)
+   and [`AGENTIC_WORK_REMAINING_2026-11-06.md`](./AGENTIC_WORK_REMAINING_2026-11-06.md)
+   for the refreshed baseline, source-review priorities, operator blockers and feature-complete device deferrals.
    The numbered Round 3 plan is complete; do not invent another scheduled session.
 3. **Recover state (SESSION_PROTOCOL §3 + §7).** Run:
    - `git status --short` and `git log -3 --oneline --stat`
