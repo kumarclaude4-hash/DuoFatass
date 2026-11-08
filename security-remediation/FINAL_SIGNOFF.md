@@ -7,13 +7,13 @@
 
 ## Current evidence snapshot — 2026-11-08
 
-The canonical register is [\`../BUG_TRACKER.md\`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed; S06-H5 is Partial after the merged PIN-change attempt throttle; S05-H2 remains Partial pending product-contract and staging acceptance.
+The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed; S06-H5 is Partial after the merged PIN-change attempt throttle; S05-H2 remains Partial pending product-contract and staging acceptance.
 
-Current \`main\`: \`32175ccf86342a6c517459a0e2507f14c4d064e8\`.
+Current `main`: `32175ccf86342a6c517459a0e2507f14c4d064e8`.
 
 ### Exact-head validation
 
-PR #265's exact head \`ed8e47550763cf7766acb0f6ef3d53dc15039df3\`, merged as current main, passed:
+PR #265's exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3`, merged as current main, passed:
 - CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067): **all jobs passed**, including Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8/mapping, Server/Worker tests, AST privacy and dependency-integrity checks.
 - Security Scan [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048): **all jobs passed** (CodeQL, Gitleaks, SBOM).
 
@@ -35,11 +35,11 @@ There are **no open pull requests**. PRs #253/#258 were closed as superseded by 
 
 ### Deployment and what is not proven
 
-Render service \`DuoFat\` is on the Free plan with auto-deploy from \`main\`. The latest verified live server deploy is commit \`bff993d32d39f7d084aa24f5dece159f176f2ebb\` (PR #264); subsequent main commits in this snapshot are Android-side/tests/documentation and do not add server-root runtime changes. A successful Render deploy is not a substitute for staging lifecycle or provider-console acceptance.
+Render service `DuoFat` is on the Free plan with auto-deploy from `main`. The latest verified live server deploy is commit `bff993d32d39f7d084aa24f5dece159f176f2ebb` (PR #264); subsequent main commits in this snapshot are Android-side/tests/documentation and do not add server-root runtime changes. A successful Render deploy is not a substitute for staging lifecycle or provider-console acceptance.
 
 No live credential rotation, Firebase/Firestore rules or TTL deployment, App Check enforcement change, Render/Worker secret-pair read-back, Firebase revoked-token staging test, Cloudflare Worker/R2/B2 cron migration acceptance, historical Firestore UID migration or physical-device acceptance is claimed.
 
-Repository governance remains incomplete. Default ruleset \`Hello\` (ID \`26629873\`) has zero required approving reviews and no required status checks; classic branch-protection enforcement is off in the available read-back. SC-12 therefore remains Open pending authorized admin configuration/read-back of review/check requirements, immutable version tags and a protected production-release environment.
+Repository governance remains incomplete. Default ruleset `Hello` (ID `26629873`) has zero required approving reviews and no required status checks; classic branch-protection enforcement is off in the available read-back. SC-12 therefore remains Open pending authorized admin configuration/read-back of review/check requirements, immutable version tags and a protected production-release environment.
 
 S03-M3 still requires the owner's written choice on 10-minute reusable READ/WRITE tokens versus a versioned one-shot protocol. S07-L2 still lacks a supported deterministic ECPrivateKey destroy API in the checked upstream wrapper; keep the GC-timed residual Partial unless an owner approves the residual or upstream adds a supported API.
 
