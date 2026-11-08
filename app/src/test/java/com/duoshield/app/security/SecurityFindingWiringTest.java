@@ -91,7 +91,7 @@ public class SecurityFindingWiringTest {
         int failureAt = source.indexOf("if (!saved)", saveAt);
         int failureMessageAt = source.indexOf("Could not save. Try again.", failureAt);
         int failureReturnAt = source.indexOf("return;", failureMessageAt);
-        int successMessageAt = source.indexOf('Toast.makeText(this, "Code saved."', failureReturnAt);
+        int successMessageAt = source.indexOf("Toast.makeText(this, \"Code saved.\"", failureReturnAt);
         int finishAt = source.indexOf("finish();", successMessageAt);
 
         assertTrue("the secure write result must be captured", saveAt >= 0);
