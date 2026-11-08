@@ -3,7 +3,7 @@
 **Prepared:** 2026-11-07  
 **Repository:** https://github.com/kumarclaude4-hash/DuoFatass  
 **Original source-review baseline:** `main` at `fa5431a6ea3cc7af7c4ba05b9b2c1c617c2c7101` (PR #248 merge)  
-**Current reconciliation baseline:** `main` at `98f76cdf374eeaf5c8144befad068ef05805a20b` (PR #256 merge)  
+**Current reconciliation baseline:** `main` at `32175ccf86342a6c517459a0e2507f14c4d064e8` (2026-11-08 closeout after PR #265)  
 **Purpose:** Source-linked, evidence-aware inventory of incomplete security work, with precise next actions and acceptance criteria for an independent Claude review.
 
 > This is a handoff report, not a new audit or sign-off. The canonical finding register is [`BUG_TRACKER.md`](../BUG_TRACKER.md). `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. Do not invent finding IDs, change dispositions without evidence, infer owner approval, or mark a finding Fixed merely because a PR merged.
@@ -45,17 +45,16 @@ Relevant merged work:
 
 Current main CI and Security Scan passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server/Worker tests, release-log AST, Cloudflare Worker build validation, CodeQL, Gitleaks, SBOM and dependency-integrity checks.
 
-### Open PRs requiring follow-up
+### Open PRs requiring follow-up — none as of 2026-11-08
 
-| PR | Exact head | Base / merge state | Current checks and next action |
-|---|---|---|---|
-| [#253](https://github.com/kumarclaude4-hash/DuoFatass/pull/253) | `231af6f3a499b60286d567a6628876abfb5d6d31` | Based on `3d41501`; GitHub reports dirty/non-mergeable | CI 10/10, Security 3/3 and Firestore Rules/server transactions passed. Rebase/resolve against current main and rerun before merge. |
-| [#254](https://github.com/kumarclaude4-hash/DuoFatass/pull/254) | `1d5583584572859bcb07b39bba0628c554226c84` | Based on `3d41501`; GitHub reports dirty/non-mergeable | CI 10/10 and Security 3/3 passed. Rebase/resolve against current main and rerun before merge. |
-| [#258](https://github.com/kumarclaude4-hash/DuoFatass/pull/258) | `b20a5bf628c2a58b29b41f5cf71668d88d445b0d` | Based on `89ac44c`; mergeable but unstable | CI passed; Gitleaks flagged a synthetic PEM-shaped test fixture; one Firestore mintToken integration test failed because the invite expiry elapsed across the 1-hour minimum boundary. Replace the fixture and make the clock deterministic, then rerun all required checks. |
+All code PRs in the prior handoff are merged; there are **no open PRs**. The older #253/#258 branches were closed as superseded by #261/#260. PR #254 was closed as superseded by #256. The final code batch is:
+- #260 — Firebase credential newline normalization in the legacy invite UID cleanup utility. Exact-head CI [42438156937](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42438156937), Firestore [42438157000](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42438157000), Security [42438157048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42438157048) passed.
+- #261 — fail-closed invite lifecycle, invalid-state filtering/count and audited backend revocation. CI [42438270236](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42438270236), Firestore [42438270223](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42438270223), Security [42438270225](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42438270225) passed.
+- #263 — S06-H4 save-failure regression. CI [42439202158](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439202158), Security [42439202156](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439202156) passed.
+- #264 — invalid-invite admin Revoke action. CI [42439015994](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439015994), Firestore [42439016021](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439016021), Security [42439016010](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439016010) passed.
+- #265 — S06-H5 PIN-change attempt throttle. Exact-head CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed. Merge commit is current main \`32175ccf86342a6c517459a0e2507f14c4d064e8\`.
 
-PR #253/#254 checks were run against their older merge bases. Their passing historical checks do not validate the exact current-main merge result. PR #258 evidence: CI [42387218211](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218211), Security [42387218255](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218255), Firestore Rules/server transactions [42387218230](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42387218230).
-
-A merge and green CI do **not** prove production deployment, live Firebase/Render/Cloudflare configuration, credential rotation, live R2/B2 cron migration, physical-device acceptance, owner risk acceptance, governance enforcement or production sign-off.
+Mainline post-merge CI [42440446625](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446625) and Security [42440446649](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440446649) were queued when this reconciliation was prepared; recheck before release. Merging and passing CI do **not** prove production deployment, live Firebase/Render/Cloudflare configuration, credential rotation, live R2/B2 cron migration, owner risk acceptance, governance enforcement or production sign-off.
 
 ## 2. Executive inventory
 
@@ -63,7 +62,7 @@ A merge and green CI do **not** prove production deployment, live Firebase/Rende
 |---|---|---|
 | S03-M3 | Partial | Owner risk decision or versioned protocol |
 | S05-M3 | Partial | Multi-instance staging + Firestore rules/index/TTL read-back |
-| S05-H2 | Partial | Product contract; staging lifecycle/onboarding; authorized legacy UID cleanup; validate PR #253 and #258 after rebase/fix |
+| S05-H2 | Partial | Owner confirmation of invite-only contract; authorized legacy UID cleanup dry-run/approved apply; isolated lifecycle and Android onboarding staging acceptance. Core code is merged in #260/#261/#264. |
 | S06-L4 | Partial | Staging retry/recovery race + Firestore config + deferred device matrix |
 | S07-L2 | Partial | Supported deterministic native-key destruction or approved residual |
 | S08-H2 | Partial | Screenshot/recording/recents device acceptance |
@@ -79,8 +78,8 @@ A merge and green CI do **not** prove production deployment, live Firebase/Rende
 | S02-I2 | Partial | Render/Worker secret pairing read-back + Durable Object proof |
 | S02-I3 | Partial | Firebase revoked-token integration across all 12 routes |
 | SC-12 | Open | Required checks/reviews/tags/production environment governance |
-| S06-H4 | Fixed | The arming UI now checks the boolean result of `DuressManager.setDuressPin()`; a failed write is surfaced generically, while only success reports “Code saved.” and exits. The setter accepts the supported 4–6 digit range. A focused false/true UI test would improve coverage. |
-| S06-H5 | Partial | Wrong-PIN exponential backoff and exact/prefix collision checks exist, but `SecurityPrivacySettingsActivity.doSavePin()` still emits a distinguishable collision outcome. A person who knows the current primary PIN can repeatedly rotate through candidate values; successful changes do not consume the wrong-PIN counter. A non-oracular PIN-change contract and throttle are still required. |
+| S06-H4 | Fixed | PR #263 adds a JVM source-wiring regression: failed setDuressPin() returns before success toast/finish; exact-head CI and Security passed. |
+| S06-H5 | Partial | PR #265 adds a durable UID-scoped 3-attempt/15-minute PIN-change budget and one generic failure response; exact-head Android CI/Security passed. It bounds probing but does not prove all success/failure observations indistinguishable. Independent security review and feature-complete device acceptance remain. |
 
 S07-M1 and S08-H5 concern the same legacy migration stream from separate classifications. Coordinate them together but preserve both finding IDs/statuses. The tracker is authoritative if any narrative document differs.
 
@@ -154,11 +153,15 @@ Exact PR head `af8f676c6bdbeb125eb46c01e4aa2b56af30c4f0` passed CI [42385827187]
 **Not complete:** historical Firestore rows may still contain raw UID fields. No live migration was run. The operator must execute a staging dry-run, review aggregate counts, explicitly approve `--apply`, then repeat dry-run and confirm zero candidates. The product owner must confirm invite-only onboarding and complete synthetic staging/Android onboarding acceptance. Keep S05-H2 Partial.
  
 
-### Subsequent invite lifecycle work — PRs #253 and #258 are not yet accepted
+### Subsequent invite lifecycle and migration utility closeout — 2026-11-08
 
-PR #253 adds an explicit active-state/future-expiry requirement and classifies unknown/missing/malformed stored states as invalid; its admin list/count/filter and audited revoke path are extended accordingly. Its tests and originally observed checks passed on its head, but the branch is behind current main and GitHub reports a dirty merge state. Rebase against current main and rerun before merge.
+PR #260 normalized escaped Firebase private-key newlines in the standalone UID cleanup utility, replaced the PEM-shaped synthetic fixture with harmless placeholders, and removed the exact one-hour expiry boundary from the Firestore integration fixture. Its CI, Firestore integration and Security Scan passed. No historical UID migration has been run.
 
-PR #258 normalizes escaped PEM newlines in the migration utility. Its regular CI passed, but Gitleaks flagged the synthetic private-key-shaped test literal and the Firestore integration workflow failed one invite-expiry scenario with `Expiry must be between 1 hour and 90 days from now`. The likely test fix is to use clearly non-PEM placeholder strings and a deterministic injected clock or a wider expiry margin. Do not run the migration in staging/production until the PR passes all gates and an authorized operator approves a dry-run.
+PR #261 requires explicit \`status === "active"\` and a valid finite future expiry; unknown, missing and malformed states fail closed as invalid. Invalid records are filterable, counted and revocable through the transaction-coupled audit path. Its CI, Firestore integration and Security Scan passed.
+
+PR #264 closes the UI gap found after #261: invalid records now display the audited Revoke action, with generic confirmation wording. Its CI, Firestore integration and Security Scan passed.
+
+S05-H2 remains Partial pending invite-only product-contract confirmation, authorized staging dry-run/explicit apply/follow-up dry-run for legacy UID cleanup, and full isolated lifecycle plus Android onboarding/restore acceptance using synthetic identities and invite tokens.
 
 
 ## 3.4 S06-L4 — Account-lock worker retry/recovery
@@ -338,9 +341,11 @@ Twelve routes use SHA-256 namespaced UID+endpoint keys through Cloudflare Durabl
 
 ## 3.18 S06-H4 / S06-H5 — Duress-code arming and Settings oracle
 
-**S06-H4 — Fixed on current source.** `DuressManager.setDuressPin()` now accepts the supported 4–6 digit range and returns false when the identity-scoped keys are unavailable or the encrypted-preference write fails. `ManageUnlockCodesActivity.onConfirmExplain()` checks the result: failure produces a generic retry message and does not finish the flow; only success reports “Code saved.” and exits. This closes the original false-success behavior. Current main CI is green; a focused false/true UI regression remains a desirable coverage improvement.
+**S06-H4 — Fixed.** \`DuressManager.setDuressPin()\` accepts the supported 4–6 digit range and returns false when identity-scoped keys are unavailable or the encrypted-preference write fails. \`ManageUnlockCodesActivity.onConfirmExplain()\` checks the result: failure produces a generic retry message and does not finish the flow; only success reports “Code saved.” and exits. PR #263 adds a JVM source-wiring regression for the false path; exact-head CI [42439202158](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439202158) and Security [42439202156](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439202156) passed.
 
-**S06-H5 — Partial.** `PinManager` now persists wrong-PIN failures and applies exponential backoff after five failures, and primary-PIN changes reject exact duress matches and duress-code prefixes. But `SecurityPrivacySettingsActivity.doSavePin()` presents a distinct collision result. A person who knows the current primary PIN can repeatedly try candidate replacements; successful changes rotate the primary PIN without consuming the wrong-PIN counter. The Settings route therefore remains a candidate oracle. Implement a non-oracular contract and durable throttling across successful and failed PIN changes, with regressions proving repeated probing cannot distinguish the protected code. Keep Partial.
+**S06-H5 — Partial; mitigation merged in PR #265.** The Settings PIN-change flow records a durable UID-scoped attempt before checking the proposed PIN against the hidden secondary code or writing the replacement. Three attempts are permitted in a fixed 15-minute window; the third starts a 15-minute cooldown. Successful and rejected candidates consume the same budget. The throttle uses Android \`Settings.Global.BOOT_COUNT\`, same-boot elapsed-time anchors, an elapsed-reset fallback if BOOT_COUNT is unavailable, and fail-closed preference handling. Collision, cooldown and storage failures share one generic response; the collision-specific text is removed. Exact-head CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed; PR #265 merged as \`32175ccf86342a6c517459a0e2507f14c4d064e8\`.
+
+Keep S06-H5 Partial: this rate-limits candidate probing and hides the collision-specific response, but it does not prove every success/failure observation indistinguishable and is local device protection rather than server-side account throttling. Independent security review and later physical-device acceptance remain.
 
 ## 4. Coordinated physical-device matrix — strictly deferred
 
