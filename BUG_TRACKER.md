@@ -6,29 +6,33 @@ two previously-separate tracking systems (`audit/` session reports +
 `RISK_REGISTER.md` / `REMEDIATION_PROGRESS.md`), which had drifted out of sync
 with each other and — in several rows — with the actual code.
 
-**Current repository baseline (2026-11-08):** `main` HEAD
-`0f5ffe15518db29b4c5895dc42ca600647201f99` (post-merge PR #278). The original
+**Current repository checkpoint (2026-11-09):** `main` HEAD
+`3d47d39faac649e9d5197327a7db5cc145c2c1de` (merged PR #279). The audited
+application-code baseline remains `b596e965d4be54b4ea8079b4036012e68188f865`
+(tree `d478ce4989230c3c1eb3f29c62dd019fe0054c3d`), because PRs #278 and #279
+are documentation-only and do not modify application source. The original
 finding catalog was first re-derived from source at `298f916` (2026-08-11);
-that is historical provenance, not the current code baseline. This register
-has now been recounted and reconciled against the current mainline. The dated
-independent re-verification note records fresh source re-reads, exact-head CI
-evidence, outstanding external gates, and the limits of this pass. Earlier
-session reports remain historical evidence.
+that is historical provenance, not the current code baseline. The current
+register has been reconciled against that code snapshot and its latest
+documentation checkpoint. The independent re-verification note records fresh
+source re-reads, exact-head CI evidence, outstanding external gates, and the
+limits of this pass. Earlier session reports remain historical evidence.
 
-## Current main baseline — 2026-11-08 (post-PR #278)
+## Current repository and audited code baseline — 2026-11-09
 
-- **Repository HEAD:** `0f5ffe15518db29b4c5895dc42ca600647201f99`
-- **Tree:** `57b7115285b5f2b355c4e5edce84949febcd58e4`
-- **Open PRs:** 0 after PR #278 merged; rechecked 2026-11-08.
-- **Open GitHub issues:** 0 after PR #278 merged; rechecked 2026-11-08.
+- **Repository HEAD:** `3d47d39faac649e9d5197327a7db5cc145c2c1de` (PR #279 merge).
+- **Audited application-code HEAD/tree:** `b596e965d4be54b4ea8079b4036012e68188f865` / `d478ce4989230c3c1eb3f29c62dd019fe0054c3d`. PR #278 and #279 changed documentation only.
+- **Open PRs:** 0 after PR #279 merged; rechecked 2026-11-09.
+- **Open GitHub issues:** 0 after PR #279 merged; rechecked 2026-11-09.
 - **Finding register:** 116 unique findings — **86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23).
-- **Current S10-N2 progress:** PR #276 and #277 further harden the AST release-log analyzer. They reduce the residual scope of the same S10-N2 finding; they do not create new finding IDs or automatically change Partial to Fixed.
-- **Documentation closeout PR #278:** merged as `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3. Vercel preview status was rate-limited and is not a GitHub Actions test failure.
-- **Exact-head PR checks:** #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) 10/10 and Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810) 3/3; #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10 and Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3; #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10 and Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3.
+- **Current S10-N2 progress:** PRs #276 and #277 further harden the AST release-log analyzer. They reduce the residual scope of the same finding; they do not create new finding IDs or automatically change Partial to Fixed.
+- **Documentation closeout PR #278:** merged as `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3.
+- **Final tracker checkpoint PR #279:** documentation-only, merged as `3d47d39faac649e9d5197327a7db5cc145c2c1de`; exact-head CI [42510855878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855878) passed 10/10 and Security [42510855851](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855851) passed 3/3. Post-merge Vercel status was successful. No separate post-merge GitHub Actions run was returned.
+- **Earlier exact-head checks:** #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) 10/10 and Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810) 3/3; #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10 and Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3; #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10 and Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3.
 - **Ruleset:** active default-branch ruleset `Hello` (ID `26629873`) exists, but requires zero approvals and has no required status checks. SC-12 therefore remains Open.
 - **Production sign-off:** `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. Green PR CI does not establish production configuration, credential rotation, staging acceptance, or physical-device acceptance.
 
-**Counting rule:** these are unique security findings records, not PRs or commits. Several PRs can reduce the residual risk of one finding while its disposition remains Partial. This is intentional and avoids double-counting mitigations as new findings.
+**Counting rule:** these are unique security finding records, not PRs or commits. Multiple PRs can reduce residual risk within one finding while its disposition remains Partial. This avoids double-counting mitigations as new findings.
 
 See [Independent Re-verification — 2026-11-08](security-remediation/INDEPENDENT_REVERIFICATION_2026-11-08.md) for the detailed evidence snapshot and scope limitations.
 
