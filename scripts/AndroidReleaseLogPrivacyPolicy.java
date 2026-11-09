@@ -6,6 +6,8 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.MethodInvocationTree;
+import com.sun.source.tree.ParenthesizedTree;
+import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.JavacTask;
@@ -300,13 +302,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class SecurePrefs { static boolean initialized = true; static SecurityTier tier = new SecurityTier(); static boolean isAvailable() { return initialized && tier.isDurable(); } static SecurityTier getTier() { return tier; } }\n"
                   + "class PendingLockStore { static boolean isRotationDue(Object context) { return true; } }\n"
                   + "class SignalKeyManager { static int getCurrentKyberPreKeyId(Object context) { return 1; } }\n"
-                  + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n", StandardCharsets.UTF_8);
+                  + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n"
+                  + "class NestedSecret { String memo; void setMemo(String value) { this.memo = value; } String getMemo() { return this.memo; } }\n"
+                  + "class SecretWrapper { NestedSecret child; NestedSecret getChild() { return child; } }\n"
+                  + "class MultiHopFieldFlow { void log(Profile profile, SecretWrapper wrapper) { wrapper.getChild().setMemo(profile.getUserId()); String resolvedMemo = wrapper.getChild().getMemo(); Log.w(\"TAG\", resolvedMemo); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 13
-                    || interproceduralResult.violations.size() != 10) {
+            if (interproceduralResult.inspectedCalls != 14
+                    || interproceduralResult.violations.size() != 11) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "10 unsafe helper flows and 3 safe helper flows, got "
+                        + "11 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -319,6 +324,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [value]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [result]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [resolvedMemo]");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -439,7 +446,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                                     candidates.computeIfAbsent(signature, ignored -> new ArrayList<>())
                                             .add(method);
                                 } else if (member instanceof VariableTree) {
-                                    info.fieldNames.add(((VariableTree) member).getName().toString());
+                                    VariableTree field = (VariableTree) member;
+                                    info.fieldNames.add(field.getName().toString());
+                                    if (field.getType() != null) {
+                                        info.fieldTypes.put(field.getName().toString(),
+                                                field.getType().toString());
+                                    }
                                 }
                             }
                             for (Map.Entry<String, List<MethodTree>> entry : candidates.entrySet()) {
@@ -626,15 +638,56 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
                 return receiverText; // Explicit app-owned static call.
             }
-            String root = MethodLocalTaintScanner.rootIdentifier(receiver);
-            if (root == null) return null;
-            String type = localTypes.get(root);
-            if (type == null) return null;
-            String normalized = type.replaceAll("<.*>", "").replace("[]", "").trim();
-            int dot = normalized.lastIndexOf('.');
-            String simple = dot >= 0 ? normalized.substring(dot + 1) : normalized;
+            String resolvedType = resolveExpressionType(callerOwner, receiver, localTypes);
+            String simple = simpleTypeName(resolvedType == null ? "" : resolvedType);
             return classes.containsKey(simple) && !ambiguousClasses.contains(simple)
                     ? simple : null;
+        }
+
+        /**
+         * Resolve the declared type of a bounded app-owned receiver expression.
+         * This follows local variables, app-owned fields and uniquely summarized
+         * helper return types through chains such as wrapper.getChild().getValue().
+         * It deliberately does not guess external/generic dispatch or reflection.
+         */
+        private String resolveExpressionType(String callerOwner, ExpressionTree expression,
+                                             Map<String, String> localTypes) {
+            if (expression == null) return null;
+            if (expression instanceof ParenthesizedTree) {
+                return resolveExpressionType(callerOwner,
+                        ((ParenthesizedTree) expression).getExpression(), localTypes);
+            }
+            if (expression instanceof TypeCastTree) {
+                return ((TypeCastTree) expression).getType().toString();
+            }
+            if (expression instanceof NewClassTree) {
+                return ((NewClassTree) expression).getIdentifier().toString();
+            }
+            if (expression instanceof IdentifierTree) {
+                String name = ((IdentifierTree) expression).getName().toString();
+                if ("this".equals(name)) return callerOwner;
+                if ("super".equals(name)) return null;
+                String type = localTypes.get(name);
+                if (type != null) return type;
+                return classes.containsKey(name) && !ambiguousClasses.contains(name) ? name : null;
+            }
+            if (expression instanceof MemberSelectTree) {
+                MemberSelectTree member = (MemberSelectTree) expression;
+                String receiverType = resolveExpressionType(
+                        callerOwner, member.getExpression(), localTypes);
+                if (receiverType == null) return null;
+                String ownerType = simpleTypeName(receiverType);
+                ClassSummary owner = classes.get(ownerType);
+                if (owner == null || ambiguousClasses.contains(ownerType)) return null;
+                return owner.fieldTypes.get(member.getIdentifier().toString());
+            }
+            if (expression instanceof MethodInvocationTree) {
+                MethodDefinition target = resolveDefinition(callerOwner,
+                        (MethodInvocationTree) expression, localTypes);
+                return target == null || target.method.getReturnType() == null
+                        ? null : target.method.getReturnType().toString();
+            }
+            return null;
         }
 
         boolean isSensitiveField(String owner, String name) {
@@ -668,14 +721,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
                 return receiverText;
             }
-            String root = MethodLocalTaintScanner.rootIdentifier(receiver);
-            if (root == null) return null;
-            String type = localTypes.get(root);
-            if (type == null) return null;
-            String normalized = type.replaceAll("<.*>", "").replace("[]", "").trim();
-            int dot = normalized.lastIndexOf('.');
-            String simple = dot >= 0 ? normalized.substring(dot + 1) : normalized;
-            return classes.containsKey(simple) && !ambiguousClasses.contains(simple) ? simple : null;
+            String resolvedType = resolveExpressionType(callerOwner, receiver, localTypes);
+            String simple = simpleTypeName(resolvedType == null ? "" : resolvedType);
+            return classes.containsKey(simple) && !ambiguousClasses.contains(simple)
+                    ? simple : null;
         }
 
         private boolean addSensitiveField(String fieldKey) {
@@ -738,6 +787,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             final Set<String> superTypes = new HashSet<>();
             boolean isFinal;
             final Set<String> fieldNames = new HashSet<>();
+            final Map<String, String> fieldTypes = new HashMap<>();
             final Set<String> sensitiveFields = new HashSet<>();
             final Set<String> ambiguousMethods = new HashSet<>();
             final Map<String, MethodDefinition> methods = new HashMap<>();
