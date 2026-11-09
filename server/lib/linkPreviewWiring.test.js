@@ -24,7 +24,12 @@ const ROUTE = SERVER.slice(start, end);
 test("link-preview endpoint verifies a live Firebase token and applies endpoint rate limiting", () => {
   assert.ok(ROUTE.includes('admin.auth().verifyIdToken(tok, true)'),
     "link preview must verify token revocation, not only signature/expiry");
-  assert.ok(ROUTE.includes('checkAuthRateLimit(lpUid, "linkPreview")'));
+  assert.ok(ROUTE.includes('checkAuthRateLimit(lpUid, "linkPreview", res)'));
+  assert.ok(ROUTE.includes("if (authRateLimitDecision === null) return;"),
+    "shared-limiter infrastructure failures must stop the request after the 503 response");
+  assert.ok(ROUTE.indexOf("if (authRateLimitDecision === null) return;")
+      < ROUTE.indexOf("if (!authRateLimitDecision)"),
+    "a genuine 429 quota decision must run only after the infrastructure-unavailable branch");
 });
 
 test("blocked original and redirect targets produce only the stable blocked status", () => {
