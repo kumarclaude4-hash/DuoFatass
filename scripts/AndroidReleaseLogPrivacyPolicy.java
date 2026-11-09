@@ -1447,10 +1447,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
 
         @Override
         public Void visitLambdaExpression(com.sun.source.tree.LambdaExpressionTree node, Void unused) {
-            // A callback may be invoked by a framework/SDK with app data that is
-            // not visible at the call site. Treat every lambda parameter as an
-            // opaque input while scanning its body; explicit redaction at the
-            // eventual sink remains the only safe way to log it.
+            // Lambda parameters are an opaque callback boundary: framework/SDK
+            // code can supply app data that is not visible at the call site.
+            // Keep this taint scoped to the lambda; a name-only analysis must not
+            // leak a shadowing parameter into an outer local/catch variable.
+            Map<String, String> savedLocalTypes = new HashMap<>(localTypes);
+            Set<String> savedTaintedLocals = new HashSet<>(taintedLocals);
+            Set<String> savedTaintedContainers = new HashSet<>(taintedContainers);
+            Set<String> savedContainerLocals = new HashSet<>(containerLocals);
+            Set<String> savedThrowableLocals = new HashSet<>(throwableLocals);
+
             for (VariableTree parameter : node.getParameters()) {
                 String name = parameter.getName().toString();
                 String type = parameter.getType() == null ? "" : parameter.getType().toString();
@@ -1458,7 +1464,24 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 taintedLocals.add(name);
                 if (isThrowableType(type)) throwableLocals.add(name);
             }
-            return super.visitLambdaExpression(node, unused);
+            Void result = super.visitLambdaExpression(node, unused);
+
+            // Mutable outer containers can be populated by a callback. Preserve
+            // only newly tainted containers that existed before entering it.
+            Set<String> capturedContainerTaint = new HashSet<>(taintedContainers);
+            capturedContainerTaint.retainAll(savedContainerLocals);
+            localTypes.clear();
+            localTypes.putAll(savedLocalTypes);
+            taintedLocals.clear();
+            taintedLocals.addAll(savedTaintedLocals);
+            taintedContainers.clear();
+            taintedContainers.addAll(savedTaintedContainers);
+            taintedContainers.addAll(capturedContainerTaint);
+            containerLocals.clear();
+            containerLocals.addAll(savedContainerLocals);
+            throwableLocals.clear();
+            throwableLocals.addAll(savedThrowableLocals);
+            return result;
         }
 
         @Override
