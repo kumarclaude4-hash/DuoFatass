@@ -204,6 +204,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", tracker.getSummary());\n"
                   + "    Log.w(\"TAG\", \"OkHttp status=\" + httpResult.code());\n"
                   + "  }\n"
+                  + "  void callbackFailureName(java.util.function.Consumer<Exception> listener) { listener.accept(failure -> Log.w(\"TAG\", \"callback failed (\" + failure.getClass().getSimpleName() + \")\")); }\n"
                   + "}\n"
                   + "class B2StorageHelper {\n"
                   + "  String redactOperationName(String value) { return \"download:\" + LogRedact.metadata(value); }\n"
@@ -219,7 +220,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 19) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 20) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -322,13 +323,18 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class DuplicateOuterB { static class DuplicateReceiver { String privateMemo; String expose() { return privateMemo; } } }\n"
                   + "class DuplicateSimpleNameFlow { void log(DuplicateOuterB.DuplicateReceiver source) { String ambiguousValue = source.expose(); Log.w(\"TAG\", ambiguousValue); } }\n"
                   + "class QualifiedThisOuter { String sessionToken; String expose() { return sessionToken; } class Inner { String delegate() { return QualifiedThisOuter.this.expose(); } } }\n"
-                  + "class QualifiedThisFlow { void log(QualifiedThisOuter.Inner inner) { String qualifiedThisValue = inner.delegate(); Log.w(\"TAG\", qualifiedThisValue); } }\n", StandardCharsets.UTF_8);
+                  + "class QualifiedThisFlow { void log(QualifiedThisOuter.Inner inner) { String qualifiedThisValue = inner.delegate(); Log.w(\"TAG\", qualifiedThisValue); } }\n"
+                  + "class GenericBox<T> { T getValue() { return null; } }\n"
+                  + "class GenericReceiverFlow { void log(GenericBox<String> box) { String genericMemo = box.getValue().toString(); Log.w(\"TAG\", genericMemo); } }\n"
+                  + "class ReflectionFlow { void log(String className, Object target) throws Exception { Class<?> dynamicType = Class.forName(className); java.lang.reflect.Method getter = dynamicType.getMethod(\"getName\"); Object reflected = getter.invoke(target); Log.w(\"TAG\", reflected); } }\n"
+                  + "class CallbackApi { void register(java.util.function.Consumer<Object> callback) { } }\n"
+                  + "class CallbackFlow { void register(CallbackApi api) { api.register(value -> Log.w(\"TAG\", value.toString())); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 20
-                    || interproceduralResult.violations.size() != 17) {
+            if (interproceduralResult.inspectedCalls != 23
+                    || interproceduralResult.violations.size() != 20) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "17 unsafe helper flows and 3 safe helper flows, got "
+                        + "20 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -353,6 +359,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [ambiguousValue]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [qualifiedThisValue]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [genericMemo]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [reflected]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [value]");
             requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
@@ -422,6 +434,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             }
             return super.visitVariable(node, unused);
         }
+
     }
 
     /**
@@ -454,6 +467,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         String owner = node.getSimpleName().toString();
                         if (!owner.isEmpty()) {
                             ClassSummary info = new ClassSummary(owner);
+                            for (com.sun.source.tree.TypeParameterTree parameter : node.getTypeParameters()) {
+                                info.typeParameters.add(parameter.getName().toString());
+                            }
                             info.isFinal = node.getModifiers().getFlags().contains(Modifier.FINAL);
                             if (node.getExtendsClause() != null) {
                                 info.superClassType = simpleTypeName(node.getExtendsClause().toString());
@@ -641,6 +657,71 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (owner == null) return false;
             String signature = methodName(invocation) + "/" + invocation.getArguments().size();
             return lookupMethod(owner, signature, new HashSet<>()).ambiguous;
+        }
+
+        /**
+         * Generic return types whose declared value is a type variable cannot be
+         * resolved safely without Java's attributed type model. Treat them as
+         * unknown data, including when they appear as an intermediate receiver
+         * (for example box.getValue().toString()).
+         */
+        boolean isUnresolvedGenericReturn(String callerOwner, MethodInvocationTree invocation,
+                                          Map<String, String> localTypes) {
+            MethodDefinition definition = resolveDefinition(callerOwner, invocation, localTypes);
+            if (definition == null || definition.method.getReturnType() == null) return false;
+            Set<String> parameters = new HashSet<>();
+            ClassSummary owner = classes.get(definition.owner);
+            if (owner != null) parameters.addAll(owner.typeParameters);
+            for (com.sun.source.tree.TypeParameterTree parameter : definition.method.getTypeParameters()) {
+                parameters.add(parameter.getName().toString());
+            }
+            if (parameters.isEmpty()) return false;
+            for (String token : definition.method.getReturnType().toString()
+                    .split("[^A-Za-z0-9_$]+")) {
+                if (parameters.contains(token)) return true;
+            }
+            return false;
+        }
+
+        boolean isUnresolvedGenericReceiver(String callerOwner, MethodInvocationTree invocation,
+                                            Map<String, String> localTypes) {
+            ExpressionTree receiver = receiverExpression(invocation);
+            while (receiver instanceof ParenthesizedTree || receiver instanceof TypeCastTree) {
+                receiver = receiver instanceof ParenthesizedTree
+                        ? ((ParenthesizedTree) receiver).getExpression()
+                        : ((TypeCastTree) receiver).getExpression();
+            }
+            return receiver instanceof MethodInvocationTree
+                    && isUnresolvedGenericReturn(callerOwner,
+                            (MethodInvocationTree) receiver, localTypes);
+        }
+
+        /**
+         * Reflection and dynamic class-loading results are opaque to this syntax
+         * analyzer. They may expose private app data or invoke sensitive accessors
+         * without a statically visible call edge, so their outputs fail closed.
+         */
+        boolean isDynamicReflectionCall(String callerOwner, MethodInvocationTree invocation,
+                                        Map<String, String> localTypes) {
+            String method = methodName(invocation);
+            ExpressionTree receiver = receiverExpression(invocation);
+            String receiverText = receiver == null ? "" : receiver.toString();
+            String receiverType = resolveExpressionType(callerOwner, receiver, localTypes);
+            if (receiverType == null && receiver instanceof IdentifierTree) {
+                receiverType = localTypes.get(((IdentifierTree) receiver).getName().toString());
+            }
+            String type = simpleTypeName(receiverType == null ? receiverText : receiverType);
+            if ("forName".equals(method) && "Class".equals(type)) return true;
+            if ("loadClass".equals(method) && type.endsWith("ClassLoader")) return true;
+            if (("getMethod".equals(method) || "getDeclaredMethod".equals(method)
+                    || "getField".equals(method) || "getDeclaredField".equals(method))
+                    && "Class".equals(type)) return true;
+            if ("invoke".equals(method) && "Method".equals(type)) return true;
+            if (("get".equals(method) || "set".equals(method)) && "Field".equals(type)) return true;
+            if ("newInstance".equals(method)
+                    && ("Constructor".equals(type) || "Class".equals(type))) return true;
+            if (method.startsWith("invoke") && "MethodHandle".equals(type)) return true;
+            return method.startsWith("find") && "Lookup".equals(type);
         }
 
         private MethodDefinition resolveDefinition(String callerOwner, MethodInvocationTree invocation,
@@ -913,6 +994,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
 
         private static final class ClassSummary {
             final String owner;
+            final Set<String> typeParameters = new HashSet<>();
             final Set<String> superTypes = new HashSet<>();
             String superClassType;
             boolean isFinal;
@@ -1195,6 +1277,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
                         String name = methodName(node);
                         String receiver = receiverName(node);
+                        if (index.isDynamicReflectionCall(definition.owner, node, localTypes)
+                                || index.isUnresolvedGenericReturn(definition.owner, node, localTypes)
+                                || index.isUnresolvedGenericReceiver(definition.owner, node, localTypes)) {
+                            value.direct = true;
+                            return null;
+                        }
                         if (isRedactionCall(definition.owner, node)
                                 || isSafeOperationalProjection(definition.owner, node, localTypes)
                                 || index.isSafeOperationalHelper(definition.owner, node, localTypes)) {
@@ -1307,6 +1395,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final Set<String> taintedContainers = new HashSet<>();
         private final Set<String> containerLocals = new HashSet<>();
         private final Set<String> throwableLocals = new HashSet<>();
+        private final Set<String> callbackParameterLocals = new HashSet<>();
 
         MethodLocalTaintScanner(CompilationUnitTree unit, SourcePositions positions,
                                 List<String> violations, String ownerClass,
@@ -1357,6 +1446,54 @@ public final class AndroidReleaseLogPrivacyPolicy {
             // Anonymous/local class methods are analyzed independently when the
             // outer LogCallScanner reaches them.
             return null;
+        }
+
+        @Override
+        public Void visitLambdaExpression(com.sun.source.tree.LambdaExpressionTree node, Void unused) {
+            // Lambda parameters are an opaque callback boundary: framework/SDK
+            // code can supply app data that is not visible at the call site.
+            // Keep this taint scoped to the lambda; a name-only analysis must not
+            // leak a shadowing parameter into an outer local/catch variable.
+            Map<String, String> savedLocalTypes = new HashMap<>(localTypes);
+            Set<String> savedTaintedLocals = new HashSet<>(taintedLocals);
+            Set<String> savedTaintedContainers = new HashSet<>(taintedContainers);
+            Set<String> savedContainerLocals = new HashSet<>(containerLocals);
+            Set<String> savedThrowableLocals = new HashSet<>(throwableLocals);
+            Set<String> savedCallbackParameterLocals = new HashSet<>(callbackParameterLocals);
+
+            for (VariableTree parameter : node.getParameters()) {
+                String name = parameter.getName().toString();
+                String type = parameter.getType() == null ? "" : parameter.getType().toString();
+                localTypes.put(name, type);
+                callbackParameterLocals.add(name);
+                // MediaPlayer.OnErrorListener's second and third parameters are
+                // integer error codes, not user content. This is a narrow API /
+                // owner-specific exception, not a generic "extra" allow-list.
+                boolean safeMediaErrorCode = "VoiceMessagePlayer".equals(ownerClass)
+                        && ("what".equals(name) || "extra".equals(name));
+                if (!safeMediaErrorCode) taintedLocals.add(name);
+                if (isThrowableType(type)) throwableLocals.add(name);
+            }
+            Void result = super.visitLambdaExpression(node, unused);
+
+            // Mutable outer containers can be populated by a callback. Preserve
+            // only newly tainted containers that existed before entering it.
+            Set<String> capturedContainerTaint = new HashSet<>(taintedContainers);
+            capturedContainerTaint.retainAll(savedContainerLocals);
+            localTypes.clear();
+            localTypes.putAll(savedLocalTypes);
+            taintedLocals.clear();
+            taintedLocals.addAll(savedTaintedLocals);
+            taintedContainers.clear();
+            taintedContainers.addAll(savedTaintedContainers);
+            taintedContainers.addAll(capturedContainerTaint);
+            containerLocals.clear();
+            containerLocals.addAll(savedContainerLocals);
+            throwableLocals.clear();
+            throwableLocals.addAll(savedThrowableLocals);
+            callbackParameterLocals.clear();
+            callbackParameterLocals.addAll(savedCallbackParameterLocals);
+            return result;
         }
 
         @Override
@@ -1443,7 +1580,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (!receiver.endsWith(suffix)) return false;
             String variable = receiver.substring(0, receiver.length() - suffix.length());
             return variable.matches("[A-Za-z_$][A-Za-z0-9_$]*")
-                    && throwableLocals.contains(variable);
+                    && (throwableLocals.contains(variable)
+                    || callbackParameterLocals.contains(variable));
         }
 
         private boolean isRedactedExpression(ExpressionTree expression) {
@@ -1519,6 +1657,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             || (isRedactedOperationName(node))
                             || isSafeOperationalProjection(node)) {
                         return null; // Exact redaction/projection boundary; do not inspect its receiver/arguments.
+                    }
+                    if (returnSummaries.isDynamicReflectionCall(ownerClass, node, localTypes)
+                            || returnSummaries.isUnresolvedGenericReturn(ownerClass, node, localTypes)
+                            || returnSummaries.isUnresolvedGenericReceiver(ownerClass, node, localTypes)) {
+                        found[0] = true;
+                        return null;
                     }
                     if (isSafeThrowableClassNameCall(node)
                             || returnSummaries.isSafeOperationalHelper(ownerClass, node, localTypes)) {
@@ -1616,6 +1760,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             && ("LogRedact".equals(receiver) || receiver.endsWith(".LogRedact")))
                             || isRedactedOperationName(node)
                             || isSafeOperationalProjection(node)) {
+                        return null;
+                    }
+                    if (returnSummaries.isDynamicReflectionCall(ownerClass, node, localTypes)) {
+                        found.add("dynamic-reflection:" + method);
+                        return null;
+                    }
+                    if (returnSummaries.isUnresolvedGenericReturn(ownerClass, node, localTypes)
+                            || returnSummaries.isUnresolvedGenericReceiver(ownerClass, node, localTypes)) {
+                        found.add("unresolved-generic:" + method);
                         return null;
                     }
                     if (isSafeThrowableClassNameCall(node)
@@ -1746,6 +1899,21 @@ public final class AndroidReleaseLogPrivacyPolicy {
             return super.visitMethod(node, unused);
         }
 
+        private Set<String> callbackParameterNamesForCurrentLambda() {
+            Set<String> names = new HashSet<>();
+            com.sun.source.util.TreePath path = getCurrentPath();
+            while (path != null) {
+                if (path.getLeaf() instanceof com.sun.source.tree.LambdaExpressionTree) {
+                    for (VariableTree parameter
+                            : ((com.sun.source.tree.LambdaExpressionTree) path.getLeaf()).getParameters()) {
+                        names.add(parameter.getName().toString());
+                    }
+                }
+                path = path.getParentPath();
+            }
+            return names;
+        }
+
         @Override
         public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
             String method = methodName(node);
@@ -1761,8 +1929,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     // The tag is emitted to logcat alongside the message. Treat both
                     // arguments as disclosure sinks; a dynamic tag can leak the same
                     // UID/path/credential metadata as the message itself.
-                    new MessageScanner(node, throwableVariables).scan(args.get(0), null);
-                    new MessageScanner(node, throwableVariables).scan(args.get(1), null);
+                    Set<String> visibleCallbackParameters = callbackParameterNamesForCurrentLambda();
+                    new MessageScanner(node, throwableVariables, visibleCallbackParameters).scan(args.get(0), null);
+                    new MessageScanner(node, throwableVariables, visibleCallbackParameters).scan(args.get(1), null);
                 }
             }
             return super.visitMethodInvocation(node, unused);
@@ -1777,10 +1946,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final class MessageScanner extends TreeScanner<Void, Void> {
             private final MethodInvocationTree logCall;
             private final Set<String> throwableVariables;
+            private final Set<String> callbackParameterNames;
 
-            MessageScanner(MethodInvocationTree logCall, Set<String> throwableVariables) {
+            MessageScanner(MethodInvocationTree logCall, Set<String> throwableVariables,
+                           Set<String> callbackParameterNames) {
                 this.logCall = logCall;
                 this.throwableVariables = throwableVariables;
+                this.callbackParameterNames = callbackParameterNames;
             }
 
             @Override
@@ -1821,7 +1993,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (!receiver.endsWith(suffix)) return false;
                 String variable = receiver.substring(0, receiver.length() - suffix.length());
                 return variable.matches("[A-Za-z_$][A-Za-z0-9_$]*")
-                        && throwableVariables.contains(variable);
+                        && (throwableVariables.contains(variable)
+                        || callbackParameterNames.contains(variable));
             }
 
             @Override
