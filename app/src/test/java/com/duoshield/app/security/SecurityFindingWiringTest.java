@@ -157,6 +157,57 @@ public class SecurityFindingWiringTest {
 
     }
 
+    @Test
+    public void firstTimeSetupPinCandidateCheckUsesThrottleAndGenericFailure() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/SetupPinActivity.java");
+        int clickAt = source.indexOf("btnContinue.setOnClickListener");
+        int workerAt = source.indexOf("bgExecutor.execute(() -> {", clickAt);
+        int throttleAt = source.indexOf("PinManager.tryRecordPinChangeAttempt(this)", workerAt);
+        int duressAt = source.indexOf("DuressManager.isDuressPinOrPrefixOfIt(this, pin)", throttleAt);
+        int setPinAt = source.indexOf("PinManager.setPin(this, pin)", duressAt);
+        int failureAt = source.indexOf("Couldn't save your PIN. Try again later.", setPinAt);
+        int successAt = source.indexOf("boolean unpaired = getIntent()", failureAt);
+
+        assertTrue("setup must record a candidate attempt inside the worker", throttleAt > workerAt);
+        assertTrue("setup must throttle before inspecting the preserved secondary code",
+                duressAt > throttleAt);
+        assertTrue("setup may write only after an allowed non-colliding candidate", setPinAt > duressAt);
+        assertTrue("setup must use a generic failure before routing onward",
+                failureAt > setPinAt && successAt > failureAt);
+        String body = source.substring(workerAt, successAt);
+        assertTrue("setup must not branch on the hidden-code collision result",
+                !body.contains("if (clashWithSecondary)"));
+        assertTrue("setup must not expose a collision-specific message",
+                !body.contains("That PIN can't be used"));
+    }
+
+    @Test
+    public void forcedPrimaryRotationUsesThrottleAndGenericFailure() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/ForcedPrimaryPinRotationActivity.java");
+        int clickAt = source.indexOf("btnContinue.setOnClickListener");
+        int workerAt = source.indexOf("bgExecutor.execute(() -> {", clickAt);
+        int throttleAt = source.indexOf("PinManager.tryRecordPinChangeAttempt(this)", workerAt);
+        int duressAt = source.indexOf("DuressManager.isDuressPinOrPrefixOfIt(this, pin)", throttleAt);
+        int setPinAt = source.indexOf("PinManager.setPin(this, pin)", duressAt);
+        int failureAt = source.indexOf("Couldn't save your PIN. Try again later.", setPinAt);
+        int successAt = source.indexOf("PendingLockStore.setRotationPrimaryDone(this, true)", failureAt);
+
+        assertTrue("forced rotation must record the candidate attempt first", throttleAt > workerAt);
+        assertTrue("forced rotation must throttle before inspecting the preserved secondary code",
+                duressAt > throttleAt);
+        assertTrue("forced rotation may write only after an allowed non-colliding candidate",
+                setPinAt > duressAt);
+        assertTrue("forced rotation must return through a generic failure before advancing",
+                failureAt > setPinAt && successAt > failureAt);
+        String body = source.substring(workerAt, successAt);
+        assertTrue("forced rotation must not branch on the hidden-code collision result",
+                !body.contains("if (clashWithSecondary)"));
+        assertTrue("forced rotation must not expose a collision-specific message",
+                !body.contains("That PIN can't be used"));
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 8 && dir != null; i++) {
