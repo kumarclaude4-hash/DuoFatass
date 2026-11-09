@@ -105,3 +105,22 @@ Do not start this matrix until the owner explicitly declares the app feature-com
 ## Sign-off
 
 `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. No PR merge, green CI run, source review or emulator pass constitutes production deployment, credential rotation, provider-console acceptance, live staging evidence or physical-device sign-off.
+
+## Session record — 2026-11-09, S10-N2 inherited app-owned receiver resolution
+
+```
+SESSION: 2026-11-09  MODEL: GPT-6  CLUSTER: S10-N2  STATUS: partial
+CHANGES:
+- Added bounded inherited app-owned method and field resolution to the Android release-log AST analyzer.
+- Added plain super dispatch, qualified Outer.this receiver resolution, and fail-closed handling for duplicate simple-name receiver ambiguity.
+- Added regressions for inherited getter returns, inherited field setter/read chains, inherited direct field writes, explicit super calls, duplicate simple-name ambiguity, and qualified enclosing receivers.
+VERIFICATION:
+- PASS: PR #284 exact-head CI 10/10; Security 3/3.
+- PASS: AST self-test; full scan of 205 Java files / 414 Log.w/e/wtf sinks / zero violations.
+- PASS: Espresso 4 tests; API 35 predictive-back 1 test.
+- PASS: debug APK, minified R8, server/Worker tests, unit tests, lint, Gradle wrapper and vendored libsignal integrity, CodeQL, Gitleaks, SBOM.
+- NOT RUN: physical-device release/minified APK logcat acceptance; deferred until owner declares app feature-complete.
+COMMIT: PR head 23eb17ac71ef6832195d77d6765106ca3bda143c; merge 30329d7b56ec0b26fd9b40495cdbb3d3bd999cae.
+WORKTREE: remote main verified at merge commit; documentation closeout is on a separate PR branch.
+NEXT SESSION: only pursue a newly reproduced S10-N2 residual within the bounded analyzer's source scope, or perform physical release-logcat acceptance after the owner's feature-complete declaration. Keep S10-N2 Partial until the remaining analysis limitations and device acceptance are resolved.
+```
