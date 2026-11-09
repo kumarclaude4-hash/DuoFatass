@@ -100,7 +100,7 @@ passed 3/3. S10-N2 remains Partial for unmodeled external callback/dispatch and 
 plus deferred feature-complete physical release-logcat acceptance.
 
 
-## S06-H5 follow-up — 2026-11-09 (PR #290 all primary-PIN collision paths)
+## S06-H5 follow-up — 2026-11-09 (PR #290 merged; all primary-PIN collision paths)
 
 `sessions/SESSION-S06-H5-ALL-PRIMARY-PIN-COLLISION-PATHS-2026-11-09.md` records the additional
 candidate-probing paths found during source review. `SetupPinActivity` (including restored setup)
@@ -108,6 +108,8 @@ and `ForcedPrimaryPinRotationActivity` both compared a proposed primary PIN agai
 secondary-code hash without using the shared candidate budget. PR #290 applies the account-scoped
 three-attempt/15-minute throttle before those checks, regardless of whether slot B is armed, and
 uses the same generic failure for collision/cooldown/storage/auth errors. Two new
-`SecurityFindingWiringTest` regressions cover ordering and response uniformity. Exact-head
-CI/Security pending; S06-H5 remains Partial pending those checks and independent residual/device
-acceptance.
+`SecurityFindingWiringTest` regressions cover ordering and response uniformity. PR #290 merged as
+`9b1c1dd48fb584d728491e8bfeee5ef380e9b834`; final-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140)
+passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331)
+passed 3/3. Espresso 4, API 35 1, debug APK and R8 passed. S06-H5 remains Partial pending independent
+residual/device acceptance.
