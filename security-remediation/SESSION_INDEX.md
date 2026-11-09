@@ -85,5 +85,14 @@ sessions/SESSION-S02-I2-PRODUCTION-FAIL-CLOSED-2026-11-09.md records the product
 change for the authenticated per-user/endpoint Durable Object limiter. Missing or unavailable
 shared limiting now produces HTTP 503 on all 12 protected routes rather than using process-local
 counters; development/test can explicitly retain local fallback. Regression tests cover the store
-and route wiring. S02-I2 remains Partial pending exact-head CI/Security and authorized
-Render/Worker secret-pair read-back.
+and route wiring. S02-I2 code is merged as PR #288 (`78a99b478e90ec3337df3c92997de3ac16efbe5e`). Exact-head CI 10/10, Security 3/3 and Firestore Rules/server transaction tests passed. S02-I2 remains Partial pending authorized Render/Worker secret-pair read-back and production runtime confirmation.
+
+## S10-N2 follow-up — 2026-11-09 (PR #289 method-reference callbacks)
+
+`sessions/SESSION-S10-N2-METHOD-REFERENCE-CALLBACK-2026-11-09.md` records the method-reference
+callback residual and the bounded same-owner fix. The analyzer indexes `this::method`,
+`Owner::method`, and `Owner.this::method`, then taints callback-supplied parameters in the
+registered app-owned method. A synthetic AST regression requires a non-sensitive `callbackArg`
+to be rejected at `Log.w` after `CallbackApi.register(this::callbackLog)`. Exact-head checks are
+pending; keep S10-N2 Partial for unmodeled external callback/dispatch and whole-program residuals,
+plus deferred feature-complete physical release-logcat acceptance.
