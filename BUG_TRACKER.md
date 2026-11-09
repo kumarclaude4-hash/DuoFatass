@@ -7,27 +7,30 @@ two previously-separate tracking systems (`audit/` session reports +
 with each other and — in several rows — with the actual code.
 
 **Current repository checkpoint (2026-11-09):** `main` HEAD
-`3d47d39faac649e9d5197327a7db5cc145c2c1de` (merged PR #279). The audited
-application-code baseline remains `b596e965d4be54b4ea8079b4036012e68188f865`
-(tree `d478ce4989230c3c1eb3f29c62dd019fe0054c3d`), because PRs #278 and #279
-are documentation-only and do not modify application source. The original
-finding catalog was first re-derived from source at `298f916` (2026-08-11);
-that is historical provenance, not the current code baseline. The current
-register has been reconciled against that code snapshot and its latest
-documentation checkpoint. The independent re-verification note records fresh
-source re-reads, exact-head CI evidence, outstanding external gates, and the
-limits of this pass. Earlier session reports remain historical evidence.
+`665146f8195409274b29b563333de25c591f10a9` (merged PR #281). The audited
+application-code baseline is now this commit (tree
+`c33b13b178fb92582834ade431cbe3d666bcb1f0`): PRs #278-#280 changed
+documentation only, while PR #281 updates the bounded AST analyzer in
+`scripts/AndroidReleaseLogPrivacyPolicy.java`. The original finding catalog
+was first re-derived from source at `298f916` (2026-08-11); that is historical
+provenance, not the current code baseline. The current register has been
+reconciled against the latest source and documentation checkpoint. The
+independent re-verification note records selected source re-reads, exact-head
+CI evidence, outstanding external gates, and the limits of this pass. Earlier
+session reports remain historical evidence.
 
 ## Current repository and audited code baseline — 2026-11-09
 
-- **Repository HEAD:** `3d47d39faac649e9d5197327a7db5cc145c2c1de` (PR #279 merge).
-- **Audited application-code HEAD/tree:** `b596e965d4be54b4ea8079b4036012e68188f865` / `d478ce4989230c3c1eb3f29c62dd019fe0054c3d`. PR #278 and #279 changed documentation only.
-- **Open PRs:** 0 after PR #279 merged; rechecked 2026-11-09.
-- **Open GitHub issues:** 0 after PR #279 merged; rechecked 2026-11-09.
+- **Repository HEAD:** `665146f8195409274b29b563333de25c591f10a9` (PR #281 merge).
+- **Audited application-code HEAD/tree:** `665146f8195409274b29b563333de25c591f10a9` / `c33b13b178fb92582834ade431cbe3d666bcb1f0`. PRs #278-#280 changed documentation only; PR #281 changed the AST analyzer.
+- **Open PRs:** 0 after PR #281 merged; rechecked 2026-11-09.
+- **Open GitHub issues:** 0 after PR #281 merged; rechecked 2026-11-09.
 - **Finding register:** 116 unique findings — **86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23).
-- **Current S10-N2 progress:** PRs #276 and #277 further harden the AST release-log analyzer. They reduce the residual scope of the same finding; they do not create new finding IDs or automatically change Partial to Fixed.
+- **Current S10-N2 progress:** PR #281 adds bounded resolution for chained app-owned receiver types through local variables, declared fields, casts/parentheses and uniquely summarized helper returns. Its regression proves a tainted field write/read through `wrapper.getChild()` is detected at a log sink. S10-N2 remains Partial: this is not whole-program symbol-resolved analysis, and physical release/minified APK logcat acceptance remains.
 - **Documentation closeout PR #278:** merged as `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3.
 - **Final tracker checkpoint PR #279:** documentation-only, merged as `3d47d39faac649e9d5197327a7db5cc145c2c1de`; exact-head CI [42510855878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855878) passed 10/10 and Security [42510855851](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855851) passed 3/3. Post-merge Vercel status was successful. No separate post-merge GitHub Actions run was returned.
+- **PR #280:** documentation-only final source/documentation checkpoint correction, merged as `21c5403799487915aea755365ff6e9bfd73d1cd3`; exact-head CI run [42558744976](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42558744976) passed 10/10 and Security run [42558744833](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42558744833) passed 3/3.
+- **PR #281:** bounded chained app-owned receiver/type resolution for the S10-N2 AST log analyzer, merged as `665146f8195409274b29b563333de25c591f10a9`; exact-head CI run [42561844959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844959) passed 10/10 and Security run [42561844900](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844900) passed 3/3. CI included AST self-test/full app source scan, Android lint/unit tests, debug APK, R8, Espresso, API 35 predictive-back, Server + Worker tests and integrity checks. The PR's Vercel preview status failed; this is not a GitHub Actions test failure and no successful preview deployment is claimed.
 - **Earlier exact-head checks:** #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) 10/10 and Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810) 3/3; #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10 and Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3; #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10 and Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3.
 - **Ruleset:** active default-branch ruleset `Hello` (ID `26629873`) exists, but requires zero approvals and has no required status checks. SC-12 therefore remains Open.
 - **Production sign-off:** `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. Green PR CI does not establish production configuration, credential rotation, staging acceptance, or physical-device acceptance.
