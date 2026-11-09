@@ -7,7 +7,7 @@ two previously-separate tracking systems (`audit/` session reports +
 with each other and — in several rows — with the actual code.
 
 **Current repository baseline (2026-11-08):** `main` HEAD
-`b596e965d4be54b4ea8079b4036012e68188f865` (post-merge PR #277). The original
+`0f5ffe15518db29b4c5895dc42ca600647201f99` (post-merge PR #278). The original
 finding catalog was first re-derived from source at `298f916` (2026-08-11);
 that is historical provenance, not the current code baseline. This register
 has now been recounted and reconciled against the current mainline. The dated
@@ -15,14 +15,15 @@ independent re-verification note records fresh source re-reads, exact-head CI
 evidence, outstanding external gates, and the limits of this pass. Earlier
 session reports remain historical evidence.
 
-## Current main baseline — 2026-11-08 (post-PR #277)
+## Current main baseline — 2026-11-08 (post-PR #278)
 
-- **Repository HEAD:** `b596e965d4be54b4ea8079b4036012e68188f865`
-- **Tree:** `d478ce4989230c3c1eb3f29c62dd019fe0054c3d`
-- **Open PRs:** 0 at the time of re-verification.
-- **Open GitHub issues:** 0 at the time of re-verification.
+- **Repository HEAD:** `0f5ffe15518db29b4c5895dc42ca600647201f99`
+- **Tree:** `57b7115285b5f2b355c4e5edce84949febcd58e4`
+- **Open PRs:** 0 after PR #278 merged; rechecked 2026-11-08.
+- **Open GitHub issues:** 0 after PR #278 merged; rechecked 2026-11-08.
 - **Finding register:** 116 unique findings — **86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23).
 - **Current S10-N2 progress:** PR #276 and #277 further harden the AST release-log analyzer. They reduce the residual scope of the same S10-N2 finding; they do not create new finding IDs or automatically change Partial to Fixed.
+- **Documentation closeout PR #278:** merged as `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3. Vercel preview status was rate-limited and is not a GitHub Actions test failure.
 - **Exact-head PR checks:** #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) 10/10 and Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810) 3/3; #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10 and Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3; #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10 and Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3.
 - **Ruleset:** active default-branch ruleset `Hello` (ID `26629873`) exists, but requires zero approvals and has no required status checks. SC-12 therefore remains Open.
 - **Production sign-off:** `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. Green PR CI does not establish production configuration, credential rotation, staging acceptance, or physical-device acceptance.

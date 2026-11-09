@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-08 (independent re-verification after PR #277)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `b596e965d4be54b4ea8079b4036012e68188f865` (PR #277 merge; includes #276 and #275). See [independent re-verification](INDEPENDENT_REVERIFICATION_2026-11-08.md).
+**Current main:** `0f5ffe15518db29b4c5895dc42ca600647201f99` (PR #278 merge; includes #277, #276 and #275). See [independent re-verification](INDEPENDENT_REVERIFICATION_2026-11-08.md).
 
 ## Current verified mainline
 
@@ -40,11 +40,13 @@ PR #269 exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFata
 - PR #277 — S10-N2 treats ambiguous same-name/same-arity app-owned helper returns as unknown/tainted; exact head `28ed49f2ae63d134eedbb6a73aa4cfa2930f9abc`, merged as `b596e965d4be54b4ea8079b4036012e68188f865`; CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10 and Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3. S10-N2 remains Partial for residual flows and physical release-logcat acceptance.
 - PR #266 — intentionally closed unmerged; its documentation changes were not applied to main.
 
-There are **no open code PRs** and **no open issues** after PR #277 merged. PR #266 was intentionally closed unmerged per owner instruction; PR #273 was a duplicate of merged PR #272; PR #262's implementation was carried by merged PR #265. These closed historical PRs do not represent outstanding work. Do not reopen superseded branches.
+Immediately after PR #278 merged, the inventory showed **zero open PRs and zero open issues**. PR #279 is this documentation-only correction and is being verified for merge. PR #266 was intentionally closed unmerged per owner instruction; PR #273 was a duplicate of merged PR #272; PR #262's implementation was carried by merged PR #265. These closed historical PRs do not represent outstanding work. Do not reopen superseded branches.
+
+PR #278 independently reconciled the tracker/handoff snapshot and merged at `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3. The Vercel preview was rate-limited and is not a test failure. A post-merge inventory reports zero open PRs and zero open issues.
 
 ## Canonical tracker
 
-The five severity sections of `BUG_TRACKER.md` retain **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23), recounted at main HEAD `b596e965d4be54b4ea8079b4036012e68188f865`. The #276/#277 improvements reduce S10-N2 residual scope but do not create new finding IDs or justify promoting it to Fixed. The register is authoritative; this report does not promote findings based on PR merge alone.
+The five severity sections of `BUG_TRACKER.md` retain **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23), recounted at main HEAD `0f5ffe15518db29b4c5895dc42ca600647201f99`. The #276/#277 improvements reduce S10-N2 residual scope but do not create new finding IDs or justify promoting it to Fixed. The register is authoritative; this report does not promote findings based on PR merge alone.
 
 Notable evidence corrections:
 - **S06-H5 remains Partial:** PR #265's durable three-attempt/15-minute, UID-scoped throttle counts successful and failed replacement attempts and uses a generic failure response. This bounds probing but does not prove every success/failure side channel impossible.
