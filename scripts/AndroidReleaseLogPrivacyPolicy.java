@@ -204,6 +204,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "    Log.w(\"TAG\", tracker.getSummary());\n"
                   + "    Log.w(\"TAG\", \"OkHttp status=\" + httpResult.code());\n"
                   + "  }\n"
+                  + "  void callbackFailureName(java.util.function.Consumer<Exception> listener) { listener.accept(failure -> Log.w(\"TAG\", \"callback failed (\" + failure.getClass().getSimpleName() + \")\")); }\n"
                   + "}\n"
                   + "class B2StorageHelper {\n"
                   + "  String redactOperationName(String value) { return \"download:\" + LogRedact.metadata(value); }\n"
@@ -219,7 +220,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "}\n", StandardCharsets.UTF_8);
 
             ScanResult safeResult = scan(safe);
-            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 19) {
+            if (!safeResult.violations.isEmpty() || safeResult.inspectedCalls != 20) {
                 throw new IllegalStateException("Safe redacted fixture failed: "
                         + join(safeResult.violations));
             }
@@ -432,6 +433,17 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 throwableVariables.add(node.getName().toString());
             }
             return super.visitVariable(node, unused);
+        }
+
+        @Override
+        public Void visitLambdaExpression(com.sun.source.tree.LambdaExpressionTree node, Void unused) {
+            // Inferred callback parameter types are absent from the syntax tree.
+            // Allow only the existing getClass().getSimpleName() projection for
+            // these parameters; raw callback values remain tainted by method scan.
+            for (VariableTree parameter : node.getParameters()) {
+                throwableVariables.add(parameter.getName().toString());
+            }
+            return super.visitLambdaExpression(node, unused);
         }
     }
 
@@ -1393,6 +1405,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final Set<String> taintedContainers = new HashSet<>();
         private final Set<String> containerLocals = new HashSet<>();
         private final Set<String> throwableLocals = new HashSet<>();
+        private final Set<String> callbackParameterLocals = new HashSet<>();
 
         MethodLocalTaintScanner(CompilationUnitTree unit, SourcePositions positions,
                                 List<String> violations, String ownerClass,
@@ -1456,12 +1469,19 @@ public final class AndroidReleaseLogPrivacyPolicy {
             Set<String> savedTaintedContainers = new HashSet<>(taintedContainers);
             Set<String> savedContainerLocals = new HashSet<>(containerLocals);
             Set<String> savedThrowableLocals = new HashSet<>(throwableLocals);
+            Set<String> savedCallbackParameterLocals = new HashSet<>(callbackParameterLocals);
 
             for (VariableTree parameter : node.getParameters()) {
                 String name = parameter.getName().toString();
                 String type = parameter.getType() == null ? "" : parameter.getType().toString();
                 localTypes.put(name, type);
-                taintedLocals.add(name);
+                callbackParameterLocals.add(name);
+                // MediaPlayer.OnErrorListener's second and third parameters are
+                // integer error codes, not user content. This is a narrow API /
+                // owner-specific exception, not a generic "extra" allow-list.
+                boolean safeMediaErrorCode = "VoiceMessagePlayer".equals(ownerClass)
+                        && ("what".equals(name) || "extra".equals(name));
+                if (!safeMediaErrorCode) taintedLocals.add(name);
                 if (isThrowableType(type)) throwableLocals.add(name);
             }
             Void result = super.visitLambdaExpression(node, unused);
@@ -1481,6 +1501,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             containerLocals.addAll(savedContainerLocals);
             throwableLocals.clear();
             throwableLocals.addAll(savedThrowableLocals);
+            callbackParameterLocals.clear();
+            callbackParameterLocals.addAll(savedCallbackParameterLocals);
             return result;
         }
 
@@ -1568,7 +1590,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (!receiver.endsWith(suffix)) return false;
             String variable = receiver.substring(0, receiver.length() - suffix.length());
             return variable.matches("[A-Za-z_$][A-Za-z0-9_$]*")
-                    && throwableLocals.contains(variable);
+                    && (throwableLocals.contains(variable)
+                    || callbackParameterLocals.contains(variable));
         }
 
         private boolean isRedactedExpression(ExpressionTree expression) {
