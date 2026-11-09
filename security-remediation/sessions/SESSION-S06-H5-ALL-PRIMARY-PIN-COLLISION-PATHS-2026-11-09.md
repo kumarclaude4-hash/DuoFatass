@@ -4,7 +4,9 @@
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Branch:** `security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`  
 **Finding:** S06-H5 — Primary-PIN candidate probing through hidden secondary-code collision checks  
-**Status:** Partial; exact-head CI/Security passed, independent residual acceptance outstanding
+**PR:** [#290](https://github.com/kumarclaude4-hash/DuoFatass/pull/290) — merged 2026-11-09  
+**Merge commit:** `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`  
+**Status:** Merged in PR #290; CI/Security passed; independent residual acceptance outstanding
 
 ## Source review
 
