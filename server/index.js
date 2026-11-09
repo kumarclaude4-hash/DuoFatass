@@ -15,7 +15,7 @@ const { sanitizeMigratedUserFields, isValidDisplayName } = require("./lib/profil
 const { createAdminLockoutStore } = require("./lib/adminLockoutStore");
 const { createAdminSessionStore } = require("./lib/adminSessionStore");
 const { createAdminLockoutWorkerClient } = require("./lib/adminLockoutWorkerClient");
-const { createAuthRateLimitStore } = require("./lib/authRateLimitStore");
+const { createAuthRateLimitStore, AuthRateLimitUnavailableError } = require("./lib/authRateLimitStore");
 const invite = require("./lib/invite");
 const { createInviteStore } = require("./lib/inviteStore");
 const { createInviteRouteHandler } = require("./lib/inviteRoutes");
@@ -458,6 +458,10 @@ setInterval(() => {
 // — the media data plane moved to per-object capability tokens (SEC-A01),
 // served by the Cloudflare Worker, not by any presign route on this server —
 // so the entries only made this table misreport the real attack surface.
+// Default to strict shared limiting unless the process is explicitly running
+// in a local development or test environment. An unset NODE_ENV is production-safe.
+const AUTH_RATE_LIMIT_REQUIRE_DURABLE =
+  !["development", "test"].includes(String(process.env.NODE_ENV || "").toLowerCase());
 const AUTH_RATE_WINDOW_MS = 60_000;
 const AUTH_RATE_LIMITS = {
   createChat:        10,   // 10 chat creations / min per user
@@ -486,14 +490,28 @@ const AUTH_RATE_LIMITS = {
   signalClaimPreKey: 30,
   acknowledgeRotation: 3,
 };
-// Authenticated endpoint limits use the same namespaced Durable Object counter
-// as the admin brute-force gate when the Worker credentials are configured.
-// The local bounded fallback preserves availability during an operator setup
-// gap or short Worker outage, but is intentionally not described as global.
-async function checkAuthRateLimit(uid, endpoint) {
+// Authenticated endpoint limits use the shared Durable Object in production.
+// A missing or unreachable Worker must not silently downgrade a fleet-wide
+// security control to process-local counters that reset on restart or differ
+// across Render instances. Development/test retain the bounded local fallback.
+async function checkAuthRateLimit(uid, endpoint, res) {
   const limit = AUTH_RATE_LIMITS[endpoint] || 30;
-  const result = await authRateLimitStore.check(uid, endpoint, limit);
-  return result.allowed;
+  try {
+    const result = await authRateLimitStore.check(uid, endpoint, limit);
+    return result.allowed;
+  } catch (err) {
+    if (!(err instanceof AuthRateLimitUnavailableError)) throw err;
+    console.error(`auth rate limit: shared Durable Object unavailable; denying ${endpoint} request`);
+    if (!res.headersSent) {
+      res.writeHead(503, {
+        "Content-Type": "text/plain",
+        "Cache-Control": "no-store",
+        "Retry-After": "30",
+      });
+      res.end("Rate limiting temporarily unavailable; retry later");
+    }
+    return null;
+  }
 }
 
 // ── /turnCredentials daily aggregate cap (S04-M2) ─────────────────────────────
@@ -790,6 +808,7 @@ const adminLockoutWorkerClient = (() => {
 const authRateLimitStore = createAuthRateLimitStore({
   client: adminLockoutWorkerClient,
   windowMs: AUTH_RATE_WINDOW_MS,
+  requireDurable: AUTH_RATE_LIMIT_REQUIRE_DURABLE,
   onError: (op, err) => console.warn(
     `auth rate limit: Durable Object ${op} failed; using bounded process-local fallback:`,
     err.message
@@ -2550,7 +2569,9 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!(await checkAuthRateLimit(decodedToken.uid, "migrateUid"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(decodedToken.uid, "migrateUid", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -2781,7 +2802,9 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!(await checkAuthRateLimit(decodedToken.uid, "acknowledgeRotation"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(decodedToken.uid, "acknowledgeRotation", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -2887,7 +2910,9 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!(await checkAuthRateLimit(decodedToken.uid, "createChat"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(decodedToken.uid, "createChat", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -3013,7 +3038,9 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!(await checkAuthRateLimit(uid, "mediaToken"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(uid, "mediaToken", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -3108,7 +3135,9 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!(await checkAuthRateLimit(uid, "signalRegisterBundle"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(uid, "signalRegisterBundle", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3164,7 +3193,9 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!(await checkAuthRateLimit(uid, "signalAppendPreKeys"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(uid, "signalAppendPreKeys", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3244,7 +3275,9 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!(await checkAuthRateLimit(uid, "signalUpdatePreKey"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(uid, "signalUpdatePreKey", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3311,7 +3344,9 @@ const server = http.createServer((req, res) => {
           res.end("Invalid, expired, or revoked token");
           return;
         }
-        if (!(await checkAuthRateLimit(callerUid, "signalClaimPreKey"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(callerUid, "signalClaimPreKey", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
@@ -3412,7 +3447,9 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!(await checkAuthRateLimit(turnUid, "turnCredentials"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(turnUid, "turnCredentials", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded — slow down and retry");
           return;
@@ -3662,7 +3699,9 @@ const server = http.createServer((req, res) => {
         let lpUid;
         try { lpUid = (await admin.auth().verifyIdToken(tok, true)).uid; }
         catch { res.writeHead(401); res.end("Invalid token"); return; }
-        if (!(await checkAuthRateLimit(lpUid, "linkPreview"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(lpUid, "linkPreview", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429); res.end("Rate limit exceeded — retry in 60 s"); return;
         }
 
@@ -3851,7 +3890,9 @@ const server = http.createServer((req, res) => {
         let callerUid;
         try { callerUid = (await admin.auth().verifyIdToken(tok, true)).uid; }
         catch { res.writeHead(401); res.end("Invalid token"); return; }
-        if (!(await checkAuthRateLimit(callerUid, "removeGroupMember"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(callerUid, "removeGroupMember", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429); res.end("Rate limit exceeded — retry in 60 s"); return;
         }
         let groupId, memberUid;
@@ -3920,7 +3961,9 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (!(await checkAuthRateLimit(uid, "requestLockNonce"))) {
+        const authRateLimitDecision = await checkAuthRateLimit(uid, "requestLockNonce", res);
+        if (authRateLimitDecision === null) return;
+        if (!authRateLimitDecision) {
           res.writeHead(429, { "Content-Type": "text/plain" });
           res.end("Rate limit exceeded");
           return;
