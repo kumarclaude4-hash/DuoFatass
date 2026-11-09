@@ -311,13 +311,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class InheritedMethodFlow { void log(InheritedSensitiveChild source) { String inheritedValue = source.expose(); Log.w(\"TAG\", inheritedValue); } }\n"
                   + "class InheritedFieldBase { NestedSecret child; }\n"
                   + "class InheritedFieldChild extends InheritedFieldBase { }\n"
-                  + "class InheritedFieldFlow { void log(Profile profile, InheritedFieldChild holder) { holder.child.setMemo(profile.getUserId()); String inheritedChildValue = holder.child.getMemo(); Log.w(\"TAG\", inheritedChildValue); } }\n", StandardCharsets.UTF_8);
+                  + "class InheritedFieldFlow { void log(Profile profile, InheritedFieldChild holder) { holder.child.setMemo(profile.getUserId()); String inheritedChildValue = holder.child.getMemo(); Log.w(\"TAG\", inheritedChildValue); } }\n"
+                  + "class InheritedMemoBase { String diagnostic; void setDiagnostic(String value) { this.diagnostic = value; } }\\n"
+                  + "class InheritedMemoChild extends InheritedMemoBase { }\\n"
+                  + "class InheritedDirectFieldFlow { void log(Profile profile, InheritedMemoChild holder) { holder.setDiagnostic(profile.getUserId()); Log.w(\"TAG\", holder.diagnostic); } }\\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 16
-                    || interproceduralResult.violations.size() != 13) {
+            if (interproceduralResult.inspectedCalls != 17
+                    || interproceduralResult.violations.size() != 14) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "11 unsafe helper flows and 3 safe helper flows, got "
+                        + "14 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -336,6 +339,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [inheritedValue]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [inheritedChildValue]");
+            requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
