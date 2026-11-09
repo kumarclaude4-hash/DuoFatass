@@ -40,7 +40,7 @@ security jobs passed. PR #287 is a documentation-only close-out merged as
 S10-N2 remains Partial: this bounded AST analyzer is not symbol-resolved whole-program proof,
 and physical release/minified APK logcat acceptance is still deferred until feature completion.
 
-## 2026-11-09 addendum — active S02-I2 implementation PR #288
+## 2026-11-09 addendum — merged S02-I2 implementation PR #288
 
 PR #288 (security/s02-i2-production-fail-closed-2026-11-09) changes authenticated per-user
 rate limiting so production/unset-NODE_ENV never silently spends a process-local allowance when
@@ -49,11 +49,15 @@ protected routes return HTTP 503 with Retry-After: 30 and stop before the normal
 branch. Explicit development/test processes retain the bounded local fallback. Regression tests
 cover missing DO configuration, Worker outage, and all 12 route-handling paths.
 
-PR #288 exact-head CI/Security results are pending. S02-I2 remains Partial until CI passes and an
-authorized operator verifies the Render ADMIN_LOCKOUT_WORKER_URL /
-ADMIN_LOCKOUT_WORKER_SECRET pairing against Worker ADMIN_LOCKOUT_SECRET and confirms the
-production Durable Object path at runtime. This PR does not read or change live credentials,
-deploy services, or claim production acceptance.
+PR #288 merged as 78a99b478e90ec3337df3c92997de3ac16efbe5e. Exact-head CI
+[42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825) passed
+10/10; Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910)
+passed 3/3; Firestore Rules/server transactions
+[42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878) passed.
+S02-I2 remains Partial until an authorized operator verifies the Render
+ADMIN_LOCKOUT_WORKER_URL / ADMIN_LOCKOUT_WORKER_SECRET pairing against Worker
+ADMIN_LOCKOUT_SECRET and confirms the production Durable Object path at runtime. PR #288 did not
+read or change live credentials, deploy services, or claim production acceptance.
 
 ---
 # Independent Security Tracker Re-verification — 2026-11-08
