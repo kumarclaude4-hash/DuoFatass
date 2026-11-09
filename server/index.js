@@ -784,12 +784,12 @@ setInterval(() => {
 // same-day-superseded Cloudflare KV attempt → this Durable Object fix,
 // all on 2026-08-14).
 //
-// ADMIN_LOCKOUT_WORKER_URL / ADMIN_LOCKOUT_WORKER_SECRET are required to
-// enable the durable path; the secret must match the Worker's
-// ADMIN_LOCKOUT_SECRET (see server/README.md and worker/wrangler.jsonc).
-// Both are optional here: an operator who has not deployed the Worker's
-// admin-lockout route still gets a working (process-local,
-// pre-fix-equivalent) lockout rather than a crash.
+// ADMIN_LOCKOUT_WORKER_URL / ADMIN_LOCKOUT_WORKER_SECRET enable the shared
+// Durable Object path; the secret must match the Worker's ADMIN_LOCKOUT_SECRET
+// (see server/README.md and worker/wrangler.jsonc). Both remain optional at
+// startup: admin-IP lockout can use its bounded local fallback. Authenticated
+// per-user endpoint limiting is stricter below and returns 503 in production
+// if the shared counter is missing or unavailable.
 const adminLockoutWorkerClient = (() => {
   const workerUrl = process.env.ADMIN_LOCKOUT_WORKER_URL;
   const workerSecret = process.env.ADMIN_LOCKOUT_WORKER_SECRET;
@@ -810,7 +810,7 @@ const authRateLimitStore = createAuthRateLimitStore({
   windowMs: AUTH_RATE_WINDOW_MS,
   requireDurable: AUTH_RATE_LIMIT_REQUIRE_DURABLE,
   onError: (op, err) => console.warn(
-    `auth rate limit: Durable Object ${op} failed; using bounded process-local fallback:`,
+    `auth rate limit: Durable Object ${op} failed:`,
     err.message
   ),
 });
