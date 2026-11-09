@@ -10,7 +10,7 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Current main (2026-11-08):** `0f5ffe15518db29b4c5895dc42ca600647201f99` (PR #278 merged; includes #277, #276 and #275). See `INDEPENDENT_REVERIFICATION_2026-11-08.md` for the fresh tracker reconciliation.
+**Current main documentation checkpoint (2026-11-09):** `3d47d39faac649e9d5197327a7db5cc145c2c1de` (PR #279 merged). The audited application-code baseline is `b596e965d4be54b4ea8079b4036012e68188f865`; PRs #278 and #279 are documentation-only. See `INDEPENDENT_REVERIFICATION_2026-11-08.md` for the fresh tracker reconciliation.
 
 PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
 
@@ -23,14 +23,15 @@ The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 
 ## Current state — 2026-11-08
 
 ```
-MAIN: 0f5ffe15518db29b4c5895dc42ca600647201f99
-MERGED: PR #278 (independent tracker reconciliation; CI 10/10, Security 3/3); PR #275 (security handoff refresh); PR #276 (S10-N2 known app-owned virtual override handling); PR #277 (S10-N2 ambiguous app-owned overload handling), in addition to earlier merged remediations listed above.
+MAIN DOC CHECKPOINT: 3d47d39faac649e9d5197327a7db5cc145c2c1de
+AUDITED APP CODE: b596e965d4be54b4ea8079b4036012e68188f865
+MERGED: PR #279 (final baseline alignment, CI 10/10, Security 3/3); PR #278 (independent tracker reconciliation; CI 10/10, Security 3/3); PR #275 (security handoff refresh); PR #276 (S10-N2 known app-owned virtual override handling); PR #277 (S10-N2 ambiguous app-owned overload handling), in addition to earlier merged remediations listed above.
 PR #267 head: 213442825113013a85650de9ac24edf0e9ec9211
 CI: 42443323887 — passed (Android unit, lint, debug APK, Espresso, API 35 predictive-back, R8, Server + Worker).
 SECURITY: 42443323988 — passed (CodeQL, Gitleaks, SBOM).
 FIRESTORE RULES: 42443323886 — passed.
 FIRESTORE RULES + SERVER TRANSACTIONS: 42443323962 — passed (200 Rules tests + 6 server transaction tests).
-OPEN CODE PRS: none after PR #278 merged; OPEN ISSUES: none.
+OPEN PRS: none after PR #279 merged; OPEN ISSUES: none.
 PR #266: intentionally closed unmerged; its documentation changes were not applied to main.
 TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted.
 NEXT: use BUG_TRACKER.md, NEXT_WORK_REPORT_2026-11-08.md and INDEPENDENT_REVERIFICATION_2026-11-08.md; older dated worklists are historical.
@@ -57,7 +58,7 @@ security-remediation/NEXT_WORK_REPORT_2026-11-08.md, the agentic handoff and BUG
 
 If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
 session. Follow the current 2026-11-08 work report for source-review priorities, owner decisions,
-operator acceptance and feature-complete device deferrals. There are no open code PRs or issues after PR #278 merged. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
+operator acceptance and feature-complete device deferrals. There are no open PRs or issues after PR #279 merged. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
 
 
 ---
