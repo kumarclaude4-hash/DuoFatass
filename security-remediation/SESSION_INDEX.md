@@ -93,8 +93,10 @@ and route wiring. S02-I2 code is merged as PR #288 (`78a99b478e90ec3337df3c92997
 callback residual and the bounded same-owner fix. The analyzer indexes `this::method`,
 `Owner::method`, and `Owner.this::method`, then taints callback-supplied parameters in the
 registered app-owned method. A synthetic AST regression requires a non-sensitive `callbackArg`
-to be rejected at `Log.w` after `CallbackApi.register(this::callbackLog)`. Exact-head checks are
-pending; keep S10-N2 Partial for unmodeled external callback/dispatch and whole-program residuals,
+to be rejected at `Log.w` after `CallbackApi.register(this::callbackLog)`. PR #289 merged as
+`ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`; exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006)
+passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009)
+passed 3/3. S10-N2 remains Partial for unmodeled external callback/dispatch and whole-program residuals,
 plus deferred feature-complete physical release-logcat acceptance.
 
 
