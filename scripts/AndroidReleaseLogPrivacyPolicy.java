@@ -312,9 +312,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class InheritedFieldBase { NestedSecret child; }\n"
                   + "class InheritedFieldChild extends InheritedFieldBase { }\n"
                   + "class InheritedFieldFlow { void log(Profile profile, InheritedFieldChild holder) { holder.child.setMemo(profile.getUserId()); String inheritedChildValue = holder.child.getMemo(); Log.w(\"TAG\", inheritedChildValue); } }\n"
-                  + "class InheritedMemoBase { String diagnostic; void setDiagnostic(String value) { this.diagnostic = value; } }\\n"
-                  + "class InheritedMemoChild extends InheritedMemoBase { }\\n"
-                  + "class InheritedDirectFieldFlow { void log(Profile profile, InheritedMemoChild holder) { holder.setDiagnostic(profile.getUserId()); Log.w(\"TAG\", holder.diagnostic); } }\\n", StandardCharsets.UTF_8);
+                  + "class InheritedMemoBase { String diagnostic; void setDiagnostic(String value) { this.diagnostic = value; } }\n"
+                  + "class InheritedMemoChild extends InheritedMemoBase { }\n"
+                  + "class InheritedDirectFieldFlow { void log(Profile profile, InheritedMemoChild holder) { holder.setDiagnostic(profile.getUserId()); Log.w(\"TAG\", holder.diagnostic); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
             if (interproceduralResult.inspectedCalls != 17
