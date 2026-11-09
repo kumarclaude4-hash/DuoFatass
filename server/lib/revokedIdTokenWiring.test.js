@@ -105,3 +105,23 @@ test("all Firebase ID-token verifications in the HTTP server check revocation", 
     assert.match(call[1], /,\s*true\s*$/, `missing revocation check in: ${call[0]}`);
   }
 });
+
+
+test("authenticated routes return 503 on shared-limiter failure before applying the quota 429", () => {
+  for (const route of ROUTES) {
+    const handler = handlerFor('req.url === "' + route + '"');
+    const unavailable = handler.indexOf("if (authRateLimitDecision === null) return;");
+    const quotaDenied = handler.indexOf("if (!authRateLimitDecision)");
+    assert.ok(unavailable >= 0, route + " must stop after checkAuthRateLimit has sent 503");
+    assert.ok(quotaDenied > unavailable, route + " must only emit quota 429 after infrastructure handling");
+    assert.match(handler, /checkAuthRateLimit\([^;]+,\s*res\)/,
+      route + " must provide the response so a shared-limiter outage can return 503");
+  }
+});
+
+test("production auth limiter is strict by default; only development/test may use local fallback", () => {
+  assert.match(SOURCE,
+    /const AUTH_RATE_LIMIT_REQUIRE_DURABLE\s*=\s*!\[\s*"development",\s*"test"\s*\]\.includes/);
+  assert.match(SOURCE, /requireDurable:\s*AUTH_RATE_LIMIT_REQUIRE_DURABLE/);
+  assert.match(SOURCE, /Rate limiting temporarily unavailable; retry later/);
+});
