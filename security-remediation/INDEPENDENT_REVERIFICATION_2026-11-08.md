@@ -1,3 +1,26 @@
+## 2026-11-09 addendum — PR #289 merged; PR #290 S06-H5 primary-PIN path review
+
+PR #289 merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`. Its same-owner method-reference
+callback target indexing covers `this::method`, `Owner::method`, and `Owner.this::method`, with a
+synthetic `callbackArg` → `Log.w` AST regression. Exact-head CI
+[42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed
+10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009)
+passed 3/3. The AST self-test/full production scan, Android unit/lint/build, R8, Espresso, API 35,
+Server + Worker, CodeQL, Gitleaks and SBOM passed. S10-N2 remains Partial for unmodeled callback/
+dispatch forms, whole-program symbol-resolution limitations and deferred physical release-logcat
+acceptance.
+
+PR #290 is the active S06-H5 follow-up. Independent source review found that the restored setup
+and forced post-unfreeze primary-PIN rotation screens both inspected the preserved secondary-code
+hash without consuming the shared PIN candidate throttle and returned a collision-specific message
+separate from storage failure. Both now call `PinManager.tryRecordPinChangeAttempt()` before the
+hidden-slot check. The same account-scoped 3-attempt/15-minute budget is used regardless of whether
+slot B is armed; collision, cooldown and storage/auth failures share one generic retry result.
+Two new `SecurityFindingWiringTest` cases assert throttle-before-check, write gating and the absence
+of collision-specific branches/messages. Exact-head CI/Security are pending. S06-H5 remains Partial
+until these regressions pass and independent side-channel/device residual review is completed.
+
+---
 ## 2026-11-09 addendum — PR #288 merge and PR #289 S10-N2 callback follow-up
 
 PR #288 is the latest source-changing merge on main: `78a99b478e90ec3337df3c92997de3ac16efbe5e`.
