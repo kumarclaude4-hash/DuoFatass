@@ -2,13 +2,13 @@
 
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Branch:** `main`  
-**Repository checkpoint:** `665146f8195409274b29b563333de25c591f10a9` (PR #281 merge; verified 2026-11-09)  
-**Audited application-code HEAD/tree:** `665146f8195409274b29b563333de25c591f10a9` / `c33b13b178fb92582834ade431cbe3d666bcb1f0` (PRs #278-#280 are documentation-only; PR #281 updates the bounded AST analyzer)  
+**Latest audited application-code HEAD/tree:** `665146f8195409274b29b563333de25c591f10a9` / `c33b13b178fb92582834ade431cbe3d666bcb1f0` (PR #281 is the latest source-changing merge)  
+**Subsequent documentation sync:** PR #282 merged as `be55818a4b5c6d1c210f736a39fe38bb2b9e5cba`; it does not modify the audited application-code tree.  
 **Canonical register:** [`BUG_TRACKER.md`](../BUG_TRACKER.md)
 
 ## 1. Repository and PR reconciliation
 
-After PR #281 merged, GitHub returned **zero open pull requests and zero open issues** for this repository (rechecked 2026-11-09). PRs #278-#280 modified documentation only; PR #281 changed the bounded S10-N2 AST analyzer and is now the audited application-code baseline. The latest relevant PR chain is:
+After PR #282 merged, GitHub returned **zero open pull requests and zero open issues** for this repository (rechecked 2026-11-09). PRs #278-#280 and #282 modified documentation only; PR #281 changed the bounded S10-N2 AST analyzer and remains the latest audited application-code baseline. The latest relevant PR chain is:
 
 | PR | Change | Merge commit | Exact-head CI | Security |
 |---|---|---|---|---|
@@ -19,6 +19,7 @@ After PR #281 merged, GitHub returned **zero open pull requests and zero open is
 | [#279](https://github.com/kumarclaude4-hash/DuoFatass/pull/279) | Final tracker baseline alignment (documentation-only) | `3d47d39faac649e9d5197327a7db5cc145c2c1de` | [42510855878 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855878) | [42510855851 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855851) |
 | [#280](https://github.com/kumarclaude4-hash/DuoFatass/pull/280) | Correct final repository/source-baseline references (documentation-only) | `21c5403799487915aea755365ff6e9bfd73d1cd3` | [42558744976 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42558744976) | [42558744833 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42558744833) |
 | [#281](https://github.com/kumarclaude4-hash/DuoFatass/pull/281) | Resolve chained app-owned receiver types in S10-N2 AST analysis | `665146f8195409274b29b563333de25c591f10a9` | [42561844959 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844959) | [42561844900 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844900) |
+| [#282](https://github.com/kumarclaude4-hash/DuoFatass/pull/282) | Reconcile tracker/handoff with PR #281 and distinguish source/docs baselines | `be55818a4b5c6d1c210f736a39fe38bb2b9e5cba` | [42562839236 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42562839236) | [42562839196 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42562839196) |
 
 For each listed PR-head CI workflow, all ten configured jobs completed successfully: Server + Worker tests, vendored libsignal verification, Android release-log AST, Gradle wrapper validation, lint, Android unit tests, debug APK, Espresso, API 35 predictive-back, and minified R8 release build. Each Security workflow completed all three jobs: Gitleaks, CodeQL and SBOM.
 
@@ -28,7 +29,7 @@ Earlier same-day verification relevant to tracker corrections:
 
 **Historical disposition:** some older PRs were intentionally closed unmerged because they were duplicates or superseded (including #266, per the owner's instruction, and #273 as a duplicate of #272; #262's implementation was carried by #265). “Zero open PRs” does not mean every historical PR was merged; it means no outstanding PR remains to be reviewed or merged.
 
-PR #278's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #279's exact-head CI and Security workflows also completed successfully (10/10 and 3/3); its post-merge Vercel status was successful. PR #280's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #281's exact-head CI and Security workflows completed successfully (10/10 and 3/3), including the dedicated AST self-test/full source scan, Android lint/unit tests, debug APK, minified R8, Espresso, API 35 predictive-back, Server + Worker tests, Gradle wrapper and libsignal integrity. Its Vercel preview status failed; this is separate from GitHub Actions and no successful preview deployment is claimed. No separate post-merge GitHub Actions run was returned for PR #281's merge SHA.
+PR #278's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #279's exact-head CI and Security workflows also completed successfully (10/10 and 3/3); its post-merge Vercel status was successful. PR #280's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #281's exact-head CI and Security workflows completed successfully (10/10 and 3/3), including the dedicated AST self-test/full source scan, Android lint/unit tests, debug APK, minified R8, Espresso, API 35 predictive-back, Server + Worker tests, Gradle wrapper and libsignal integrity. Its Vercel preview status failed; this is separate from GitHub Actions and no successful preview deployment is claimed. PR #282's exact-head CI and Security workflows also completed successfully (10/10 and 3/3), including the same Android build/emulator gates and all Server/Worker/security jobs. PR #282 is documentation-only and does not change the audited application-code tree.
 
 ## 2. Current finding inventory
 
@@ -103,4 +104,4 @@ This pass independently reconciled the live PR/issue inventory, current main SHA
 
 This is **not** a claim that all 116 original exploit scenarios were re-executed end-to-end in production or that every historical source line and provider setting was re-audited during this one pass. For findings not listed in section 3, the canonical tracker retains its previously recorded source/test evidence and residuals; a future finding-specific pass should re-run its dedicated evidence before promoting or changing disposition. No production secrets were retrieved, no live production configuration was changed, no physical-device test was performed, and no production sign-off is claimed.
 
-**Bottom line (2026-11-09):** PR #281 is merged; main was verified at `665146f8195409274b29b563333de25c591f10a9`, and the live inventory returned zero open PRs and zero open issues. PR #281 exact-head CI/Security are green (10/10 and 3/3). The audited application-code baseline now includes the #281 analyzer enhancement. The register remains 116 unique findings (86/17/1/12); S10-N2 remains Partial. Historical closed-unmerged duplicates/superseded PRs are distinguished from outstanding PRs.
+**Bottom line (2026-11-09):** PR #281 is the latest source-changing merge; its audited application-code baseline is `665146f8195409274b29b563333de25c591f10a9` (tree `c33b13b178fb92582834ade431cbe3d666bcb1f0`). PR #282 subsequently merged the documentation sync at `be55818a4b5c6d1c210f736a39fe38bb2b9e5cba`, and GitHub returned zero open PRs and zero open issues after that merge. Both PRs' exact-head CI/Security workflows are green (10/10 and 3/3 each). The register remains 116 unique findings (86/17/1/12); S10-N2 remains Partial. Historical closed-unmerged duplicates/superseded PRs are distinguished from outstanding PRs.
