@@ -85,20 +85,20 @@ public class ForcedPrimaryPinRotationActivity extends AppCompatActivity {
                 // restore of the same account stays gated) — screen 2 replaces it
                 // with a fresh code, but that hasn't happened yet, so the check must
                 // run against what's there right now.
-                boolean clashWithSecondary = DuressManager.isDuressPinOrPrefixOfIt(this, pin);
-                boolean stored = !clashWithSecondary && PinManager.setPin(this, pin);
+                // The old secondary-code hash survives the duress wipe until screen 2
+                // replaces it. Reuse the same account-scoped candidate budget as Settings
+                // and SetupPin before inspecting that hidden value.
+                boolean attemptAllowed = PinManager.tryRecordPinChangeAttempt(this);
+                boolean clashWithSecondary = attemptAllowed
+                        && DuressManager.isDuressPinOrPrefixOfIt(this, pin);
+                boolean stored = attemptAllowed && !clashWithSecondary
+                        && PinManager.setPin(this, pin);
 
                 runOnUiThread(() -> {
                     btnContinue.setEnabled(true);
 
-                    if (clashWithSecondary) {
-                        // Says nothing about why — same reasoning as SetupPinActivity.
-                        showError(tvError, "That PIN can't be used. Choose a different one.");
-                        etConfirmPin.setText("");
-                        return;
-                    }
                     if (!stored) {
-                        showError(tvError, "Couldn't save your PIN. Try again.");
+                        showError(tvError, "Couldn't save your PIN. Try again later.");
                         etConfirmPin.setText("");
                         return;
                     }
