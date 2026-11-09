@@ -112,12 +112,9 @@ public class SetupPinActivity extends AppCompatActivity {
                     btnContinue.setEnabled(true);
 
                     if (!stored) {
-                        // setPin() returns false when no Firebase user is signed in
-                        // (nothing to scope the key to) or the write threw. Previously
-                        // this path still cleared pending_pin_setup_ and routed on, so
-                        // no PIN existed while the app believed setup was finished —
-                        // and the next launch asked for a PIN the user had already
-                        // set. Keep the user here so the attempt can be retried.
+                        // This also covers throttle denial and a hidden secondary-code
+                        // collision. Keep all rejected candidate states indistinguishable;
+                        // only a successful durable PIN write may complete setup.
                         showError(tvError, "Couldn't save your PIN. Try again later.");
                         etConfirmPin.setText("");
                         return;
