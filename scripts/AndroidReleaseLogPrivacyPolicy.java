@@ -331,7 +331,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class ReflectionFlow { void log(String className, Object target) throws Exception { Class<?> dynamicType = Class.forName(className); java.lang.reflect.Method getter = dynamicType.getMethod(\"getName\"); Object reflected = getter.invoke(target); Log.w(\"TAG\", reflected); } }\n"
                   + "class CallbackApi { void register(java.util.function.Consumer<String> callback) { } }\n"
                   + "class CallbackFlow { void register(CallbackApi api) { api.register(value -> Log.w(\"TAG\", value.toString())); } }\n"
-                  + "class CallbackMethodReferenceFlow { void callbackLog(String callbackPayload) { Log.w(\"TAG\", callbackPayload); } void register(CallbackApi api) { api.register(this::callbackLog); } }\n", StandardCharsets.UTF_8);
+                  + "class CallbackMethodReferenceFlow { void callbackLog(String callbackArg) { Log.w(\"TAG\", callbackArg); } void register(CallbackApi api) { api.register(this::callbackLog); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
             if (interproceduralResult.inspectedCalls != 24
@@ -369,7 +369,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [value]");
             requireViolation(interproceduralResult.violations,
-                    "method-local sensitive alias/container reaches Log.w message [callbackPayload]");
+                    "method-local sensitive alias/container reaches Log.w message [callbackArg]");
             requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
