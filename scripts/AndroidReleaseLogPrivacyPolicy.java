@@ -320,13 +320,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class ExplicitSuperFlow { void log(ExplicitSuperChild source) { String viaSuper = source.exposeFromSuper(); Log.w(\"TAG\", viaSuper); } }\n"
                   + "class DuplicateOuterA { static class DuplicateReceiver { String ordinary; String expose() { return ordinary; } } }\n"
                   + "class DuplicateOuterB { static class DuplicateReceiver { String privateMemo; String expose() { return privateMemo; } } }\n"
-                  + "class DuplicateSimpleNameFlow { void log(DuplicateOuterB.DuplicateReceiver source) { String ambiguousValue = source.expose(); Log.w(\"TAG\", ambiguousValue); } }\n", StandardCharsets.UTF_8);
+                  + "class DuplicateSimpleNameFlow { void log(DuplicateOuterB.DuplicateReceiver source) { String ambiguousValue = source.expose(); Log.w(\"TAG\", ambiguousValue); } }\n"
+                  + "class QualifiedThisOuter { String sessionToken; String expose() { return sessionToken; } class Inner { String delegate() { return QualifiedThisOuter.this.expose(); } } }\n"
+                  + "class QualifiedThisFlow { void log(QualifiedThisOuter.Inner inner) { String qualifiedThisValue = inner.delegate(); Log.w(\"TAG\", qualifiedThisValue); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 19
-                    || interproceduralResult.violations.size() != 16) {
+            if (interproceduralResult.inspectedCalls != 20
+                    || interproceduralResult.violations.size() != 17) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "16 unsafe helper flows and 3 safe helper flows, got "
+                        + "17 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -349,6 +351,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [viaSuper]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [ambiguousValue]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [qualifiedThisValue]");
             requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
@@ -699,7 +703,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
             ExpressionTree receiver = receiverExpression(invocation);
             if (receiver == null) return callerOwner;
             String receiverText = receiver.toString();
-            if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
+            if ("this".equals(receiverText)) return callerOwner;
+            if (receiverText.endsWith(".this")) {
+                String enclosing = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".this".length()));
+                return classes.containsKey(enclosing) ? enclosing : null;
+            }
+            if (receiverText.endsWith(".super")) return null; // qualified-super lexical owner is not indexed
             if ("super".equals(receiverText)) {
                 ClassSummary caller = classes.get(callerOwner);
                 String parent = caller == null ? null : caller.superClassType;
@@ -824,7 +834,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                                          Map<String, String> localTypes) {
             if (receiver == null) return callerOwner;
             String receiverText = receiver.toString();
-            if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
+            if ("this".equals(receiverText)) return callerOwner;
+            if (receiverText.endsWith(".this")) {
+                String enclosing = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".this".length()));
+                return classes.containsKey(enclosing) ? enclosing : null;
+            }
+            if (receiverText.endsWith(".super")) return null; // do not guess an enclosing superclass
             if ("super".equals(receiverText)) {
                 ClassSummary caller = classes.get(callerOwner);
                 return caller == null ? null : caller.superClassType;
