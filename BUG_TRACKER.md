@@ -6,11 +6,11 @@ two previously-separate tracking systems (`audit/` session reports +
 `RISK_REGISTER.md` / `REMEDIATION_PROGRESS.md`), which had drifted out of sync
 with each other and — in several rows — with the actual code.
 
-**Latest audited application-code baseline (2026-11-09):** PR #289 merged as
-`ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`. PR #288 closed the production authenticated
-rate-limiter fallback; PR #289 added same-owner Java method-reference callback taint coverage.
-PR #290 is the active S06-H5 follow-up closing unthrottled primary-PIN collision checks in
-restored setup and forced PIN rotation. The original
+**Latest audited application-code baseline (2026-11-09):** PR #290 merged as
+`9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. PR #288 closed the production authenticated
+rate-limiter fallback; PR #289 added same-owner Java method-reference callback taint coverage;
+PR #290 extended the UID-scoped primary-PIN candidate throttle to restored setup and forced
+rotation. The original
 finding catalog was first re-derived from source at `298f916` (2026-08-11);
 that is historical provenance, not the current code baseline. The current
 register has been reconciled against the latest source and documentation
@@ -20,11 +20,11 @@ pass. Earlier session reports remain historical evidence.
 
 ## Current repository and audited code baseline — 2026-11-09
 
-- **Latest source-changing merge:** PR #289, `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`.
+- **Latest source-changing merge:** PR #290, `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`.
 - **PR #288 S02-I2:** merged as `78a99b478e90ec3337df3c92997de3ac16efbe5e`. Exact-head CI [42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825) passed 10/10; Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910) passed 3/3; Firestore Rules/server transactions [42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878) passed. Code-side production fallback closed; authorized Render/Worker secret-pair read-back/runtime confirmation remains.
 - **PR #289 S10-N2:** merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`. Exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. It adds same-owner method-reference callback tainting and a synthetic AST regression. S10-N2 remains Partial for unmodelled method-reference/external-dispatch shapes, whole-program analysis limitations and physical release-logcat acceptance.
-- **Active code PR:** PR #290 (`security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`) extends the account-scoped primary-PIN candidate throttle to restored setup and forced rotation. It adds two wiring regressions requiring throttle-before-secondary-code-check and one generic failure outcome. Exact-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3.
-- **Open PRs:** 1 (PR #290); rechecked 2026-11-09.
+- **PR #290 S06-H5:** merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Exact-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) passed 3/3. Espresso executed 4 tests; API 35 predictive-back executed 1 test; debug APK and minified R8 passed (453,247-line mapping). The PR adds throttle-before-check and generic-failure wiring regressions to restored setup and forced primary rotation.
+- **Open PRs:** 0; rechecked 2026-11-09.
 - **Open GitHub issues:** 0; rechecked 2026-11-09.
 - **Finding register:** 116 unique findings — **86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23).
 - **Current S10-N2 progress:** PR #286 extends the bounded AST guard to fail closed on unresolved class/method generic return types and generic receiver chains, common Java reflection/class-loading APIs, and opaque callback-lambda parameters. It preserves lexical scoping and the narrowly safe exception-class-name and MediaPlayer error-code diagnostics. Regression coverage includes generic `T` returns, `Class.forName → getMethod → Method.invoke`, callback payload logging and safe callback exception-class output. Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3; AST scanned 205 Java files / 414 warning/error sinks with zero violations; Espresso executed 4 tests, API 35 predictive-back 1 test, and R8 generated a 453,260-line mapping. S10-N2 remains Partial: the guard is bounded syntax-level analysis, not symbol-resolved whole-program proof; unmodelled external/library dispatch, reflective/dynamic shapes, native/callback internals, arbitrary generic/container semantics and feature-complete physical release/minified APK logcat acceptance remain.
