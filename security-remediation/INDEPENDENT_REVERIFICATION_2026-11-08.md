@@ -6,9 +6,13 @@ remaining entry points that compare a proposed primary PIN against the preserved
 hash: restored `SetupPinActivity` and `ForcedPrimaryPinRotationActivity`. Both now throttle before
 checking slot B, regardless of whether the slot is armed; collision, cooldown, auth and storage
 failure share a generic retry outcome. Two new `SecurityFindingWiringTest` regressions require
-throttle-before-check, write gating and no collision-specific branch/message. Exact-head CI/Security
-are pending. Keep S06-H5 Partial pending test results, independent side-channel review and
-feature-complete device acceptance.
+throttle-before-check, write gating and no collision-specific branch/message. Exact-head CI
+[42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed
+10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340)
+passed 3/3. The Android unit suite, lint, debug APK, minified R8 (453,247-line mapping), Espresso
+(4 executed tests), API 35 predictive-back (1 executed test), Server + Worker, AST, CodeQL,
+Gitleaks, SBOM and integrity checks all passed. Keep S06-H5 Partial pending independent
+side-channel review and feature-complete device acceptance.
 
 ## 2026-11-09 addendum — PR #289 merged; PR #290 S06-H5 primary-PIN path review
 
@@ -29,8 +33,10 @@ separate from storage failure. Both now call `PinManager.tryRecordPinChangeAttem
 hidden-slot check. The same account-scoped 3-attempt/15-minute budget is used regardless of whether
 slot B is armed; collision, cooldown and storage/auth failures share one generic retry result.
 Two new `SecurityFindingWiringTest` cases assert throttle-before-check, write gating and the absence
-of collision-specific branches/messages. Exact-head CI/Security are pending. S06-H5 remains Partial
-until these regressions pass and independent side-channel/device residual review is completed.
+of collision-specific branches/messages. Exact-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269)
+passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340)
+passed 3/3; Espresso 4, API 35 1, debug APK and minified R8 passed. S06-H5 remains Partial pending
+independent side-channel/device residual review.
 
 ---
 ## 2026-11-09 addendum — PR #288 and PR #289 merged; PR #290 S06-H5 follow-up
