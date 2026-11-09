@@ -19,8 +19,19 @@ function durableKey(uid, endpoint) {
   return KEY_PREFIX + digest;
 }
 
+class AuthRateLimitUnavailableError extends Error {
+  constructor(cause) {
+    super("Shared authenticated API rate limiter is unavailable");
+    this.name = "AuthRateLimitUnavailableError";
+    this.code = "AUTH_RATE_LIMIT_UNAVAILABLE";
+    this.status = 503;
+    if (cause !== undefined) this.cause = cause;
+  }
+}
+
 function createAuthRateLimitStore({
   client = null,
+  requireDurable = false,
   windowMs = DEFAULT_WINDOW_MS,
   now = () => Date.now(),
   maxLocalEntries = DEFAULT_MAX_LOCAL_ENTRIES,
@@ -85,27 +96,30 @@ function createAuthRateLimitStore({
         throw new TypeError("limit must be a positive safe integer");
       }
       const key = durableKey(uid, endpoint);
-      if (client) {
-        try {
-          const result = await client.recordFailure(key, {
-            windowMs,
-            maxFails: limit + 1,
-          });
-          if (!result || typeof result.locked !== "boolean" || typeof result.count !== "number") {
-            throw new TypeError("Durable Object returned a malformed auth rate-limit result");
-          }
-          return {
-            allowed: !result.locked,
-            durable: true,
-            count: result.count,
-          };
-        } catch (err) {
-          onError("record", err);
+      if (!client) {
+        if (requireDurable) throw new AuthRateLimitUnavailableError();
+        return localCheck(key, limit);
+      }
+      try {
+        const result = await client.recordFailure(key, {
+          windowMs,
+          maxFails: limit + 1,
+        });
+        if (!result || typeof result.locked !== "boolean" || typeof result.count !== "number") {
+          throw new TypeError("Durable Object returned a malformed auth rate-limit result");
         }
+        return {
+          allowed: !result.locked,
+          durable: true,
+          count: result.count,
+        };
+      } catch (err) {
+        onError("record", err);
+        if (requireDurable) throw new AuthRateLimitUnavailableError(err);
       }
       return localCheck(key, limit);
     },
   };
 }
 
-module.exports = { createAuthRateLimitStore, durableKey };
+module.exports = { createAuthRateLimitStore, durableKey, AuthRateLimitUnavailableError };
