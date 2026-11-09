@@ -1899,8 +1899,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
             return super.visitMethod(node, unused);
         }
 
-        private Set<String> throwableNamesForCurrentLambda() {
-            Set<String> names = new HashSet<>(throwableVariables);
+        private Set<String> callbackParameterNamesForCurrentLambda() {
+            Set<String> names = new HashSet<>();
             com.sun.source.util.TreePath path = getCurrentPath();
             while (path != null) {
                 if (path.getLeaf() instanceof com.sun.source.tree.LambdaExpressionTree) {
@@ -1929,9 +1929,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     // The tag is emitted to logcat alongside the message. Treat both
                     // arguments as disclosure sinks; a dynamic tag can leak the same
                     // UID/path/credential metadata as the message itself.
-                    Set<String> visibleThrowableNames = throwableNamesForCurrentLambda();
-                    new MessageScanner(node, visibleThrowableNames).scan(args.get(0), null);
-                    new MessageScanner(node, visibleThrowableNames).scan(args.get(1), null);
+                    Set<String> visibleCallbackParameters = callbackParameterNamesForCurrentLambda();
+                    new MessageScanner(node, throwableVariables, visibleCallbackParameters).scan(args.get(0), null);
+                    new MessageScanner(node, throwableVariables, visibleCallbackParameters).scan(args.get(1), null);
                 }
             }
             return super.visitMethodInvocation(node, unused);
@@ -1946,10 +1946,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private final class MessageScanner extends TreeScanner<Void, Void> {
             private final MethodInvocationTree logCall;
             private final Set<String> throwableVariables;
+            private final Set<String> callbackParameterNames;
 
-            MessageScanner(MethodInvocationTree logCall, Set<String> throwableVariables) {
+            MessageScanner(MethodInvocationTree logCall, Set<String> throwableVariables,
+                           Set<String> callbackParameterNames) {
                 this.logCall = logCall;
                 this.throwableVariables = throwableVariables;
+                this.callbackParameterNames = callbackParameterNames;
             }
 
             @Override
@@ -1990,7 +1993,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (!receiver.endsWith(suffix)) return false;
                 String variable = receiver.substring(0, receiver.length() - suffix.length());
                 return variable.matches("[A-Za-z_$][A-Za-z0-9_$]*")
-                        && throwableVariables.contains(variable);
+                        && (throwableVariables.contains(variable)
+                        || callbackParameterNames.contains(variable));
             }
 
             @Override
