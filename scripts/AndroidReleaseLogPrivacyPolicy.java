@@ -435,16 +435,6 @@ public final class AndroidReleaseLogPrivacyPolicy {
             return super.visitVariable(node, unused);
         }
 
-        @Override
-        public Void visitLambdaExpression(com.sun.source.tree.LambdaExpressionTree node, Void unused) {
-            // Inferred callback parameter types are absent from the syntax tree.
-            // Allow only the existing getClass().getSimpleName() projection for
-            // these parameters; raw callback values remain tainted by method scan.
-            for (VariableTree parameter : node.getParameters()) {
-                throwableVariables.add(parameter.getName().toString());
-            }
-            return super.visitLambdaExpression(node, unused);
-        }
     }
 
     /**
@@ -1909,6 +1899,21 @@ public final class AndroidReleaseLogPrivacyPolicy {
             return super.visitMethod(node, unused);
         }
 
+        private Set<String> throwableNamesForCurrentLambda() {
+            Set<String> names = new HashSet<>(throwableVariables);
+            com.sun.source.util.TreePath path = getCurrentPath();
+            while (path != null) {
+                if (path.getLeaf() instanceof com.sun.source.tree.LambdaExpressionTree) {
+                    for (VariableTree parameter
+                            : ((com.sun.source.tree.LambdaExpressionTree) path.getLeaf()).getParameters()) {
+                        names.add(parameter.getName().toString());
+                    }
+                }
+                path = path.getParentPath();
+            }
+            return names;
+        }
+
         @Override
         public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
             String method = methodName(node);
@@ -1924,8 +1929,9 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     // The tag is emitted to logcat alongside the message. Treat both
                     // arguments as disclosure sinks; a dynamic tag can leak the same
                     // UID/path/credential metadata as the message itself.
-                    new MessageScanner(node, throwableVariables).scan(args.get(0), null);
-                    new MessageScanner(node, throwableVariables).scan(args.get(1), null);
+                    Set<String> visibleThrowableNames = throwableNamesForCurrentLambda();
+                    new MessageScanner(node, visibleThrowableNames).scan(args.get(0), null);
+                    new MessageScanner(node, visibleThrowableNames).scan(args.get(1), null);
                 }
             }
             return super.visitMethodInvocation(node, unused);
