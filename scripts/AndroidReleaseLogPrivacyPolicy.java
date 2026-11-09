@@ -314,13 +314,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class InheritedFieldFlow { void log(Profile profile, InheritedFieldChild holder) { holder.child.setMemo(profile.getUserId()); String inheritedChildValue = holder.child.getMemo(); Log.w(\"TAG\", inheritedChildValue); } }\n"
                   + "class InheritedMemoBase { String diagnostic; void setDiagnostic(String value) { this.diagnostic = value; } }\n"
                   + "class InheritedMemoChild extends InheritedMemoBase { }\n"
-                  + "class InheritedDirectFieldFlow { void log(Profile profile, InheritedMemoChild holder) { holder.setDiagnostic(profile.getUserId()); Log.w(\"TAG\", holder.diagnostic); } }\n", StandardCharsets.UTF_8);
+                  + "class InheritedDirectFieldFlow { void log(Profile profile, InheritedMemoChild holder) { holder.setDiagnostic(profile.getUserId()); Log.w(\"TAG\", holder.diagnostic); } }\n"
+                  + "class ExplicitSuperBase { String secret; String expose() { return secret; } }\n"
+                  + "class ExplicitSuperChild extends ExplicitSuperBase { String exposeFromSuper() { return super.expose(); } }\n"
+                  + "class ExplicitSuperFlow { void log(ExplicitSuperChild source) { String viaSuper = source.exposeFromSuper(); Log.w(\"TAG\", viaSuper); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 17
-                    || interproceduralResult.violations.size() != 14) {
+            if (interproceduralResult.inspectedCalls != 18
+                    || interproceduralResult.violations.size() != 15) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "14 unsafe helper flows and 3 safe helper flows, got "
+                        + "15 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -339,6 +342,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [inheritedValue]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [inheritedChildValue]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [viaSuper]");
             requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
@@ -442,7 +447,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             ClassSummary info = new ClassSummary(owner);
                             info.isFinal = node.getModifiers().getFlags().contains(Modifier.FINAL);
                             if (node.getExtendsClause() != null) {
-                                info.superTypes.add(simpleTypeName(node.getExtendsClause().toString()));
+                                info.superClassType = simpleTypeName(node.getExtendsClause().toString());
+                                info.superTypes.add(info.superClassType);
                             }
                             for (com.sun.source.tree.Tree implemented : node.getImplementsClause()) {
                                 info.superTypes.add(simpleTypeName(implemented.toString()));
@@ -689,7 +695,17 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (receiver == null) return callerOwner;
             String receiverText = receiver.toString();
             if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
-            if ("super".equals(receiverText) || receiverText.endsWith(".super")) return null;
+            if ("super".equals(receiverText)) {
+                ClassSummary caller = classes.get(callerOwner);
+                String parent = caller == null ? null : caller.superClassType;
+                return parent != null && classes.containsKey(parent) && !ambiguousClasses.contains(parent)
+                        ? parent : null;
+            }
+            if (receiverText.endsWith(".super")) {
+                String parent = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".super".length()));
+                return classes.containsKey(parent) && !ambiguousClasses.contains(parent) ? parent : null;
+            }
 
             if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
                 return receiverText; // Explicit app-owned static call.
@@ -722,7 +738,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (expression instanceof IdentifierTree) {
                 String name = ((IdentifierTree) expression).getName().toString();
                 if ("this".equals(name)) return callerOwner;
-                if ("super".equals(name)) return null;
+                if ("super".equals(name)) {
+                    ClassSummary caller = classes.get(callerOwner);
+                    return caller == null ? null : caller.superClassType;
+                }
                 String type = localTypes.get(name);
                 if (type != null) return type;
                 return classes.containsKey(name) && !ambiguousClasses.contains(name) ? name : null;
@@ -800,7 +819,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (receiver == null) return callerOwner;
             String receiverText = receiver.toString();
             if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
-            if ("super".equals(receiverText) || receiverText.endsWith(".super")) return null;
+            if ("super".equals(receiverText)) {
+                ClassSummary caller = classes.get(callerOwner);
+                return caller == null ? null : caller.superClassType;
+            }
+            if (receiverText.endsWith(".super")) {
+                String parent = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".super".length()));
+                return classes.containsKey(parent) && !ambiguousClasses.contains(parent) ? parent : null;
+            }
             if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
                 return receiverText;
             }
@@ -868,6 +895,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private static final class ClassSummary {
             final String owner;
             final Set<String> superTypes = new HashSet<>();
+            String superClassType;
             boolean isFinal;
             final Set<String> fieldNames = new HashSet<>();
             final Map<String, String> fieldTypes = new HashMap<>();
