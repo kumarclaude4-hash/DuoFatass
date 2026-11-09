@@ -305,13 +305,30 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n"
                   + "class NestedSecret { String memo; void setMemo(String value) { this.memo = value; } String getMemo() { return this.memo; } }\n"
                   + "class SecretWrapper { NestedSecret child; NestedSecret getChild() { return child; } }\n"
-                  + "class MultiHopFieldFlow { void log(Profile profile, SecretWrapper wrapper) { wrapper.getChild().setMemo(profile.getUserId()); String resolvedMemo = wrapper.getChild().getMemo(); Log.w(\"TAG\", resolvedMemo); } }\n", StandardCharsets.UTF_8);
+                  + "class MultiHopFieldFlow { void log(Profile profile, SecretWrapper wrapper) { wrapper.getChild().setMemo(profile.getUserId()); String resolvedMemo = wrapper.getChild().getMemo(); Log.w(\"TAG\", resolvedMemo); } }\n"
+                  + "class InheritedSensitiveBase { String secret; String expose() { return secret; } }\n"
+                  + "class InheritedSensitiveChild extends InheritedSensitiveBase { }\n"
+                  + "class InheritedMethodFlow { void log(InheritedSensitiveChild source) { String inheritedValue = source.expose(); Log.w(\"TAG\", inheritedValue); } }\n"
+                  + "class InheritedFieldBase { NestedSecret child; }\n"
+                  + "class InheritedFieldChild extends InheritedFieldBase { }\n"
+                  + "class InheritedFieldFlow { void log(Profile profile, InheritedFieldChild holder) { holder.child.setMemo(profile.getUserId()); String inheritedChildValue = holder.child.getMemo(); Log.w(\"TAG\", inheritedChildValue); } }\n"
+                  + "class InheritedMemoBase { String diagnostic; void setDiagnostic(String value) { this.diagnostic = value; } }\n"
+                  + "class InheritedMemoChild extends InheritedMemoBase { }\n"
+                  + "class InheritedDirectFieldFlow { void log(Profile profile, InheritedMemoChild holder) { holder.setDiagnostic(profile.getUserId()); Log.w(\"TAG\", holder.diagnostic); } }\n"
+                  + "class ExplicitSuperBase { String secret; String expose() { return secret; } }\n"
+                  + "class ExplicitSuperChild extends ExplicitSuperBase { String exposeFromSuper() { return super.expose(); } }\n"
+                  + "class ExplicitSuperFlow { void log(ExplicitSuperChild source) { String viaSuper = source.exposeFromSuper(); Log.w(\"TAG\", viaSuper); } }\n"
+                  + "class DuplicateOuterA { static class DuplicateReceiver { String ordinary; String expose() { return ordinary; } } }\n"
+                  + "class DuplicateOuterB { static class DuplicateReceiver { String privateMemo; String expose() { return privateMemo; } } }\n"
+                  + "class DuplicateSimpleNameFlow { void log(DuplicateOuterB.DuplicateReceiver source) { String ambiguousValue = source.expose(); Log.w(\"TAG\", ambiguousValue); } }\n"
+                  + "class QualifiedThisOuter { String sessionToken; String expose() { return sessionToken; } class Inner { String delegate() { return QualifiedThisOuter.this.expose(); } } }\n"
+                  + "class QualifiedThisFlow { void log(QualifiedThisOuter.Inner inner) { String qualifiedThisValue = inner.delegate(); Log.w(\"TAG\", qualifiedThisValue); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 14
-                    || interproceduralResult.violations.size() != 11) {
+            if (interproceduralResult.inspectedCalls != 20
+                    || interproceduralResult.violations.size() != 17) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "11 unsafe helper flows and 3 safe helper flows, got "
+                        + "17 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -326,6 +343,17 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [result]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [resolvedMemo]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [inheritedValue]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [inheritedChildValue]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [viaSuper]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [ambiguousValue]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [qualifiedThisValue]");
+            requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
         } finally {
@@ -428,7 +456,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             ClassSummary info = new ClassSummary(owner);
                             info.isFinal = node.getModifiers().getFlags().contains(Modifier.FINAL);
                             if (node.getExtendsClause() != null) {
-                                info.superTypes.add(simpleTypeName(node.getExtendsClause().toString()));
+                                info.superClassType = simpleTypeName(node.getExtendsClause().toString());
+                                info.superTypes.add(info.superClassType);
                             }
                             for (com.sun.source.tree.Tree implemented : node.getImplementsClause()) {
                                 info.superTypes.add(simpleTypeName(implemented.toString()));
@@ -609,22 +638,64 @@ public final class AndroidReleaseLogPrivacyPolicy {
         boolean isAmbiguousAppOwnedCall(String callerOwner, MethodInvocationTree invocation,
                                          Map<String, String> localTypes) {
             String owner = resolveOwner(callerOwner, invocation, localTypes);
-            if (owner == null || ambiguousClasses.contains(owner)) return false;
-            ClassSummary info = classes.get(owner);
-            if (info == null) return false;
+            if (owner == null) return false;
             String signature = methodName(invocation) + "/" + invocation.getArguments().size();
-            return info.ambiguousMethods.contains(signature);
+            return lookupMethod(owner, signature, new HashSet<>()).ambiguous;
         }
 
         private MethodDefinition resolveDefinition(String callerOwner, MethodInvocationTree invocation,
                                                    Map<String, String> localTypes) {
             String owner = resolveOwner(callerOwner, invocation, localTypes);
-            if (owner == null || ambiguousClasses.contains(owner)) return null;
-            ClassSummary info = classes.get(owner);
-            if (info == null) return null;
+            if (owner == null) return null;
             String signature = methodName(invocation) + "/" + invocation.getArguments().size();
-            if (info.ambiguousMethods.contains(signature)) return null;
-            return info.methods.get(signature);
+            MethodLookup lookup = lookupMethod(owner, signature, new HashSet<>());
+            return lookup.ambiguous ? null : lookup.definition;
+        }
+
+        /**
+         * Resolve methods declared by the receiver type or inherited from an
+         * app-owned superclass/interface. Multiple unrelated inherited candidates,
+         * duplicate source types and ambiguous overloads are not guessed: callers
+         * treat the return as unknown/tainted. Diamond paths to the same declaration
+         * are deduplicated by its owner-qualified method key.
+         */
+        private MethodLookup lookupMethod(String owner, String signature, Set<String> visited) {
+            if (!visited.add(owner)) return new MethodLookup(null, true);
+            ClassSummary info = classes.get(owner);
+            if (info == null) return new MethodLookup(null, false);
+            if (ambiguousClasses.contains(owner) || info.ambiguousMethods.contains(signature)) {
+                return new MethodLookup(null, true);
+            }
+
+            MethodDefinition declared = info.methods.get(signature);
+            if (declared != null) return new MethodLookup(declared, false);
+
+            Map<String, MethodDefinition> inherited = new HashMap<>();
+            boolean ambiguous = false;
+            for (String superType : info.superTypes) {
+                if (!classes.containsKey(superType)) continue; // external parent: not indexed
+                MethodLookup parent = lookupMethod(superType, signature, new HashSet<>(visited));
+                ambiguous |= parent.ambiguous;
+                if (parent.definition != null
+                        && !parent.definition.method.getModifiers().getFlags().contains(Modifier.PRIVATE)) {
+                    inherited.put(parent.definition.key, parent.definition);
+                }
+            }
+            if (ambiguous || inherited.size() > 1) return new MethodLookup(null, true);
+            if (inherited.size() == 1) {
+                return new MethodLookup(inherited.values().iterator().next(), false);
+            }
+            return new MethodLookup(null, false);
+        }
+
+        private static final class MethodLookup {
+            final MethodDefinition definition;
+            final boolean ambiguous;
+
+            MethodLookup(MethodDefinition definition, boolean ambiguous) {
+                this.definition = definition;
+                this.ambiguous = ambiguous;
+            }
         }
 
         private String resolveOwner(String callerOwner, MethodInvocationTree invocation,
@@ -632,16 +703,33 @@ public final class AndroidReleaseLogPrivacyPolicy {
             ExpressionTree receiver = receiverExpression(invocation);
             if (receiver == null) return callerOwner;
             String receiverText = receiver.toString();
-            if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
-            if ("super".equals(receiverText) || receiverText.endsWith(".super")) return null;
+            if ("this".equals(receiverText)) return callerOwner;
+            if (receiverText.endsWith(".this")) {
+                String enclosing = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".this".length()));
+                return classes.containsKey(enclosing) ? enclosing : null;
+            }
+            if (receiverText.endsWith(".super")) return null; // qualified-super lexical owner is not indexed
+            if ("super".equals(receiverText)) {
+                ClassSummary caller = classes.get(callerOwner);
+                String parent = caller == null ? null : caller.superClassType;
+                return parent != null && classes.containsKey(parent) && !ambiguousClasses.contains(parent)
+                        ? parent : null;
+            }
+            if (receiverText.endsWith(".super")) {
+                String parent = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".super".length()));
+                return classes.containsKey(parent) && !ambiguousClasses.contains(parent) ? parent : null;
+            }
 
-            if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
-                return receiverText; // Explicit app-owned static call.
+            if (classes.containsKey(receiverText)) {
+                return receiverText; // Preserve ambiguity so calls fail closed.
             }
             String resolvedType = resolveExpressionType(callerOwner, receiver, localTypes);
             String simple = simpleTypeName(resolvedType == null ? "" : resolvedType);
-            return classes.containsKey(simple) && !ambiguousClasses.contains(simple)
-                    ? simple : null;
+            // Return duplicate simple-name owners as well: resolveDefinition()
+            // recognizes their ambiguous index entry and taints unknown returns.
+            return classes.containsKey(simple) ? simple : null;
         }
 
         /**
@@ -666,10 +754,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
             if (expression instanceof IdentifierTree) {
                 String name = ((IdentifierTree) expression).getName().toString();
                 if ("this".equals(name)) return callerOwner;
-                if ("super".equals(name)) return null;
+                if ("super".equals(name)) {
+                    ClassSummary caller = classes.get(callerOwner);
+                    return caller == null ? null : caller.superClassType;
+                }
                 String type = localTypes.get(name);
                 if (type != null) return type;
-                return classes.containsKey(name) && !ambiguousClasses.contains(name) ? name : null;
+                return classes.containsKey(name) ? name : null;
             }
             if (expression instanceof MemberSelectTree) {
                 MemberSelectTree member = (MemberSelectTree) expression;
@@ -677,9 +768,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         callerOwner, member.getExpression(), localTypes);
                 if (receiverType == null) return null;
                 String ownerType = simpleTypeName(receiverType);
-                ClassSummary owner = classes.get(ownerType);
-                if (owner == null || ambiguousClasses.contains(ownerType)) return null;
-                return owner.fieldTypes.get(member.getIdentifier().toString());
+                return resolveFieldType(ownerType, member.getIdentifier().toString(), new HashSet<>());
             }
             if (expression instanceof MethodInvocationTree) {
                 MethodDefinition target = resolveDefinition(callerOwner,
@@ -691,9 +780,38 @@ public final class AndroidReleaseLogPrivacyPolicy {
         }
 
         boolean isSensitiveField(String owner, String name) {
+            return isSensitiveFieldInHierarchy(owner, name, new HashSet<>());
+        }
+
+        private boolean isSensitiveFieldInHierarchy(String owner, String name, Set<String> visited) {
+            if (!visited.add(owner)) return false;
             ClassSummary info = classes.get(owner);
-            return info != null && !ambiguousClasses.contains(owner)
-                    && info.sensitiveFields.contains(name);
+            if (info == null || ambiguousClasses.contains(owner)) return false;
+            if (info.sensitiveFields.contains(name)) return true;
+            for (String superType : info.superTypes) {
+                if (isSensitiveFieldInHierarchy(superType, name, visited)) return true;
+            }
+            return false;
+        }
+
+        /**
+         * Find an app-owned field's declared type through the source-backed type
+         * hierarchy. Conflicting inherited declarations remain unresolved rather
+         * than selecting an arbitrary type.
+         */
+        private String resolveFieldType(String owner, String name, Set<String> visited) {
+            if (!visited.add(owner)) return null;
+            ClassSummary info = classes.get(owner);
+            if (info == null || ambiguousClasses.contains(owner)) return null;
+            String declared = info.fieldTypes.get(name);
+            if (declared != null) return declared;
+
+            Set<String> inheritedTypes = new HashSet<>();
+            for (String superType : info.superTypes) {
+                String inherited = resolveFieldType(superType, name, new HashSet<>(visited));
+                if (inherited != null) inheritedTypes.add(inherited);
+            }
+            return inheritedTypes.size() == 1 ? inheritedTypes.iterator().next() : null;
         }
 
         boolean isSensitiveField(String callerOwner, ExpressionTree receiver, String name,
@@ -716,15 +834,26 @@ public final class AndroidReleaseLogPrivacyPolicy {
                                          Map<String, String> localTypes) {
             if (receiver == null) return callerOwner;
             String receiverText = receiver.toString();
-            if ("this".equals(receiverText) || receiverText.endsWith(".this")) return callerOwner;
-            if ("super".equals(receiverText) || receiverText.endsWith(".super")) return null;
-            if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
-                return receiverText;
+            if ("this".equals(receiverText)) return callerOwner;
+            if (receiverText.endsWith(".this")) {
+                String enclosing = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".this".length()));
+                return classes.containsKey(enclosing) ? enclosing : null;
             }
+            if (receiverText.endsWith(".super")) return null; // do not guess an enclosing superclass
+            if ("super".equals(receiverText)) {
+                ClassSummary caller = classes.get(callerOwner);
+                return caller == null ? null : caller.superClassType;
+            }
+            if (receiverText.endsWith(".super")) {
+                String parent = simpleTypeName(receiverText.substring(
+                        0, receiverText.length() - ".super".length()));
+                return classes.containsKey(parent) && !ambiguousClasses.contains(parent) ? parent : null;
+            }
+            if (classes.containsKey(receiverText)) return receiverText;
             String resolvedType = resolveExpressionType(callerOwner, receiver, localTypes);
             String simple = simpleTypeName(resolvedType == null ? "" : resolvedType);
-            return classes.containsKey(simple) && !ambiguousClasses.contains(simple)
-                    ? simple : null;
+            return classes.containsKey(simple) ? simple : null;
         }
 
         private boolean addSensitiveField(String fieldKey) {
@@ -785,6 +914,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
         private static final class ClassSummary {
             final String owner;
             final Set<String> superTypes = new HashSet<>();
+            String superClassType;
             boolean isFinal;
             final Set<String> fieldNames = new HashSet<>();
             final Map<String, String> fieldTypes = new HashMap<>();
