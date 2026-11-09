@@ -35,7 +35,7 @@ function createAuthRateLimitStore({
   windowMs = DEFAULT_WINDOW_MS,
   now = () => Date.now(),
   maxLocalEntries = DEFAULT_MAX_LOCAL_ENTRIES,
-  onError = (op, err) => console.warn(`[authRateLimitStore] ${op} failed; using local fallback:`, err.message),
+  onError = (op, err) => console.warn(`[authRateLimitStore] ${op} failed:`, err.message),
 } = {}) {
   if (!Number.isSafeInteger(windowMs) || windowMs <= 0) {
     throw new TypeError("windowMs must be a positive safe integer");
@@ -88,8 +88,10 @@ function createAuthRateLimitStore({
      * configured. The DO's lock threshold is limit + 1 so the first 'limit'
      * requests are allowed and the following request is rejected.
      *
-     * If the Worker is unavailable, a bounded process-local fallback keeps
-     * the endpoint usable but does not claim cross-instance consistency.
+     * With requireDurable enabled, a missing or failed Worker is an explicit
+     * availability error and never falls back to process-local state. The
+     * bounded local fallback is only used by callers that opt out of strict
+     * shared enforcement (local development/tests).
      */
     async check(uid, endpoint, limit) {
       if (!Number.isSafeInteger(limit) || limit < 1) {
