@@ -1,9 +1,18 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-09 (post-PR #286 S10-N2 generic/reflection/callback hardening)  
+**Updated:** 2026-11-09 (active PR #288 S02-I2 production fail-closed hardening; exact-head checks pending)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Latest audited application-code baseline:** `26daea8e8b2e45764a68000d02a1f93a486d2fde` (PR #286; tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). PR #285 was documentation-only; PR #286 is the latest source-changing merge.
+**Latest audited application-code baseline:** `26daea8e8b2e45764a68000d02a1f93a486d2fde` (PR #286; tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). PR #287 is documentation-only; PR #286 remains the latest source-changing merge on main.
 
+## Active implementation PR #288 — S02-I2 production fail-closed rate limiting
+
+Branch: security/s02-i2-production-fail-closed-2026-11-09, based on current main after PR #287.
+
+- authRateLimitStore now supports requireDurable. In strict mode, a missing Worker client or a failed/malformed Durable Object response raises a typed 503 error instead of consuming a process-local counter.
+- The server enables strict mode whenever NODE_ENV is not explicitly development or test (including an unset value). The 12 authenticated routes return HTTP 503 with Retry-After: 30 when shared limiting is unavailable; HTTP 429 remains reserved for an actual limit breach.
+- Added unit tests for missing shared configuration and Worker outages, plus a route-wiring regression requiring 503 handling before each route's 429 response.
+- Updated server/README.md, BUG_TRACKER.md, START_HERE.md, this report, FINAL_SIGNOFF.md, the independent re-verification note, the agent handoff, the session index and a new session record in this same PR.
+- S02-I2 remains Partial until exact-head CI/Security pass and the authorized Render/Cloudflare secret pairing is read back. No production configuration or deployment was changed in this PR.
 ## Current verified mainline
 
 PR #286 is the latest source-changing merge. Its exact PR head `91751692e7c491a1aba948b2b1da4f2bbada120c` merged as `26daea8e8b2e45764a68000d02a1f93a486d2fde` (tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3. The AST self-tests and full app-source scan passed: 205 Java files, 414 warning/error release-log sinks, zero violations. Server + Worker, Android unit tests and lint passed. The debug APK and minified R8 build passed; R8 generated a 453,260-line mapping. Espresso executed 4 tests and API 35 predictive-back executed 1 test; both passed. PR #285 is documentation-only and does not change the application-code tree.
