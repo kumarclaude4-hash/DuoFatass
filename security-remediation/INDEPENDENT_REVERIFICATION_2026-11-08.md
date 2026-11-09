@@ -2,13 +2,13 @@
 
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Branch:** `main`  
-**Repository checkpoint:** `3d47d39faac649e9d5197327a7db5cc145c2c1de` (PR #279 merge)  
-**Audited application-code HEAD/tree:** `b596e965d4be54b4ea8079b4036012e68188f865` / `d478ce4989230c3c1eb3f29c62dd019fe0054c3d` (PRs #278/#279 are documentation-only)  
+**Repository checkpoint:** `665146f8195409274b29b563333de25c591f10a9` (PR #281 merge; verified 2026-11-09)  
+**Audited application-code HEAD/tree:** `665146f8195409274b29b563333de25c591f10a9` / `c33b13b178fb92582834ade431cbe3d666bcb1f0` (PRs #278-#280 are documentation-only; PR #281 updates the bounded AST analyzer)  
 **Canonical register:** [`BUG_TRACKER.md`](../BUG_TRACKER.md)
 
 ## 1. Repository and PR reconciliation
 
-After PR #279 merged, GitHub returned **zero open pull requests and zero open issues** for this repository. The audited application-code snapshot is unchanged from the post-PR #277 baseline because PRs #278 and #279 only modify documentation. The latest documentation PR chain is:
+After PR #281 merged, GitHub returned **zero open pull requests and zero open issues** for this repository (rechecked 2026-11-09). PRs #278-#280 modified documentation only; PR #281 changed the bounded S10-N2 AST analyzer and is now the audited application-code baseline. The latest relevant PR chain is:
 
 | PR | Change | Merge commit | Exact-head CI | Security |
 |---|---|---|---|---|
@@ -17,6 +17,8 @@ After PR #279 merged, GitHub returned **zero open pull requests and zero open is
 | [#277](https://github.com/kumarclaude4-hash/DuoFatass/pull/277) | Fail closed on ambiguous helper overloads | `b596e965d4be54b4ea8079b4036012e68188f865` | [42454608770 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) | [42454608761 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) |
 | [#278](https://github.com/kumarclaude4-hash/DuoFatass/pull/278) | Independent tracker/handoff reconciliation | `0f5ffe15518db29b4c5895dc42ca600647201f99` | [42457565977 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) | [42457565979 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) |
 | [#279](https://github.com/kumarclaude4-hash/DuoFatass/pull/279) | Final tracker baseline alignment (documentation-only) | `3d47d39faac649e9d5197327a7db5cc145c2c1de` | [42510855878 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855878) | [42510855851 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855851) |
+| [#280](https://github.com/kumarclaude4-hash/DuoFatass/pull/280) | Correct final repository/source-baseline references (documentation-only) | `21c5403799487915aea755365ff6e9bfd73d1cd3` | [42558744976 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42558744976) | [42558744833 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42558744833) |
+| [#281](https://github.com/kumarclaude4-hash/DuoFatass/pull/281) | Resolve chained app-owned receiver types in S10-N2 AST analysis | `665146f8195409274b29b563333de25c591f10a9` | [42561844959 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844959) | [42561844900 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844900) |
 
 For each listed PR-head CI workflow, all ten configured jobs completed successfully: Server + Worker tests, vendored libsignal verification, Android release-log AST, Gradle wrapper validation, lint, Android unit tests, debug APK, Espresso, API 35 predictive-back, and minified R8 release build. Each Security workflow completed all three jobs: Gitleaks, CodeQL and SBOM.
 
@@ -26,7 +28,7 @@ Earlier same-day verification relevant to tracker corrections:
 
 **Historical disposition:** some older PRs were intentionally closed unmerged because they were duplicates or superseded (including #266, per the owner's instruction, and #273 as a duplicate of #272; #262's implementation was carried by #265). “Zero open PRs” does not mean every historical PR was merged; it means no outstanding PR remains to be reviewed or merged.
 
-PR #278's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #279's exact-head CI and Security workflows also completed successfully (10/10 and 3/3); its post-merge Vercel status was successful. No separate post-merge GitHub Actions run was returned for PR #279's merge SHA.
+PR #278's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #279's exact-head CI and Security workflows also completed successfully (10/10 and 3/3); its post-merge Vercel status was successful. PR #280's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #281's exact-head CI and Security workflows completed successfully (10/10 and 3/3), including the dedicated AST self-test/full source scan, Android lint/unit tests, debug APK, minified R8, Espresso, API 35 predictive-back, Server + Worker tests, Gradle wrapper and libsignal integrity. Its Vercel preview status failed; this is separate from GitHub Actions and no successful preview deployment is claimed. No separate post-merge GitHub Actions run was returned for PR #281's merge SHA.
 
 ## 2. Current finding inventory
 
@@ -49,7 +51,7 @@ The severity tables in the canonical tracker retain **116 unique findings**:
 | Accepted | 12 |
 | **Total** | **116** |
 
-The counts were not increased or decreased merely because more PRs merged. These are unique security findings, not a PR/commit counter. In particular, PRs #269, #274, #276 and #277 all improve different parts of the same S10-N2 release-log privacy finding. S10-N2 therefore remains one Partial finding while its known false-negative surface narrows.
+The counts were not increased or decreased merely because more PRs merged. These are unique security findings, not a PR/commit counter. In particular, PRs #269, #274, #276, #277 and #281 all improve different parts of the same S10-N2 release-log privacy finding. S10-N2 therefore remains one Partial finding while its known false-negative surface narrows.
 
 ## 3. Fresh source re-reads and corrected tracker evidence
 
@@ -61,9 +63,9 @@ The counts were not increased or decreased merely because more PRs merged. These
 | **S06-I2** | Re-read the live account-lock callback: `ok[0] = task.isSuccessful()`; `lockConfirmed = done[0] && ok[0]`; clear the durable lock intent only when confirmation is true. Timeout/failure falls through to nonce retry. No dedicated mocked-Task regression for this exact callback branch was found, so this is recorded as source-verified rather than as a separately unit-tested behavior. | Fixed |
 | **S05-H2** | Re-read invite store/routes and emulator test paths. PR #261 adds explicit active-state/future-expiry fail-closed checks; PR #264 adds the UI Revoke action for invalid rows. Both exact-head checks and Firestore Rules/transaction tests passed. | Partial; product-contract confirmation, legacy UID cleanup and staging/Android onboarding acceptance remain |
 | **S08-L2** | Re-read `ClipboardHelper` and `ClipboardSensitiveWiringTest`. The helper marks clips before publication; the regression covers message/contact/media and the upload-diagnostic copy path. The only unmarked write clears an empty value. PR #277's Android unit-test job passed. | Fixed; Android 13+ system-preview behavior remains physical-device release QA |
-| **S10-N2** | Re-read the AST analyzer and its self-tests. PR #276 adds a known app-owned virtual-override regression; PR #277 adds ambiguous same-name/same-arity app-owned overload handling. Both regressions are present on current main and the Android release-log privacy job passed on #277. | Partial; bounded syntax-only analysis and physical release/minified APK logcat acceptance remain |
+| **S10-N2** | Re-read `scripts/AndroidReleaseLogPrivacyPolicy.java` and its self-tests. PR #276 adds known app-owned virtual-override handling; PR #277 adds ambiguous same-name/same-arity app-owned overload handling; PR #281 resolves bounded chained receiver types through local variables, declared fields, casts/parentheses and uniquely summarized helper returns. A new fixture stores sensitive data via `wrapper.getChild().setMemo(profile.getUserId())`, reads it back through `wrapper.getChild().getMemo()`, and asserts the value is rejected at a `Log.w` sink. Exact-head PR #281 CI passed 10/10, including the AST job and app-source scan. | Partial; the analyzer remains bounded syntax-level rather than whole-program symbol-resolved analysis; external/library dispatch, reflection, dynamic loading, native and third-party callback paths, and physical release/minified APK logcat acceptance remain |
 
-### S10-N2 residual boundary after PR #277
+### S10-N2 residual boundary after PR #281
 
 The analyzer now fails closed for:
 1. Existing method-local aliases/containers and bounded app-owned helper summaries (earlier work).
@@ -71,8 +73,9 @@ The analyzer now fails closed for:
 3. Typed cross-class field setter-to-read flow (#274).
 4. Known indexed app-owned subtype overrides of a base/interface method (#276).
 5. Ambiguous same-name/same-arity app-owned helper returns (#277).
+6. Chained app-owned receiver expressions resolved through locals, declared fields, casts/parentheses and uniquely summarized helper return types, including a sensitive field setter/read sequence (#281).
 
-It is **not** a symbol-resolved whole-program taint engine. Unmodeled multi-hop/aliased receiver flows, external/library subclasses and dispatch, dynamic class loading, reflection, native implementations, third-party callback internals, and full generic/qualified type resolution remain residual risks. Physical release/minified APK logcat review remains deferred until the owner declares the app feature-complete.
+It is **not** a symbol-resolved whole-program taint engine. External/library subclass dispatch, dynamic class loading, reflection, native implementations, third-party callback internals, arbitrary container/collection semantics and generic/qualified type resolution remain residual risks. Physical release/minified APK logcat review remains deferred until the owner declares the app feature-complete.
 
 ## 4. Live governance read-back — SC-12 remains Open
 
@@ -100,4 +103,4 @@ This pass independently reconciled the live PR/issue inventory, current main SHA
 
 This is **not** a claim that all 116 original exploit scenarios were re-executed end-to-end in production or that every historical source line and provider setting was re-audited during this one pass. For findings not listed in section 3, the canonical tracker retains its previously recorded source/test evidence and residuals; a future finding-specific pass should re-run its dedicated evidence before promoting or changing disposition. No production secrets were retrieved, no live production configuration was changed, no physical-device test was performed, and no production sign-off is claimed.
 
-**Bottom line:** PR #279 is merged; the live PR inventory was rechecked after merge and returned zero open PRs and zero open issues. PRs #275–#279 exact-head CI/Security checks are green (10/10 and 3/3 per workflow). The audited source baseline remains b596e965 because #278/#279 were documentation-only. The register remains 116 unique findings (86/17/1/12). Historical closed-unmerged duplicates/superseded PRs are identified rather than mislabeled as merged.
+**Bottom line (2026-11-09):** PR #281 is merged; main was verified at `665146f8195409274b29b563333de25c591f10a9`, and the live inventory returned zero open PRs and zero open issues. PR #281 exact-head CI/Security are green (10/10 and 3/3). The audited application-code baseline now includes the #281 analyzer enhancement. The register remains 116 unique findings (86/17/1/12); S10-N2 remains Partial. Historical closed-unmerged duplicates/superseded PRs are distinguished from outstanding PRs.
