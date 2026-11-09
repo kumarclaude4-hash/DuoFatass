@@ -1,3 +1,35 @@
+## 2026-11-09 addendum — latest S10-N2 source merge PR #286
+
+PR #286 is the latest source-changing merge on main (26daea8e8b2e45764a68000d02a1f93a486d2fde,
+tree 7bb1d14010ecc7702ac3323fab53646c9da06d57). It extends bounded AST release-log analysis
+to fail closed on unresolved generic returns/chained receivers, recognized Java reflection and
+class-loading APIs, and opaque callback-lambda parameters. Exact-head CI
+[42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed
+10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959)
+passed 3/3. The AST scanned 205 production Java files / 414 warning/error log sinks with zero
+violations; Espresso 4, API 35 predictive-back 1, debug APK, minified R8, Server + Worker and
+security jobs passed. PR #287 is a documentation-only close-out merged as
+690d0ef5043c2ee585abeff72c3e1ce0be66a336.
+
+S10-N2 remains Partial: this bounded AST analyzer is not symbol-resolved whole-program proof,
+and physical release/minified APK logcat acceptance is still deferred until feature completion.
+
+## 2026-11-09 addendum — active S02-I2 implementation PR #288
+
+PR #288 (security/s02-i2-production-fail-closed-2026-11-09) changes authenticated per-user
+rate limiting so production/unset-NODE_ENV never silently spends a process-local allowance when
+the shared Durable Object is missing or unreachable. The store raises a typed 503 error; all 12
+protected routes return HTTP 503 with Retry-After: 30 and stop before the normal HTTP 429 quota
+branch. Explicit development/test processes retain the bounded local fallback. Regression tests
+cover missing DO configuration, Worker outage, and all 12 route-handling paths.
+
+PR #288 exact-head CI/Security results are pending. S02-I2 remains Partial until CI passes and an
+authorized operator verifies the Render ADMIN_LOCKOUT_WORKER_URL /
+ADMIN_LOCKOUT_WORKER_SECRET pairing against Worker ADMIN_LOCKOUT_SECRET and confirms the
+production Durable Object path at runtime. This PR does not read or change live credentials,
+deploy services, or claim production acceptance.
+
+---
 # Independent Security Tracker Re-verification — 2026-11-08
 
 ## 2026-11-09 addendum — S10-N2 PR #284
