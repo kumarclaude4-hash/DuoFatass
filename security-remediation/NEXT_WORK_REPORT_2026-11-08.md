@@ -1,21 +1,33 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-09 (active PR #288 S02-I2 production fail-closed hardening; exact-head checks pending)  
+**Updated:** 2026-11-09 (PR #288 S02-I2 merged and verified; active PR #289 S10-N2 method-reference callback hardening)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Latest audited application-code baseline:** `26daea8e8b2e45764a68000d02a1f93a486d2fde` (PR #286; tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). PR #287 is documentation-only; PR #286 remains the latest source-changing merge on main.
 
-## Active implementation PR #288 — S02-I2 production fail-closed rate limiting
+## Verified implementation PR #288 — S02-I2 production fail-closed rate limiting
 
-Branch: security/s02-i2-production-fail-closed-2026-11-09, based on current main after PR #287.
+PR #288 branch `security/s02-i2-production-fail-closed-2026-11-09` merged as
+`78a99b478e90ec3337df3c92997de3ac16efbe5e`.
 
-- authRateLimitStore now supports requireDurable. In strict mode, a missing Worker client or a failed/malformed Durable Object response raises a typed 503 error instead of consuming a process-local counter.
-- The server enables strict mode whenever NODE_ENV is not explicitly development or test (including an unset value). The 12 authenticated routes return HTTP 503 with Retry-After: 30 when shared limiting is unavailable; HTTP 429 remains reserved for an actual limit breach.
-- Added unit tests for missing shared configuration and Worker outages, plus a route-wiring regression requiring 503 handling before each route's 429 response.
-- Updated server/README.md, BUG_TRACKER.md, START_HERE.md, this report, FINAL_SIGNOFF.md, the independent re-verification note, the agent handoff, the session index and a new session record in this same PR.
-- S02-I2 remains Partial until exact-head CI/Security pass and the authorized Render/Cloudflare secret pairing is read back. No production configuration or deployment was changed in this PR.
+- authRateLimitStore now supports requireDurable. In strict mode, missing Worker configuration or a failed/malformed Durable Object response raises a typed 503 error instead of consuming a process-local counter.
+- Strict mode is enabled unless NODE_ENV is explicitly development or test (including unset NODE_ENV). All 12 authenticated routes return HTTP 503 with Retry-After: 30 when shared limiting is unavailable; HTTP 429 remains reserved for an actual quota breach.
+- Unit tests cover missing shared configuration and Worker outages; route-wiring regressions cover all 12 protected routes.
+- Exact-head CI [42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825) passed 10/10; Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910) passed 3/3; Firestore Rules/server transactions [42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878) passed.
+- S02-I2 remains Partial only for authorized Render/Worker secret-pair read-back and production runtime confirmation. No live secrets were read/changed and no production deployment was performed.
+
+## Active implementation PR #289 — S10-N2 same-owner method-reference callback taint
+
+Branch: `security/s10-n2-method-reference-callback-taint-2026-11-10`, based directly on main after PR #288.
+
+- Extends `scripts/AndroidReleaseLogPrivacyPolicy.java` to recognize same-owner method-reference callback registrations: `this::method`, `Owner::method` and `Owner.this::method`.
+- The analyzer marks the registered app-owned callback method's parameters as opaque/tainted in the method-local analysis, except for the already-narrow VoiceMessagePlayer MediaPlayer integer error-code exception.
+- Adds a synthetic AST fixture where `CallbackApi.register(this::callbackLog)` causes ordinary parameter `callbackArg` to reach `Log.w`; the expected violation verifies that taint no longer relies on a sensitive parameter name.
+- Keeps the analysis deliberately bounded: other method-reference receiver/target forms, external callback contracts and whole-program symbol resolution are not claimed.
+- Updated in this same PR: BUG_TRACKER, START_HERE, this report, FINAL_SIGNOFF, independent re-verification, agent handoff, SESSION_INDEX and a new session record.
+- Exact-head CI/Security/Firestore results are pending. Keep S10-N2 Partial until the AST self-test and full 205+-file production scan pass; physical release/minified APK logcat acceptance remains deferred until the owner declares the application feature-complete.
 ## Current verified mainline
 
-PR #286 is the latest source-changing merge. Its exact PR head `91751692e7c491a1aba948b2b1da4f2bbada120c` merged as `26daea8e8b2e45764a68000d02a1f93a486d2fde` (tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3. The AST self-tests and full app-source scan passed: 205 Java files, 414 warning/error release-log sinks, zero violations. Server + Worker, Android unit tests and lint passed. The debug APK and minified R8 build passed; R8 generated a 453,260-line mapping. Espresso executed 4 tests and API 35 predictive-back executed 1 test; both passed. PR #285 is documentation-only and does not change the application-code tree.
+PR #288 is the latest source-changing merge. Its exact PR head `91751692e7c491a1aba948b2b1da4f2bbada120c` merged as `26daea8e8b2e45764a68000d02a1f93a486d2fde` (tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3. The AST self-tests and full app-source scan passed: 205 Java files, 414 warning/error release-log sinks, zero violations. Server + Worker, Android unit tests and lint passed. The debug APK and minified R8 build passed; R8 generated a 453,260-line mapping. Espresso executed 4 tests and API 35 predictive-back executed 1 test; both passed. PR #287 is documentation-only; PR #288 is the latest source-changing merge.
 
 PR #267 was merged after its exact head `213442825113013a85650de9ac24edf0e9ec9211` passed all required pull-request workflows:
 
