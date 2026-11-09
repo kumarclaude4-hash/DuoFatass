@@ -93,6 +93,21 @@ and route wiring. S02-I2 code is merged as PR #288 (`78a99b478e90ec3337df3c92997
 callback residual and the bounded same-owner fix. The analyzer indexes `this::method`,
 `Owner::method`, and `Owner.this::method`, then taints callback-supplied parameters in the
 registered app-owned method. A synthetic AST regression requires a non-sensitive `callbackArg`
-to be rejected at `Log.w` after `CallbackApi.register(this::callbackLog)`. Exact-head checks are
-pending; keep S10-N2 Partial for unmodeled external callback/dispatch and whole-program residuals,
+to be rejected at `Log.w` after `CallbackApi.register(this::callbackLog)`. PR #289 merged as
+`ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`; exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006)
+passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009)
+passed 3/3. S10-N2 remains Partial for unmodeled external callback/dispatch and whole-program residuals,
 plus deferred feature-complete physical release-logcat acceptance.
+
+
+## S06-H5 follow-up — 2026-11-09 (PR #290 all primary-PIN collision paths)
+
+`sessions/SESSION-S06-H5-ALL-PRIMARY-PIN-COLLISION-PATHS-2026-11-09.md` records the additional
+candidate-probing paths found during source review. `SetupPinActivity` (including restored setup)
+and `ForcedPrimaryPinRotationActivity` both compared a proposed primary PIN against the preserved
+secondary-code hash without using the shared candidate budget. PR #290 applies the account-scoped
+three-attempt/15-minute throttle before those checks, regardless of whether slot B is armed, and
+uses the same generic failure for collision/cooldown/storage/auth errors. Two new
+`SecurityFindingWiringTest` regressions cover ordering and response uniformity. Exact-head
+CI/Security pending; S06-H5 remains Partial pending those checks and independent residual/device
+acceptance.

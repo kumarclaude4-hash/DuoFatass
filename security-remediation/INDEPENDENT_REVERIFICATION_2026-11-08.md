@@ -1,4 +1,45 @@
-## 2026-11-09 addendum — PR #288 merge and PR #289 S10-N2 callback follow-up
+
+## 2026-11-09 addendum — active PR #290 S06-H5 primary-PIN candidate paths
+
+PR #290 adds the UID-scoped three-attempt/15-minute primary-PIN candidate throttle to the two
+remaining entry points that compare a proposed primary PIN against the preserved secondary-code
+hash: restored `SetupPinActivity` and `ForcedPrimaryPinRotationActivity`. Both now throttle before
+checking slot B, regardless of whether the slot is armed; collision, cooldown, auth and storage
+failure share a generic retry outcome. Two new `SecurityFindingWiringTest` regressions require
+throttle-before-check, write gating and no collision-specific branch/message. Exact-head CI
+[42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed
+10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340)
+passed 3/3. The Android unit suite, lint, debug APK, minified R8 (453,247-line mapping), Espresso
+(4 executed tests), API 35 predictive-back (1 executed test), Server + Worker, AST, CodeQL,
+Gitleaks, SBOM and integrity checks all passed. Keep S06-H5 Partial pending independent
+side-channel review and feature-complete device acceptance.
+
+## 2026-11-09 addendum — PR #289 merged; PR #290 S06-H5 primary-PIN path review
+
+PR #289 merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`. Its same-owner method-reference
+callback target indexing covers `this::method`, `Owner::method`, and `Owner.this::method`, with a
+synthetic `callbackArg` → `Log.w` AST regression. Exact-head CI
+[42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed
+10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009)
+passed 3/3. The AST self-test/full production scan, Android unit/lint/build, R8, Espresso, API 35,
+Server + Worker, CodeQL, Gitleaks and SBOM passed. S10-N2 remains Partial for unmodeled callback/
+dispatch forms, whole-program symbol-resolution limitations and deferred physical release-logcat
+acceptance.
+
+PR #290 is the active S06-H5 follow-up. Independent source review found that the restored setup
+and forced post-unfreeze primary-PIN rotation screens both inspected the preserved secondary-code
+hash without consuming the shared PIN candidate throttle and returned a collision-specific message
+separate from storage failure. Both now call `PinManager.tryRecordPinChangeAttempt()` before the
+hidden-slot check. The same account-scoped 3-attempt/15-minute budget is used regardless of whether
+slot B is armed; collision, cooldown and storage/auth failures share one generic retry result.
+Two new `SecurityFindingWiringTest` cases assert throttle-before-check, write gating and the absence
+of collision-specific branches/messages. Exact-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269)
+passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340)
+passed 3/3; Espresso 4, API 35 1, debug APK and minified R8 passed. S06-H5 remains Partial pending
+independent side-channel/device residual review.
+
+---
+## 2026-11-09 addendum — PR #288 and PR #289 merged; PR #290 S06-H5 follow-up
 
 PR #288 is the latest source-changing merge on main: `78a99b478e90ec3337df3c92997de3ac16efbe5e`.
 It makes the authenticated per-user/endpoint Durable Object limiter fail closed outside explicit
@@ -10,15 +51,17 @@ passed 3/3, and Firestore Rules/server transactions [42583301878](https://github
 passed. S02-I2 remains Partial only for authorized Render/Worker secret-pair read-back and production
 runtime confirmation; this PR did not access live secrets or deploy services.
 
-PR #289 is the active S10-N2 method-reference callback follow-up. It extends the bounded AST scanner
+PR #289 merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`. It extends the bounded AST scanner
 to recognize same-owner callback registrations using `this::method`, `Owner::method`, and
 `Owner.this::method`, then treats the registered method's callback-supplied parameters as tainted.
 The synthetic regression proves a non-sensitive `callbackArg` passed through
-`CallbackApi.register(this::callbackLog)` is rejected at `Log.w`. Exact-head CI/Security/Firestore
-results are pending. This is a targeted source-level improvement only: other method-reference
-receiver/target forms, third-party callback internals, native/dynamic behavior, arbitrary generic
-semantics, and whole-program symbol resolution remain limitations. Physical release/minified APK
-logcat acceptance remains deferred until feature completion. Keep S10-N2 Partial.
+`CallbackApi.register(this::callbackLog)` is rejected at `Log.w`. Exact-head CI
+[42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10
+and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009)
+passed 3/3. This is a targeted source-level improvement only: other method-reference receiver/
+target forms, third-party callback internals, native/dynamic behavior, arbitrary generic semantics,
+and whole-program symbol resolution remain limitations. Physical release/minified APK logcat
+acceptance remains deferred until feature completion. Keep S10-N2 Partial.
 
 Documentation for PR #289 is updated in the same PR: BUG_TRACKER, START_HERE, NEXT_WORK_REPORT,
 FINAL_SIGNOFF, this independent re-verification, agent handoff, SESSION_INDEX and a new session record.

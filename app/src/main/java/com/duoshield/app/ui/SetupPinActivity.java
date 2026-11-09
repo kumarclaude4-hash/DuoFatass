@@ -97,29 +97,25 @@ public class SetupPinActivity extends AppCompatActivity {
                 // performs. See DuressManager.isDuressPinOrPrefixOfIt for the residual
                 // direction this does not cover (this pin being a short prefix of a
                 // longer secondary code) and why.
-                boolean clashWithSecondary = DuressManager.isDuressPinOrPrefixOfIt(this, pin);
-                boolean stored = !clashWithSecondary && PinManager.setPin(this, pin);
+                // Setup may follow a restore that preserved the old armed secondary
+                // hash. Consume the same account-scoped candidate budget used by
+                // Settings before inspecting that hidden value. Apply it regardless
+                // of whether slot B is armed so the throttle itself does not reveal
+                // whether a secondary code exists.
+                boolean attemptAllowed = PinManager.tryRecordPinChangeAttempt(this);
+                boolean clashWithSecondary = attemptAllowed
+                        && DuressManager.isDuressPinOrPrefixOfIt(this, pin);
+                boolean stored = attemptAllowed && !clashWithSecondary
+                        && PinManager.setPin(this, pin);
 
                 runOnUiThread(() -> {
                     btnContinue.setEnabled(true);
 
-                    if (clashWithSecondary) {
-                        // Says nothing about why, for the same reason doSavePin()
-                        // doesn't: naming "another unlock code" would confirm to
-                        // anyone probing PINs here that a second one exists and
-                        // that they had just guessed it.
-                        showError(tvError, "That PIN can't be used. Choose a different one.");
-                        etConfirmPin.setText("");
-                        return;
-                    }
                     if (!stored) {
-                        // setPin() returns false when no Firebase user is signed in
-                        // (nothing to scope the key to) or the write threw. Previously
-                        // this path still cleared pending_pin_setup_ and routed on, so
-                        // no PIN existed while the app believed setup was finished —
-                        // and the next launch asked for a PIN the user had already
-                        // set. Keep the user here so the attempt can be retried.
-                        showError(tvError, "Couldn't save your PIN. Try again.");
+                        // This also covers throttle denial and a hidden secondary-code
+                        // collision. Keep all rejected candidate states indistinguishable;
+                        // only a successful durable PIN write may complete setup.
+                        showError(tvError, "Couldn't save your PIN. Try again later.");
                         etConfirmPin.setText("");
                         return;
                     }

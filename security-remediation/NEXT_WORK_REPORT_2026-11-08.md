@@ -1,8 +1,8 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-09 (PR #288 S02-I2 merged and verified; active PR #289 S10-N2 method-reference callback hardening)  
+**Updated:** 2026-11-09 (PR #288 S02-I2 and PR #289 S10-N2 merged; active PR #290 S06-H5 PIN-entry throttle coverage)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Latest audited application-code baseline:** `26daea8e8b2e45764a68000d02a1f93a486d2fde` (PR #286; tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). PR #287 is documentation-only; PR #286 remains the latest source-changing merge on main.
+**Latest audited application-code merge:** `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85` (PR #289 S10-N2 method-reference callback taint). PR #290 is the active S06-H5 primary-PIN candidate-throttle follow-up.
 
 ## Verified implementation PR #288 — S02-I2 production fail-closed rate limiting
 
@@ -15,19 +15,30 @@ PR #288 branch `security/s02-i2-production-fail-closed-2026-11-09` merged as
 - Exact-head CI [42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825) passed 10/10; Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910) passed 3/3; Firestore Rules/server transactions [42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878) passed.
 - S02-I2 remains Partial only for authorized Render/Worker secret-pair read-back and production runtime confirmation. No live secrets were read/changed and no production deployment was performed.
 
-## Active implementation PR #289 — S10-N2 same-owner method-reference callback taint
+## Verified implementation PR #289 — S10-N2 same-owner method-reference callback taint
 
-Branch: `security/s10-n2-method-reference-callback-taint-2026-11-10`, based directly on main after PR #288.
+PR #289 merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`.
 
 - Extends `scripts/AndroidReleaseLogPrivacyPolicy.java` to recognize same-owner method-reference callback registrations: `this::method`, `Owner::method` and `Owner.this::method`.
-- The analyzer marks the registered app-owned callback method's parameters as opaque/tainted in the method-local analysis, except for the already-narrow VoiceMessagePlayer MediaPlayer integer error-code exception.
-- Adds a synthetic AST fixture where `CallbackApi.register(this::callbackLog)` causes ordinary parameter `callbackArg` to reach `Log.w`; the expected violation verifies that taint no longer relies on a sensitive parameter name.
-- Keeps the analysis deliberately bounded: other method-reference receiver/target forms, external callback contracts and whole-program symbol resolution are not claimed.
+- Marks the registered app-owned callback method's parameters opaque/tainted in the method-local analysis, while preserving the narrow MediaPlayer integer-code exception.
+- Adds a synthetic AST fixture where `CallbackApi.register(this::callbackLog)` causes ordinary parameter `callbackArg` to reach `Log.w`.
+- Exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. Server + Worker, AST, Android unit, lint, debug APK, R8, Espresso, API 35, CodeQL, Gitleaks and SBOM all passed.
+- S10-N2 remains Partial for other method-reference receiver/target forms, external callback contracts, whole-program symbol-resolution limitations and feature-complete physical release/minified APK logcat acceptance.
+
+## Active implementation PR #290 — S06-H5 all primary-PIN collision paths
+
+Branch: `security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`, based on main after PR #289.
+
+- PR #265 already applied the durable account-scoped PIN candidate throttle to Settings PIN changes.
+- Source review found two additional paths that checked a proposed primary PIN against the preserved secondary-code hash without consuming the shared throttle: `SetupPinActivity` after restore/setup and `ForcedPrimaryPinRotationActivity` after account unfreeze.
+- Both paths now consume the same UID-scoped three-attempt/15-minute budget before inspecting the hidden secondary-code hash. The attempt is consumed regardless of whether slot B is armed, so cooldown behavior does not reveal secondary-code presence.
+- Collision, throttle denial and storage/auth failure now share one generic retry response; neither path branches on the collision result or emits a collision-specific message.
+- Added two `SecurityFindingWiringTest` regressions requiring throttle-before-check, guarded storage and generic failure/no collision-specific branch in both flows. Existing `PinChangeThrottleTest` continues to cover durable limits, reset windows, boot/clock behavior and account separation.
 - Updated in this same PR: BUG_TRACKER, START_HERE, this report, FINAL_SIGNOFF, independent re-verification, agent handoff, SESSION_INDEX and a new session record.
-- Exact-head CI/Security/Firestore results are pending. Keep S10-N2 Partial until the AST self-test and full 205+-file production scan pass; physical release/minified APK logcat acceptance remains deferred until the owner declares the application feature-complete.
+- Exact-head verification: CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3. The Android unit suite (including both wiring regressions), lint, debug APK, minified R8 (453,247-line mapping), Espresso (4 executed tests), API 35 predictive-back (1 executed test), Server + Worker tests, AST, CodeQL, Gitleaks, SBOM and integrity checks all passed. Keep S06-H5 Partial pending independent residual side-channel review and feature-complete device acceptance.
 ## Current verified mainline
 
-PR #288 is the latest source-changing merge. Its exact PR head `91751692e7c491a1aba948b2b1da4f2bbada120c` merged as `26daea8e8b2e45764a68000d02a1f93a486d2fde` (tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3. The AST self-tests and full app-source scan passed: 205 Java files, 414 warning/error release-log sinks, zero violations. Server + Worker, Android unit tests and lint passed. The debug APK and minified R8 build passed; R8 generated a 453,260-line mapping. Espresso executed 4 tests and API 35 predictive-back executed 1 test; both passed. PR #287 is documentation-only; PR #288 is the latest source-changing merge.
+PR #289 is the latest source-changing merge (`ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`). Its exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. The AST self-test/full production scan, Server + Worker, Android unit tests/lint, debug APK, minified R8, Espresso and API 35 predictive-back all passed. Earlier PR #286 CI/Security evidence remains recorded above.
 
 PR #267 was merged after its exact head `213442825113013a85650de9ac24edf0e9ec9211` passed all required pull-request workflows:
 
@@ -50,7 +61,7 @@ PR #269 exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFata
 
 - PR #261 — explicit active-state/future-expiry validation for invite redemption and audited invalid-state handling (S05-H2).
 - PR #264 — admin UI revoke action for invalid invite rows (S05-H2).
-- PR #265 — generic Settings PIN-change failure response and durable attempt throttle for accepted and rejected candidates (S06-H5). Exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3`, merge `32175ccf86342a6c517459a0e2507f14c4d064e8`; CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed. PR #262 was closed unmerged; its implementation was carried by #265.
+- PR #265 — generic Settings PIN-change failure response and durable attempt throttle for accepted and rejected candidates (S06-H5); PR #290 extends the same budget to restored setup and forced primary rotation. Exact head `ed8e47550763cf7766acb0f6ef3d53dc15039df3`, merge `32175ccf86342a6c517459a0e2507f14c4d064e8`; CI [42440025067](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025067) and Security [42440025048](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42440025048) passed. PR #262 was closed unmerged; its implementation was carried by #265.
 - PR #267 — corrected the App Check / Firestore Rules boundary (S10-N1); unsupported `request.app` and `appCheckVerified()` removed from executable rules, verbatim Rules emulator testing restored, device registration tests added, and rollout docs corrected. Merge `8d0082d004993278645f3eb7a72c43a8cdc14e59`.
 - PR #269 — S10-N2 release-log analyzer now fails closed on bodyless app-owned abstract/interface/native declarations; exact head `51fc914111d89b1f7f69c1b374910cd1186cdf04`, merge `afdf2463c496f14a5c33ee5694fc47eff97d5e3d`; CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed.
 - PR #270 — reconciled the security handoff/tracker/sign-off after #269; merged as `1a425ad0aa2e7c36fa66a2afe4e46d85e78ee514`.

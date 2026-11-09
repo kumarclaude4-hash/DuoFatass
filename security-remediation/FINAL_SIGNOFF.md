@@ -1,15 +1,17 @@
 # FINAL SIGN-OFF
 
 > Status: **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF.**
-> Updated 2026-11-09 after PR #288 merged and PR #289 was opened for S10-N2 method-reference callback taint. The current evidence snapshot is dated 2026-11-09; older dated sections below are historical. This document is the release/sign-off gate, not a progress claim.
+> Updated 2026-11-09 after PR #289 merged and PR #290 was opened for S06-H5 all-path primary-PIN candidate throttling. The current evidence snapshot is dated 2026-11-09; older dated sections below are historical. This document is the release/sign-off gate, not a progress claim.
 
 ## Current evidence snapshot — 2026-11-09
 
 The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed. S06-H5 remains Partial: PR #265 added a UID-scoped successful/failed attempt throttle and unified rejection response, but bounded probing is not proof that every side channel is impossible.
 
-Current `main` source baseline: PR #288 merge `78a99b478e90ec3337df3c92997de3ac16efbe5e`. PR #288 includes the S02-I2 source change and documentation update.
+Current `main` source baseline: PR #289 merge `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`. PR #289 includes the S10-N2 method-reference callback source change and documentation update.
+- PR #289 exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10; Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. The AST self-test/full source scan, Server + Worker, Android unit/lint/build, R8, Espresso, API 35, CodeQL, Gitleaks and SBOM all passed. PR #289 merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`.
+- PR #290 (active): extends the UID-scoped three-attempt/15-minute primary-PIN candidate throttle from Settings to restored `SetupPinActivity` and `ForcedPrimaryPinRotationActivity`. Each path throttles before checking the preserved slot-B secondary hash and uses one generic failure for collision/cooldown/storage/auth errors. Two new source-wiring regressions guard both paths. Exact-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3. S06-H5 remains Partial for independent side-channel review and feature-complete device acceptance.
 - PR #288 exact-head CI [42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825) passed 10/10 (Server + Worker, AST, Gradle wrapper integrity, vendored libsignal integrity, lint, unit tests, debug APK, Espresso, API 35 predictive-back, minified R8). Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910) passed 3/3 (CodeQL, SBOM, Gitleaks); Firestore Rules/server transactions [42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878) passed. PR #288 merged as `78a99b478e90ec3337df3c92997de3ac16efbe5e`. S02-I2 stays Partial only for authorized Render/Worker secret-pair read-back and production runtime confirmation.
-- PR #289 (active): same-owner method-reference callback taint coverage for `this::method`, `Owner::method`, and `Owner.this::method`, with a synthetic `this::callbackLog` → `Log.w(callbackArg)` AST regression. Exact-head checks are pending. S10-N2 stays Partial for unmodeled receiver/dispatch/reflection/callback shapes, lack of symbol-resolved whole-program analysis, and deferred physical release/minified logcat acceptance.
+- PR #289 (merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`): same-owner method-reference callback taint coverage for `this::method`, `Owner::method`, and `Owner.this::method`, with a synthetic `this::callbackLog` → `Log.w(callbackArg)` AST regression. Exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10; Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. S10-N2 stays Partial for unmodeled receiver/dispatch/reflection/callback shapes, lack of symbol-resolved whole-program analysis, and deferred physical release/minified logcat acceptance.
 - PR #267 exact-head CI [42443323887](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323887): passed Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified release R8, Server + Worker tests, release-log AST and dependency integrity.
 - PR #267 Security [42443323988](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323988): passed CodeQL, Gitleaks and SBOM.
 - PR #267 Firestore Rules [42443323886](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42443323886): passed.
@@ -31,7 +33,7 @@ Recent merged work:
 - PR #267 — correct Firebase App Check enforcement boundary (S10-N1); merged as current main. Firestore Rules no longer reference unsupported `request.app` or `appCheckVerified()`; emulator tests load the committed rules verbatim. Actual App Check enforcement remains a Firebase service-layer operator/staging gate.
 - PR #266 was intentionally closed unmerged; its documentation changes are not part of main.
 
-There is one active code PR at this snapshot: PR #289 (S10-N2 same-owner method-reference callback taint). Historical PRs #253/#254/#258 were closed; the invite lifecycle scope from #253 was superseded by merged #261, and the range-read allowance from #254 was superseded by merged #256. Do not reopen old branches without fresh source review.
+There is one active code PR at this snapshot: PR #290 (S06-H5 all-path primary-PIN candidate throttling). Historical PRs #253/#254/#258 were closed; the invite lifecycle scope from #253 was superseded by merged #261, and the range-read allowance from #254 was superseded by merged #256. Do not reopen old branches without fresh source review.
 
 This evidence snapshot is not production sign-off. No live production deployment, credential rotation, Firebase Console enforcement change, provider-console read-back, historical Firestore UID migration, isolated live R2/B2 cron acceptance or physical-device acceptance is claimed here.
 
@@ -111,7 +113,8 @@ S02-I3 still needs live Firebase revoked-token integration verification; S02-I2 
 fail-closed code merged in PR #288 (missing/unreachable shared Durable Object returns 503 rather
 than using process-local counters), with exact-head CI 10/10, Security 3/3 and Firestore Rules/server
 transaction tests passed. Authorized Render/Worker Durable Object secret-pairing read-back and
-production runtime confirmation remain outstanding; SC-12 branch protection still needs authorized
+production runtime confirmation remain outstanding. S06-H5's additional Setup/forced-rotation
+candidate paths are being closed in PR #290; do not treat those changes as verified before CI. SC-12 branch protection still needs authorized
 verification; credentials must be rotated; App Check service enforcement and coordinated production
 release need live evidence. Main post-merge CI run 42445582763 has passed on the exact main SHA.
 
@@ -169,7 +172,7 @@ All sign-off criteria remain unchecked until the described evidence exists or th
 
 ## Current repository verification snapshot — 2026-11-08
 
-Current main is `78a99b478e90ec3337df3c92997de3ac16efbe5e` after PR #288. PR #289 is the active S10-N2 method-reference callback hardening PR. All three exact-head CI workflows passed 10/10 jobs and Security workflows passed 3/3: #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) / Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810); #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) / Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152); #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) / Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761). GitHub returned zero open PRs and zero open issues at this snapshot. The active default-branch ruleset still enforces no required reviews or status checks (SC-12); the 116-finding tracker remains 86 Fixed, 17 Partial, 1 Open, 12 Accepted. **This evidence does not change the sign-off decision: keep PENDING.** See `BUG_TRACKER.md` and `INDEPENDENT_REVERIFICATION_2026-11-08.md`.
+Current main is `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85` after PR #289. PR #290 is the active S06-H5 PIN candidate-throttle follow-up. All three exact-head CI workflows passed 10/10 jobs and Security workflows passed 3/3: #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) / Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810); #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) / Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152); #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) / Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761). GitHub returned zero open PRs and zero open issues at this snapshot. The active default-branch ruleset still enforces no required reviews or status checks (SC-12); the 116-finding tracker remains 86 Fixed, 17 Partial, 1 Open, 12 Accepted. **This evidence does not change the sign-off decision: keep PENDING.** See `BUG_TRACKER.md` and `INDEPENDENT_REVERIFICATION_2026-11-08.md`.
 
 ## Evidence addendum — 2026-11-09 (PR #288 S02-I2)
 
@@ -198,3 +201,15 @@ pending. This change closes only the modeled same-owner method-reference callbac
 claim arbitrary library callback or method-reference resolution, symbol-resolved whole-program
 analysis, or physical release-logcat acceptance. S10-N2 remains Partial.
 
+
+## Evidence addendum — 2026-11-09 (PR #290 S06-H5 primary-PIN candidate paths)
+
+PR #290 applies the existing UID-scoped three-attempt/15-minute PIN-change throttle to the
+restored account setup path (`SetupPinActivity`) and forced post-unfreeze primary PIN rotation
+(`ForcedPrimaryPinRotationActivity`). Both paths check the attempt budget before inspecting the
+preserved secondary-code hash. The budget is applied regardless of whether slot B is armed, avoiding
+a throttle-presence signal. Collision, cooldown, auth/storage failure share one generic response;
+no collision-specific branch or message remains. Two new `SecurityFindingWiringTest` regressions
+assert ordering, guarded writes and generic failure behavior.
+
+Exact-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3. The full Android unit suite, lint, debug APK, minified R8 (453,247-line mapping), Espresso (4 tests executed), API 35 predictive-back (1 test executed), Server + Worker tests, AST, CodeQL, Gitleaks, SBOM and integrity checks passed. S06-H5 remains Partial until independent residual/feature-complete device acceptance is recorded. This PR does not perform physical-device or production acceptance.

@@ -77,28 +77,29 @@ public class ForcedPrimaryPinRotationActivity extends AppCompatActivity {
             // Off the main thread — see SetupPinActivity for why: setPin() runs
             // 310,000 PBKDF2 iterations, plus the clash check below runs another.
             bgExecutor.execute(() -> {
-                // Same clash guard as SetupPinActivity and
+                // Same primary-PIN candidate guard as SetupPinActivity and
                 // SecurityPrivacySettingsActivity.doSavePin(): reject a new primary
-                // PIN that equals or is a prefix of whatever slot B currently holds.
+                // PIN that collides with the preserved secondary code, after consuming
+                // the shared account-scoped attempt budget.
                 // Slot B at this point is whatever survived the wipe/restore (the
                 // real armed code, since duress logout deliberately keeps it so a
                 // restore of the same account stays gated) — screen 2 replaces it
                 // with a fresh code, but that hasn't happened yet, so the check must
                 // run against what's there right now.
-                boolean clashWithSecondary = DuressManager.isDuressPinOrPrefixOfIt(this, pin);
-                boolean stored = !clashWithSecondary && PinManager.setPin(this, pin);
+                // The old secondary-code hash survives the duress wipe until screen 2
+                // replaces it. Reuse the same account-scoped candidate budget as Settings
+                // and SetupPin before inspecting that hidden value.
+                boolean attemptAllowed = PinManager.tryRecordPinChangeAttempt(this);
+                boolean clashWithSecondary = attemptAllowed
+                        && DuressManager.isDuressPinOrPrefixOfIt(this, pin);
+                boolean stored = attemptAllowed && !clashWithSecondary
+                        && PinManager.setPin(this, pin);
 
                 runOnUiThread(() -> {
                     btnContinue.setEnabled(true);
 
-                    if (clashWithSecondary) {
-                        // Says nothing about why — same reasoning as SetupPinActivity.
-                        showError(tvError, "That PIN can't be used. Choose a different one.");
-                        etConfirmPin.setText("");
-                        return;
-                    }
                     if (!stored) {
-                        showError(tvError, "Couldn't save your PIN. Try again.");
+                        showError(tvError, "Couldn't save your PIN. Try again later.");
                         etConfirmPin.setText("");
                         return;
                     }
