@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-08 (independent re-verification after PR #277)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `0f5ffe15518db29b4c5895dc42ca600647201f99` (PR #278 merge; includes #277, #276 and #275). See [independent re-verification](INDEPENDENT_REVERIFICATION_2026-11-08.md).
+**Current main documentation checkpoint:** `3d47d39faac649e9d5197327a7db5cc145c2c1de` (PR #279 merge). **Audited application-code baseline:** `b596e965d4be54b4ea8079b4036012e68188f865` (PRs #278/#279 are documentation-only). See [independent re-verification](INDEPENDENT_REVERIFICATION_2026-11-08.md).
 
 ## Current verified mainline
 
@@ -42,11 +42,11 @@ PR #269 exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFata
 
 Immediately after PR #278 merged, the inventory showed **zero open PRs and zero open issues**. PR #279 is this documentation-only correction and is being verified for merge. PR #266 was intentionally closed unmerged per owner instruction; PR #273 was a duplicate of merged PR #272; PR #262's implementation was carried by merged PR #265. These closed historical PRs do not represent outstanding work. Do not reopen superseded branches.
 
-PR #278 independently reconciled the tracker/handoff snapshot and merged at `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3. The Vercel preview was rate-limited and is not a test failure. A post-merge inventory reports zero open PRs and zero open issues.
+PR #278 independently reconciled the tracker/handoff snapshot and merged at `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3. PR #279 updated the final audited-baseline references across the tracker and handoff; it merged at `3d47d39faac649e9d5197327a7db5cc145c2c1de`, with exact-head CI [42510855878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855878) 10/10 and Security [42510855851](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855851) 3/3. The PR #279 Vercel post-merge status was successful. A post-merge inventory reports zero open PRs and zero open issues.
 
 ## Canonical tracker
 
-The five severity sections of `BUG_TRACKER.md` retain **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23), recounted at main HEAD `0f5ffe15518db29b4c5895dc42ca600647201f99`. The #276/#277 improvements reduce S10-N2 residual scope but do not create new finding IDs or justify promoting it to Fixed. The register is authoritative; this report does not promote findings based on PR merge alone.
+The five severity sections of `BUG_TRACKER.md` retain **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23), recounted against audited application-code HEAD `b596e965d4be54b4ea8079b4036012e68188f865` and carried through documentation checkpoint `3d47d39faac649e9d5197327a7db5cc145c2c1de`. The #276/#277 improvements reduce S10-N2 residual scope but do not create new finding IDs or justify promoting it to Fixed. The register is authoritative; this report does not promote findings based on PR merge alone.
 
 Notable evidence corrections:
 - **S06-H5 remains Partial:** PR #265's durable three-attempt/15-minute, UID-scoped throttle counts successful and failed replacement attempts and uses a generic failure response. This bounds probing but does not prove every success/failure side channel impossible.
