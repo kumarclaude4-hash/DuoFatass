@@ -1,5 +1,5 @@
 
-## 2026-11-09 addendum — active PR #290 S06-H5 primary-PIN candidate paths
+## 2026-11-09 addendum — merged PR #290 S06-H5 primary-PIN candidate paths
 
 PR #290 adds the UID-scoped three-attempt/15-minute primary-PIN candidate throttle to the two
 remaining entry points that compare a proposed primary PIN against the preserved secondary-code
@@ -12,7 +12,8 @@ throttle-before-check, write gating and no collision-specific branch/message. Ex
 passed 3/3. The Android unit suite, lint, debug APK, minified R8 (453,247-line mapping), Espresso
 (4 executed tests), API 35 predictive-back (1 executed test), Server + Worker, AST, CodeQL,
 Gitleaks, SBOM and integrity checks all passed. Keep S06-H5 Partial pending independent
-side-channel review and feature-complete device acceptance.
+side-channel review and feature-complete device acceptance. PR #290 merged to main as
+`9b1c1dd48fb584d728491e8bfeee5ef380e9b834`.
 
 ## 2026-11-09 addendum — PR #289 merged; PR #290 S06-H5 primary-PIN path review
 
@@ -26,7 +27,7 @@ Server + Worker, CodeQL, Gitleaks and SBOM passed. S10-N2 remains Partial for un
 dispatch forms, whole-program symbol-resolution limitations and deferred physical release-logcat
 acceptance.
 
-PR #290 is the active S06-H5 follow-up. Independent source review found that the restored setup
+PR #290 merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Independent source review found that the restored setup
 and forced post-unfreeze primary-PIN rotation screens both inspected the preserved secondary-code
 hash without consuming the shared PIN candidate throttle and returned a collision-specific message
 separate from storage failure. Both now call `PinManager.tryRecordPinChangeAttempt()` before the
@@ -35,11 +36,13 @@ slot B is armed; collision, cooldown and storage/auth failures share one generic
 Two new `SecurityFindingWiringTest` cases assert throttle-before-check, write gating and the absence
 of collision-specific branches/messages. Exact-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269)
 passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340)
-passed 3/3; Espresso 4, API 35 1, debug APK and minified R8 passed. S06-H5 remains Partial pending
-independent side-channel/device residual review.
+passed 3/3; Espresso 4, API 35 1, debug APK and minified R8 passed. The final documentation-synchronized
+head also passed CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140)
+10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331)
+3/3. S06-H5 remains Partial pending independent side-channel/device residual review.
 
 ---
-## 2026-11-09 addendum — PR #288 and PR #289 merged; PR #290 S06-H5 follow-up
+## 2026-11-09 addendum — PR #288, PR #289 and PR #290 merged
 
 PR #288 is the latest source-changing merge on main: `78a99b478e90ec3337df3c92997de3ac16efbe5e`.
 It makes the authenticated per-user/endpoint Durable Object limiter fail closed outside explicit
@@ -221,7 +224,7 @@ This pass independently reconciled the live PR/issue inventory, current main SHA
 
 This is **not** a claim that all 116 original exploit scenarios were re-executed end-to-end in production or that every historical source line and provider setting was re-audited during this one pass. For findings not listed in section 3, the canonical tracker retains its previously recorded source/test evidence and residuals; a future finding-specific pass should re-run its dedicated evidence before promoting or changing disposition. No production secrets were retrieved, no live production configuration was changed, no physical-device test was performed, and no production sign-off is claimed.
 
-**Bottom line (2026-11-09):** PR #281 is the latest source-changing merge; its audited application-code baseline is `665146f8195409274b29b563333de25c591f10a9` (tree `c33b13b178fb92582834ade431cbe3d666bcb1f0`). PR #282 subsequently merged the documentation sync at `be55818a4b5c6d1c210f736a39fe38bb2b9e5cba`, and GitHub returned zero open PRs and zero open issues after that merge. Both PRs' exact-head CI/Security workflows are green (10/10 and 3/3 each). The register remains 116 unique findings (86/17/1/12); S10-N2 remains Partial. Historical closed-unmerged duplicates/superseded PRs are distinguished from outstanding PRs.
+**Bottom line (2026-11-09):** PR #290 is the latest source-changing merge, `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Final PR-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) passed 3/3. Espresso executed 4 tests, API 35 predictive-back 1 test; debug APK and R8 passed. GitHub inventory after merge returned zero open PRs and zero open issues. The register remains 116 unique findings (86 Fixed, 17 Partial, 1 Open, 12 Accepted); S06-H5 and S10-N2 remain Partial for their documented residuals. Historical closed-unmerged duplicates/superseded PRs are distinguished from outstanding PRs.
 
 ## Addendum — 2026-11-09 S10-N2 source update (PR #286)
 
