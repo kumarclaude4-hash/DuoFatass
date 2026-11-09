@@ -325,13 +325,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class QualifiedThisFlow { void log(QualifiedThisOuter.Inner inner) { String qualifiedThisValue = inner.delegate(); Log.w(\"TAG\", qualifiedThisValue); } }\n"
                   + "class GenericBox<T> { T getValue() { return null; } }\n"
                   + "class GenericReceiverFlow { void log(GenericBox<String> box) { String genericMemo = box.getValue().toString(); Log.w(\"TAG\", genericMemo); } }\n"
-                  + "class ReflectionFlow { void log(String className, Object target) throws Exception { Class<?> dynamicType = Class.forName(className); java.lang.reflect.Method getter = dynamicType.getMethod(\"getName\"); Object reflected = getter.invoke(target); Log.w(\"TAG\", reflected); } }\n", StandardCharsets.UTF_8);
+                  + "class ReflectionFlow { void log(String className, Object target) throws Exception { Class<?> dynamicType = Class.forName(className); java.lang.reflect.Method getter = dynamicType.getMethod(\"getName\"); Object reflected = getter.invoke(target); Log.w(\"TAG\", reflected); } }\n"
+                  + "class CallbackApi { void register(java.util.function.Consumer<Object> callback) { } }\n"
+                  + "class CallbackFlow { void register(CallbackApi api) { api.register(value -> Log.w(\"TAG\", value.toString())); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 22
-                    || interproceduralResult.violations.size() != 19) {
+            if (interproceduralResult.inspectedCalls != 23
+                    || interproceduralResult.violations.size() != 20) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "19 unsafe helper flows and 3 safe helper flows, got "
+                        + "20 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -360,6 +362,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [genericMemo]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [reflected]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [value]");
             requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
@@ -1439,6 +1443,22 @@ public final class AndroidReleaseLogPrivacyPolicy {
             // Anonymous/local class methods are analyzed independently when the
             // outer LogCallScanner reaches them.
             return null;
+        }
+
+        @Override
+        public Void visitLambdaExpression(com.sun.source.tree.LambdaExpressionTree node, Void unused) {
+            // A callback may be invoked by a framework/SDK with app data that is
+            // not visible at the call site. Treat every lambda parameter as an
+            // opaque input while scanning its body; explicit redaction at the
+            // eventual sink remains the only safe way to log it.
+            for (VariableTree parameter : node.getParameters()) {
+                String name = parameter.getName().toString();
+                String type = parameter.getType() == null ? "" : parameter.getType().toString();
+                localTypes.put(name, type);
+                taintedLocals.add(name);
+                if (isThrowableType(type)) throwableLocals.add(name);
+            }
+            return super.visitLambdaExpression(node, unused);
         }
 
         @Override
