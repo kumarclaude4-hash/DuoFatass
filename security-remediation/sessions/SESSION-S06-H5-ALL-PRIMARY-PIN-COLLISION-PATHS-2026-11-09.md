@@ -4,7 +4,7 @@
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Branch:** `security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`  
 **Finding:** S06-H5 — Primary-PIN candidate probing through hidden secondary-code collision checks  
-**Status:** Partial pending exact-head CI/Security and residual acceptance
+**Status:** Partial; exact-head CI/Security passed, independent residual acceptance outstanding
 
 ## Source review
 
@@ -54,8 +54,11 @@ throttle.
 
 ## Verification
 
-Exact-head CI/Security are pending at the time of this record. Do not merge until the Android unit
-wiring tests and full required CI/Security workflows pass. Physical-device acceptance remains
+Exact-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269)
+passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340)
+passed 3/3. Android unit tests and lint passed; debug APK and minified R8 passed (453,247-line
+mapping); Espresso executed 4 tests and API 35 predictive-back executed 1 test. Server + Worker,
+AST, CodeQL, Gitleaks, SBOM and dependency integrity gates passed. Physical-device acceptance remains
 deferred until the owner declares the app feature-complete.
 
 ## Residual / disposition
