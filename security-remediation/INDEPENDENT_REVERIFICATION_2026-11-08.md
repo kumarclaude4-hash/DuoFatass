@@ -1,3 +1,29 @@
+## 2026-11-09 addendum — PR #288 merge and PR #289 S10-N2 callback follow-up
+
+PR #288 is the latest source-changing merge on main: `78a99b478e90ec3337df3c92997de3ac16efbe5e`.
+It makes the authenticated per-user/endpoint Durable Object limiter fail closed outside explicit
+development/test. Missing or unavailable shared limiting returns HTTP 503 on all 12 protected
+authenticated routes rather than consuming process-local counters; actual quota breaches remain
+HTTP 429. Exact-head CI [42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825)
+passed 10/10, Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910)
+passed 3/3, and Firestore Rules/server transactions [42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878)
+passed. S02-I2 remains Partial only for authorized Render/Worker secret-pair read-back and production
+runtime confirmation; this PR did not access live secrets or deploy services.
+
+PR #289 is the active S10-N2 method-reference callback follow-up. It extends the bounded AST scanner
+to recognize same-owner callback registrations using `this::method`, `Owner::method`, and
+`Owner.this::method`, then treats the registered method's callback-supplied parameters as tainted.
+The synthetic regression proves a non-sensitive `callbackArg` passed through
+`CallbackApi.register(this::callbackLog)` is rejected at `Log.w`. Exact-head CI/Security/Firestore
+results are pending. This is a targeted source-level improvement only: other method-reference
+receiver/target forms, third-party callback internals, native/dynamic behavior, arbitrary generic
+semantics, and whole-program symbol resolution remain limitations. Physical release/minified APK
+logcat acceptance remains deferred until feature completion. Keep S10-N2 Partial.
+
+Documentation for PR #289 is updated in the same PR: BUG_TRACKER, START_HERE, NEXT_WORK_REPORT,
+FINAL_SIGNOFF, this independent re-verification, agent handoff, SESSION_INDEX and a new session record.
+
+---
 ## 2026-11-09 addendum — latest S10-N2 source merge PR #286
 
 PR #286 is the latest source-changing merge on main (26daea8e8b2e45764a68000d02a1f93a486d2fde,
@@ -14,7 +40,7 @@ security jobs passed. PR #287 is a documentation-only close-out merged as
 S10-N2 remains Partial: this bounded AST analyzer is not symbol-resolved whole-program proof,
 and physical release/minified APK logcat acceptance is still deferred until feature completion.
 
-## 2026-11-09 addendum — active S02-I2 implementation PR #288
+## 2026-11-09 addendum — merged S02-I2 implementation PR #288
 
 PR #288 (security/s02-i2-production-fail-closed-2026-11-09) changes authenticated per-user
 rate limiting so production/unset-NODE_ENV never silently spends a process-local allowance when
@@ -23,11 +49,15 @@ protected routes return HTTP 503 with Retry-After: 30 and stop before the normal
 branch. Explicit development/test processes retain the bounded local fallback. Regression tests
 cover missing DO configuration, Worker outage, and all 12 route-handling paths.
 
-PR #288 exact-head CI/Security results are pending. S02-I2 remains Partial until CI passes and an
-authorized operator verifies the Render ADMIN_LOCKOUT_WORKER_URL /
-ADMIN_LOCKOUT_WORKER_SECRET pairing against Worker ADMIN_LOCKOUT_SECRET and confirms the
-production Durable Object path at runtime. This PR does not read or change live credentials,
-deploy services, or claim production acceptance.
+PR #288 merged as 78a99b478e90ec3337df3c92997de3ac16efbe5e. Exact-head CI
+[42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825) passed
+10/10; Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910)
+passed 3/3; Firestore Rules/server transactions
+[42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878) passed.
+S02-I2 remains Partial until an authorized operator verifies the Render
+ADMIN_LOCKOUT_WORKER_URL / ADMIN_LOCKOUT_WORKER_SECRET pairing against Worker
+ADMIN_LOCKOUT_SECRET and confirms the production Durable Object path at runtime. PR #288 did not
+read or change live credentials, deploy services, or claim production acceptance.
 
 ---
 # Independent Security Tracker Re-verification — 2026-11-08

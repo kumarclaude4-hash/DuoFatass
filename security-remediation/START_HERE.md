@@ -10,7 +10,7 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Latest audited application-code baseline (2026-11-09):** `26daea8e8b2e45764a68000d02a1f93a486d2fde` (PR #286; tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`). PR #287 is the latest documentation-only close-out; PR #286 is the latest source-changing merge on main. PR #288 is the active S02-I2 fail-closed implementation PR and its exact-head checks are pending. See `../BUG_TRACKER.md` and `NEXT_WORK_REPORT_2026-11-08.md` for exact-head CI/Security evidence and residual scope.
+**Latest main merge (2026-11-09):** PR #288 merged as `78a99b478e90ec3337df3c92997de3ac16efbe5e`. PR #288's production fail-closed S02-I2 implementation passed exact-head CI 10/10 ([42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825)), Security 3/3 ([42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910)) and Firestore Rules/server transactions ([42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878)). S02-I2 remains Partial pending authorized Render/Worker secret-pair and runtime read-back. PR #289 is the active S10-N2 method-reference callback hardening PR; its exact-head checks are pending. See `../BUG_TRACKER.md` and `NEXT_WORK_REPORT_2026-11-08.md` for the current evidence and residual scope.
 
 PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
 
@@ -18,26 +18,25 @@ PR #279 and #280 refreshed the tracker baseline and handoff. PR #281 extended `s
 
 PR #265 merged the successful/failed PIN-change throttle and generic failure contract for S06-H5. PR #267 subsequently passed the full CI and Security/Firestore workflows on its exact PR head before merging. PR #269 then hardened S10-N2 bodyless helper returns; its exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed before merge. PR #270 refreshed the handoff on the then-current main. PR #271 added bounded app-owned buffer/cache hygiene for S07-L2; exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 jobs and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3 before merge. PR #272 refreshed agent instructions and handoff evidence; PR #273 was closed as a duplicate unmerged. PR #274 fixed a reproduced typed cross-class sensitive-field logging gap. PR #275 refreshed the handoff. PR #276 added fail-closed handling for known app-owned virtual overrides (CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10; Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3). PR #277 added fail-closed handling for ambiguous same-name/same-arity app-owned overloads (CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10; Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3). PR #278 reconciled the independent tracker/handoff snapshot; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3.
 
-The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. PR #288 addresses the code-side S02-I2 downgrade: production authenticated endpoints now return 503 rather than falling back to process-local counters when the shared Durable Object is unavailable. The finding remains Partial pending exact-head CI/Security and authorized Render/Worker configuration read-back. The remaining Partial/Open items are not all code defects: they include staging/operator acceptance, owner decisions, upstream API limits and physical-device checks explicitly deferred until feature-complete. `FINAL_SIGNOFF.md` remains **PENDING**.
+The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. PR #288 closes the S02-I2 code-side downgrade: production authenticated endpoints return 503 rather than falling back to process-local counters when the shared Durable Object is unavailable; exact-head CI 10/10, Security 3/3 and Firestore Rules/server transactions passed. S02-I2 remains Partial pending authorized Render/Worker secret-pair read-back and production runtime confirmation. PR #289 adds a same-owner method-reference callback taint regression for S10-N2; exact-head checks are pending. Remaining Partial/Open items include staging/operator acceptance, owner decisions, upstream API limits, repository governance and physical-device checks explicitly deferred until feature-complete. `FINAL_SIGNOFF.md` remains **PENDING**.
 
 ---
 
-## Current state — 2026-11-09
+## Current state — 2026-11-09 (post-PR #288, PR #289 active)
 
 ```
-LATEST SOURCE-CHANGING MERGE: PR #286 — 26daea8e8b2e45764a68000d02a1f93a486d2fde
-AUDITED APP-CODE TREE: 7bb1d14010ecc7702ac3323fab53646c9da06d57
-DOC-ONLY TRACKER SYNC: PR #287 — 690d0ef5043c2ee585abeff72c3e1ce0be66a336; documentation-only; no application-source changes
-MERGED: PR #287 (docs-only S10-N2 closeout); PR #286 (S10-N2 generic/reflection/callback fail-closed coverage; CI 10/10, Security 3/3); PR #285 (docs-only closeout); PR #284 (S10-N2 inherited app-owned member/receiver resolution; CI 10/10, Security 3/3); PR #283/#282 (docs-only); PR #281 (S10-N2 chained app-owned receiver resolution; CI 10/10, Security 3/3); PRs #275-#280 and earlier remediations listed above.
+LATEST SOURCE-CHANGING MERGE: PR #288 — 78a99b478e90ec3337df3c92997de3ac16efbe5e
+LATEST VERIFIED APP-CODE BASELINE BEFORE ACTIVE PR: PR #288; exact-head CI/Security/Firestore all passed
+MERGED: PR #288 (S02-I2 production fail-closed; CI 10/10, Security 3/3, Firestore Rules/server transactions passed); PR #287 (docs-only S10-N2 closeout); PR #286 (S10-N2 generic/reflection/lambda-callback fail-closed; CI 10/10, Security 3/3); PR #285 (docs-only closeout); PR #284 (S10-N2 inherited app-owned member/receiver resolution; CI 10/10, Security 3/3); PR #283/#282 (docs-only); PR #281 (S10-N2 chained app-owned receiver resolution; CI 10/10, Security 3/3); PRs #275-#280 and earlier remediations listed above.
 PR #267 head: 213442825113013a85650de9ac24edf0e9ec9211
 CI: 42443323887 — passed (Android unit, lint, debug APK, Espresso, API 35 predictive-back, R8, Server + Worker).
 SECURITY: 42443323988 — passed (CodeQL, Gitleaks, SBOM).
 FIRESTORE RULES: 42443323886 — passed.
 FIRESTORE RULES + SERVER TRANSACTIONS: 42443323962 — passed (200 Rules tests + 6 server transaction tests).
-OPEN PRS: PR #288 (S02-I2 production fail-closed rate limiting; exact-head checks pending); OPEN ISSUES: none.
+OPEN PRS: PR #289 (S10-N2 same-owner method-reference callback taint; exact-head checks pending); OPEN ISSUES: none.
 PR #266: intentionally closed unmerged; its documentation changes were not applied to main.
-TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted. S02-I2 remains Partial pending live Worker/Render configuration read-back.
-S10-N2: remains Partial. PR #286 adds fail-closed unresolved generic return/receiver handling, recognized reflection/class-loading surfaces, and lexically scoped opaque callback parameters. CI 10/10 and Security 3/3 pass; AST scan: 205 Java files / 414 log sinks / zero violations. External/library dispatch, unrecognized reflection/dynamic APIs, method references/opaque callback internals, native behavior, arbitrary generic/container semantics, whole-program symbol resolution and physical release/minified logcat acceptance remain.
+TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted. S02-I2 code-side downgrade fixed by PR #288; live Worker/Render configuration read-back remains. S10-N2 remains Partial pending PR #289 validation and whole-program/device residuals.
+S10-N2: remains Partial. PR #286's validated baseline covers unresolved generic returns/receivers, recognized reflection/class-loading surfaces and opaque lambda callback parameters. PR #289 adds same-owner method-reference callback target taint (`this::method`, `Owner::method`, `Owner.this::method`) with a synthetic `callbackArg` → `Log.w` regression; exact-head checks pending. Remaining: external/library dispatch, unrecognized reflection/dynamic APIs, other method-reference receiver/target shapes, native behavior, arbitrary generic/container semantics, whole-program symbol resolution and feature-complete physical release/minified logcat acceptance.
 NEXT: use BUG_TRACKER.md, NEXT_WORK_REPORT_2026-11-08.md and INDEPENDENT_REVERIFICATION_2026-11-08.md; older dated worklists are historical.
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
@@ -62,8 +61,7 @@ security-remediation/NEXT_WORK_REPORT_2026-11-08.md, the agentic handoff and BUG
 
 If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
 session. Follow the refreshed work report for source-review priorities, owner decisions, operator
-acceptance and feature-complete device deferrals. There are no open PRs or issues after PR #285
-merged. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
+acceptance and feature-complete device deferrals. PR #289 is the only open PR; no open issues were returned. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
 
 
 ---
