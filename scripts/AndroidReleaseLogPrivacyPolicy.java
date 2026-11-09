@@ -673,8 +673,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
             }
             if (expression instanceof MemberSelectTree) {
                 MemberSelectTree member = (MemberSelectTree) expression;
-                String ownerType = simpleTypeName(resolveExpressionType(
-                        callerOwner, member.getExpression(), localTypes));
+                String receiverType = resolveExpressionType(
+                        callerOwner, member.getExpression(), localTypes);
+                if (receiverType == null) return null;
+                String ownerType = simpleTypeName(receiverType);
                 ClassSummary owner = classes.get(ownerType);
                 if (owner == null || ambiguousClasses.contains(ownerType)) return null;
                 return owner.fieldTypes.get(member.getIdentifier().toString());
