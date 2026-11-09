@@ -317,13 +317,16 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class InheritedDirectFieldFlow { void log(Profile profile, InheritedMemoChild holder) { holder.setDiagnostic(profile.getUserId()); Log.w(\"TAG\", holder.diagnostic); } }\n"
                   + "class ExplicitSuperBase { String secret; String expose() { return secret; } }\n"
                   + "class ExplicitSuperChild extends ExplicitSuperBase { String exposeFromSuper() { return super.expose(); } }\n"
-                  + "class ExplicitSuperFlow { void log(ExplicitSuperChild source) { String viaSuper = source.exposeFromSuper(); Log.w(\"TAG\", viaSuper); } }\n", StandardCharsets.UTF_8);
+                  + "class ExplicitSuperFlow { void log(ExplicitSuperChild source) { String viaSuper = source.exposeFromSuper(); Log.w(\"TAG\", viaSuper); } }\n"
+                  + "class DuplicateOuterA { static class DuplicateReceiver { String ordinary; String expose() { return ordinary; } } }\n"
+                  + "class DuplicateOuterB { static class DuplicateReceiver { String privateMemo; String expose() { return privateMemo; } } }\n"
+                  + "class DuplicateSimpleNameFlow { void log(DuplicateOuterB.DuplicateReceiver source) { String ambiguousValue = source.expose(); Log.w(\"TAG\", ambiguousValue); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 18
-                    || interproceduralResult.violations.size() != 15) {
+            if (interproceduralResult.inspectedCalls != 19
+                    || interproceduralResult.violations.size() != 16) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "15 unsafe helper flows and 3 safe helper flows, got "
+                        + "16 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -344,6 +347,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [inheritedChildValue]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [viaSuper]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [ambiguousValue]");
             requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
@@ -707,13 +712,14 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 return classes.containsKey(parent) && !ambiguousClasses.contains(parent) ? parent : null;
             }
 
-            if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
-                return receiverText; // Explicit app-owned static call.
+            if (classes.containsKey(receiverText)) {
+                return receiverText; // Preserve ambiguity so calls fail closed.
             }
             String resolvedType = resolveExpressionType(callerOwner, receiver, localTypes);
             String simple = simpleTypeName(resolvedType == null ? "" : resolvedType);
-            return classes.containsKey(simple) && !ambiguousClasses.contains(simple)
-                    ? simple : null;
+            // Return duplicate simple-name owners as well: resolveDefinition()
+            // recognizes their ambiguous index entry and taints unknown returns.
+            return classes.containsKey(simple) ? simple : null;
         }
 
         /**
@@ -744,7 +750,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 }
                 String type = localTypes.get(name);
                 if (type != null) return type;
-                return classes.containsKey(name) && !ambiguousClasses.contains(name) ? name : null;
+                return classes.containsKey(name) ? name : null;
             }
             if (expression instanceof MemberSelectTree) {
                 MemberSelectTree member = (MemberSelectTree) expression;
@@ -828,13 +834,10 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         0, receiverText.length() - ".super".length()));
                 return classes.containsKey(parent) && !ambiguousClasses.contains(parent) ? parent : null;
             }
-            if (classes.containsKey(receiverText) && !ambiguousClasses.contains(receiverText)) {
-                return receiverText;
-            }
+            if (classes.containsKey(receiverText)) return receiverText;
             String resolvedType = resolveExpressionType(callerOwner, receiver, localTypes);
             String simple = simpleTypeName(resolvedType == null ? "" : resolvedType);
-            return classes.containsKey(simple) && !ambiguousClasses.contains(simple)
-                    ? simple : null;
+            return classes.containsKey(simple) ? simple : null;
         }
 
         private boolean addSensitiveField(String fieldKey) {
