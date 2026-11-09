@@ -305,13 +305,13 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class UnsafeOther { static String isAvailable(String value) { return value; } }\n"
                   + "class NestedSecret { String memo; void setMemo(String value) { this.memo = value; } String getMemo() { return this.memo; } }\n"
                   + "class SecretWrapper { NestedSecret child; NestedSecret getChild() { return child; } }\n"
-                  + "class MultiHopFieldFlow { void log(Profile profile, SecretWrapper wrapper) { wrapper.getChild().setMemo(profile.getUserId()); String resolvedMemo = wrapper.getChild().getMemo(); Log.w(\"TAG\", resolvedMemo); } }\n"\\n"
-                  + "class InheritedSensitiveBase { String secret; String expose() { return secret; } }\\n"
-                  + "class InheritedSensitiveChild extends InheritedSensitiveBase { }\\n"
-                  + "class InheritedMethodFlow { void log(InheritedSensitiveChild source) { String inheritedValue = source.expose(); Log.w(\"TAG\", inheritedValue); } }\\n"
-                  + "class InheritedFieldBase { NestedSecret child; }\\n"
-                  + "class InheritedFieldChild extends InheritedFieldBase { }\\n"
-                  + "class InheritedFieldFlow { void log(Profile profile, InheritedFieldChild holder) { holder.child.setMemo(profile.getUserId()); String inheritedChildValue = holder.child.getMemo(); Log.w(\"TAG\", inheritedChildValue); } }\\n", StandardCharsets.UTF_8);
+                  + "class MultiHopFieldFlow { void log(Profile profile, SecretWrapper wrapper) { wrapper.getChild().setMemo(profile.getUserId()); String resolvedMemo = wrapper.getChild().getMemo(); Log.w(\"TAG\", resolvedMemo); } }\n"
+                  + "class InheritedSensitiveBase { String secret; String expose() { return secret; } }\n"
+                  + "class InheritedSensitiveChild extends InheritedSensitiveBase { }\n"
+                  + "class InheritedMethodFlow { void log(InheritedSensitiveChild source) { String inheritedValue = source.expose(); Log.w(\"TAG\", inheritedValue); } }\n"
+                  + "class InheritedFieldBase { NestedSecret child; }\n"
+                  + "class InheritedFieldChild extends InheritedFieldBase { }\n"
+                  + "class InheritedFieldFlow { void log(Profile profile, InheritedFieldChild holder) { holder.child.setMemo(profile.getUserId()); String inheritedChildValue = holder.child.getMemo(); Log.w(\"TAG\", inheritedChildValue); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
             if (interproceduralResult.inspectedCalls != 16
