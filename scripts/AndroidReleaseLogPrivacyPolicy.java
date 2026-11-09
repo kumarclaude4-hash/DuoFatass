@@ -526,22 +526,24 @@ public final class AndroidReleaseLogPrivacyPolicy {
                             // unambiguous same-owner forms (this::method, Owner::method and
                             // Owner.this::method); the target method's parameters are tainted
                             // by the method-local pass below.
-                            new TreeScanner<Void, Void>() {
-                                @Override
-                                public Void visitMemberReference(MemberReferenceTree reference, Void ignored) {
-                                    String qualifier = reference.getQualifierExpression().toString();
-                                    if ("this".equals(qualifier) || owner.equals(qualifier)
-                                            || (owner + ".this").equals(qualifier)) {
-                                        info.methodReferenceTargets.add(reference.getName().toString());
+                            for (com.sun.source.tree.Tree member : node.getMembers()) {
+                                new TreeScanner<Void, Void>() {
+                                    @Override
+                                    public Void visitMemberReference(MemberReferenceTree reference, Void ignored) {
+                                        String qualifier = reference.getQualifierExpression().toString();
+                                        if ("this".equals(qualifier) || owner.equals(qualifier)
+                                                || (owner + ".this").equals(qualifier)) {
+                                            info.methodReferenceTargets.add(reference.getName().toString());
+                                        }
+                                        return super.visitMemberReference(reference, ignored);
                                     }
-                                    return super.visitMemberReference(reference, ignored);
-                                }
 
-                                @Override
-                                public Void visitClass(ClassTree nested, Void ignored) {
-                                    return null;
-                                }
-                            }.scan(node, null);
+                                    @Override
+                                    public Void visitClass(ClassTree nested, Void ignored) {
+                                        return null;
+                                    }
+                                }.scan(member, null);
+                            }
                             for (String field : info.fieldNames) {
                                 if (SENSITIVE_IDENTIFIER.matcher(field).matches()
                                         && !SAFE_OPERATIONAL_COUNTERS.contains(field)) {
