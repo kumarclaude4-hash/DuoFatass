@@ -10,9 +10,11 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Current main documentation checkpoint (2026-11-09):** `3d47d39faac649e9d5197327a7db5cc145c2c1de` (PR #279 merged). The audited application-code baseline is `b596e965d4be54b4ea8079b4036012e68188f865`; PRs #278 and #279 are documentation-only. See `INDEPENDENT_REVERIFICATION_2026-11-08.md` for the fresh tracker reconciliation.
+**Current main (2026-11-09):** `665146f8195409274b29b563333de25c591f10a9` (PR #281 merged; tree `c33b13b178fb92582834ade431cbe3d666bcb1f0`). PRs #278-#280 are documentation-only; PR #281 updates the bounded S10-N2 AST analyzer. See `INDEPENDENT_REVERIFICATION_2026-11-08.md` and `../BUG_TRACKER.md` for the updated source baseline and residual scope.
 
 PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
+
+PR #279 and #280 refreshed the tracker baseline and handoff. PR #281 extended `scripts/AndroidReleaseLogPrivacyPolicy.java` to resolve chained app-owned receiver types through local variables, fields, casts/parentheses and uniquely summarized helper returns. Its regression covers a sensitive setter/read chain through `wrapper.getChild()` reaching a `Log.w` sink. PR #281 exact-head CI [42561844959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844959) passed 10/10 and Security [42561844900](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42561844900) passed 3/3. The Vercel preview status failed separately; no preview deployment success is claimed. S10-N2 remains Partial pending wider symbol/dispatch coverage and feature-complete physical release-logcat acceptance.
 
 PR #265 merged the successful/failed PIN-change throttle and generic failure contract for S06-H5. PR #267 subsequently passed the full CI and Security/Firestore workflows on its exact PR head before merging. PR #269 then hardened S10-N2 bodyless helper returns; its exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed before merge. PR #270 refreshed the handoff on the then-current main. PR #271 added bounded app-owned buffer/cache hygiene for S07-L2; exact-head CI [42448400756](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400756) passed 10/10 jobs and Security [42448400818](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42448400818) passed 3/3 before merge. PR #272 refreshed agent instructions and handoff evidence; PR #273 was closed as a duplicate unmerged. PR #274 fixed a reproduced typed cross-class sensitive-field logging gap. PR #275 refreshed the handoff. PR #276 added fail-closed handling for known app-owned virtual overrides (CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) 10/10; Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) 3/3). PR #277 added fail-closed handling for ambiguous same-name/same-arity app-owned overloads (CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) 10/10; Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) 3/3). PR #278 reconciled the independent tracker/handoff snapshot; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3.
 
@@ -20,20 +22,22 @@ The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 
 
 ---
 
-## Current state — 2026-11-08
+## Current state — 2026-11-09
 
 ```
-MAIN DOC CHECKPOINT: 3d47d39faac649e9d5197327a7db5cc145c2c1de
-AUDITED APP CODE: b596e965d4be54b4ea8079b4036012e68188f865
-MERGED: PR #279 (final baseline alignment, CI 10/10, Security 3/3); PR #278 (independent tracker reconciliation; CI 10/10, Security 3/3); PR #275 (security handoff refresh); PR #276 (S10-N2 known app-owned virtual override handling); PR #277 (S10-N2 ambiguous app-owned overload handling), in addition to earlier merged remediations listed above.
+MAIN: 665146f8195409274b29b563333de25c591f10a9
+TREE: c33b13b178fb92582834ade431cbe3d666bcb1f0
+AUDITED APP CODE: 665146f8195409274b29b563333de25c591f10a9
+MERGED: PR #281 (S10-N2 chained app-owned receiver resolution; CI 10/10, Security 3/3); PR #280 (final baseline docs correction; CI 10/10, Security 3/3); PR #279 (final tracker alignment; CI 10/10, Security 3/3); PR #278 (independent tracker reconciliation; CI 10/10, Security 3/3); PRs #275-#277 and earlier remediations listed above.
 PR #267 head: 213442825113013a85650de9ac24edf0e9ec9211
 CI: 42443323887 — passed (Android unit, lint, debug APK, Espresso, API 35 predictive-back, R8, Server + Worker).
 SECURITY: 42443323988 — passed (CodeQL, Gitleaks, SBOM).
 FIRESTORE RULES: 42443323886 — passed.
 FIRESTORE RULES + SERVER TRANSACTIONS: 42443323962 — passed (200 Rules tests + 6 server transaction tests).
-OPEN PRS: none after PR #279 merged; OPEN ISSUES: none.
+OPEN PRS: none after PR #281 merged; OPEN ISSUES: none.
 PR #266: intentionally closed unmerged; its documentation changes were not applied to main.
 TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted.
+S10-N2: remains Partial; #281 improves bounded chained app-owned receiver analysis, not whole-program proof or device logcat acceptance.
 NEXT: use BUG_TRACKER.md, NEXT_WORK_REPORT_2026-11-08.md and INDEPENDENT_REVERIFICATION_2026-11-08.md; older dated worklists are historical.
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
@@ -57,8 +61,8 @@ security-remediation/NEXT_WORK_REPORT_2026-11-08.md, the agentic handoff and BUG
 ```
 
 If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
-session. Follow the current 2026-11-08 work report for source-review priorities, owner decisions,
-operator acceptance and feature-complete device deferrals. There are no open PRs or issues after PR #279 merged. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
+session. Follow the refreshed 2026-11-09 work report for source-review priorities, owner decisions,
+operator acceptance and feature-complete device deferrals. There are no open PRs or issues after PR #281 merged. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
 
 
 ---
