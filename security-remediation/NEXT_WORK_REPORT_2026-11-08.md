@@ -1,8 +1,8 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-09 (PR #288 S02-I2 and PR #289 S10-N2 merged; active PR #290 S06-H5 PIN-entry throttle coverage)  
+**Updated:** 2026-11-09 (PR #288 S02-I2, PR #289 S10-N2 and PR #290 S06-H5 merged)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Latest audited application-code merge:** `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85` (PR #289 S10-N2 method-reference callback taint). PR #290 is the active S06-H5 primary-PIN candidate-throttle follow-up.
+**Latest audited application-code merge:** `9b1c1dd48fb584d728491e8bfeee5ef380e9b834` (PR #290 S06-H5 all primary-PIN collision paths). GitHub inventory after merge: zero open PRs and zero open issues.
 
 ## Verified implementation PR #288 — S02-I2 production fail-closed rate limiting
 
@@ -25,9 +25,9 @@ PR #289 merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`.
 - Exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. Server + Worker, AST, Android unit, lint, debug APK, R8, Espresso, API 35, CodeQL, Gitleaks and SBOM all passed.
 - S10-N2 remains Partial for other method-reference receiver/target forms, external callback contracts, whole-program symbol-resolution limitations and feature-complete physical release/minified APK logcat acceptance.
 
-## Active implementation PR #290 — S06-H5 all primary-PIN collision paths
+## Merged implementation PR #290 — S06-H5 all primary-PIN collision paths
 
-Branch: `security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`, based on main after PR #289.
+Branch: `security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`; merged to `main` as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`.
 
 - PR #265 already applied the durable account-scoped PIN candidate throttle to Settings PIN changes.
 - Source review found two additional paths that checked a proposed primary PIN against the preserved secondary-code hash without consuming the shared throttle: `SetupPinActivity` after restore/setup and `ForcedPrimaryPinRotationActivity` after account unfreeze.
@@ -35,10 +35,10 @@ Branch: `security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`, b
 - Collision, throttle denial and storage/auth failure now share one generic retry response; neither path branches on the collision result or emits a collision-specific message.
 - Added two `SecurityFindingWiringTest` regressions requiring throttle-before-check, guarded storage and generic failure/no collision-specific branch in both flows. Existing `PinChangeThrottleTest` continues to cover durable limits, reset windows, boot/clock behavior and account separation.
 - Updated in this same PR: BUG_TRACKER, START_HERE, this report, FINAL_SIGNOFF, independent re-verification, agent handoff, SESSION_INDEX and a new session record.
-- Exact-head verification: CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3. The Android unit suite (including both wiring regressions), lint, debug APK, minified R8 (453,247-line mapping), Espresso (4 executed tests), API 35 predictive-back (1 executed test), Server + Worker tests, AST, CodeQL, Gitleaks, SBOM and integrity checks all passed. Keep S06-H5 Partial pending independent residual side-channel review and feature-complete device acceptance.
+- Exact-head verification before merge: CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3. The documentation-synchronized final head also passed CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) 3/3. The Android unit suite (including both wiring regressions), lint, debug APK, minified R8 (453,247-line mapping), Espresso (4 executed tests), API 35 predictive-back (1 executed test), Server + Worker tests, AST, CodeQL, Gitleaks, SBOM and integrity checks all passed. PR #290 merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Keep S06-H5 Partial pending independent residual side-channel review and feature-complete device acceptance.
 ## Current verified mainline
 
-PR #289 is the latest source-changing merge (`ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`). Its exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. The AST self-test/full production scan, Server + Worker, Android unit tests/lint, debug APK, minified R8, Espresso and API 35 predictive-back all passed. Earlier PR #286 CI/Security evidence remains recorded above.
+PR #290 is the latest source-changing merge (`9b1c1dd48fb584d728491e8bfeee5ef380e9b834`). Its exact-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) passed 3/3. The implementation-head checks [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) / [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) had also passed 10/10 and 3/3. The AST self-test/full production scan, Server + Worker, Android unit tests/lint, debug APK, minified R8, Espresso and API 35 predictive-back all passed. Earlier PR #286 CI/Security evidence remains recorded above.
 
 PR #267 was merged after its exact head `213442825113013a85650de9ac24edf0e9ec9211` passed all required pull-request workflows:
 
