@@ -105,7 +105,7 @@ admin actions.
 |---|---|---|
 | `TURN_TOKEN_ID`, `TURN_API_TOKEN` | Cloudflare TURN credentials for calls | `/turnCredentials` returns `503`; client-side behaviour after that is not documented here (not verified) |
 | `PUBLIC_BASE_URL` | Absolute origin of this server, used to build proxied preview-image URLs | Derived from `X-Forwarded-Proto`/`Host`; set it explicitly behind a proxy that rewrites `Host` |
-| `ADMIN_LOCKOUT_WORKER_URL`, `ADMIN_LOCKOUT_WORKER_SECRET` | Cloudflare Worker + Durable Object endpoint backing the admin brute-force lockout and authenticated endpoint rate-limit buckets (`lib/adminLockoutStore.js`, `lib/authRateLimitStore.js`) | Falls back to bounded process-local counters — these do NOT survive a Render restart/redeploy or span multiple instances. Both must be set together; the server still boots and serves traffic either way. |
+| `ADMIN_LOCKOUT_WORKER_URL`, `ADMIN_LOCKOUT_WORKER_SECRET` | Cloudflare Worker + Durable Object endpoint backing admin brute-force lockout and authenticated endpoint rate-limit buckets (`lib/adminLockoutStore.js`, `lib/authRateLimitStore.js`) | Both must be set together. The server still boots; authenticated per-user endpoints reject with **503** in production if the shared limiter is missing/unreachable. Admin-IP lockout retains its separately documented local fallback. |
 
 #### Cloudflare Durable Object setup (admin lockout + authenticated API rate-limit durability)
 
@@ -119,7 +119,13 @@ the lockout, widening an attacker's guess budget) and was replaced before
 ever shipping. Durable Objects guarantee that requests to the same opaque
 bucket instance are processed one at a time, so the increment is atomic.
 The Render server uses it for both admin IP lockout keys and SHA-256-derived
-per-user/per-endpoint authenticated API rate-limit keys. Each counter's
+per-user/per-endpoint authenticated API rate-limit keys. **The authenticated API
+rate limiter is fail-closed by default:** when `NODE_ENV` is anything other than
+`development` or `test` (including unset), a missing or unreachable Durable
+Object returns HTTP 503 and does not consume a process-local allowance. Set
+`NODE_ENV=development` for an intentional local-only development run. Tests
+may use `NODE_ENV=test`; the unit suite also exercises strict mode explicitly.
+Do not set production to development/test to bypass this control. Each counter's
 fixed-window record expires through a Durable Object alarm, which deletes
 all per-instance storage after expiry; see `adminLockoutDurableObject.js`. This also replaces the original Upstash Redis-backed store
 (`KV_REST_API_URL`/`KV_REST_API_TOKEN` — **removed**, no longer read by

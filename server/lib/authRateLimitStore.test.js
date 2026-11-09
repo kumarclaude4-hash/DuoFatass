@@ -80,3 +80,28 @@ test("Worker failures fall back locally and report degraded durability", async (
   assert.deepEqual(errors, [{ op: "record", message: "Worker unavailable" }]);
   assert.deepEqual(result, { allowed: true, durable: false, count: 1 });
 });
+
+
+test("production mode rejects when the shared Durable Object is not configured", async () => {
+  const store = createAuthRateLimitStore({ requireDurable: true });
+  await assert.rejects(
+    () => store.check("u", "e", 1),
+    (err) => err.code === "AUTH_RATE_LIMIT_UNAVAILABLE" && err.status === 503,
+  );
+});
+
+test("production mode rejects Worker outages instead of spending a process-local allowance", async () => {
+  const errors = [];
+  const store = createAuthRateLimitStore({
+    requireDurable: true,
+    client: { async recordFailure() { throw new Error("private-worker-detail"); } },
+    onError: (op, err) => errors.push({ op, message: err.message }),
+  });
+  await assert.rejects(
+    () => store.check("u", "e", 1),
+    (err) => err.code === "AUTH_RATE_LIMIT_UNAVAILABLE"
+      && err.status === 503
+      && err.message === "Shared authenticated API rate limiter is unavailable",
+  );
+  assert.deepEqual(errors, [{ op: "record", message: "private-worker-detail" }]);
+});

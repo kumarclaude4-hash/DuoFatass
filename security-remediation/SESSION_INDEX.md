@@ -78,3 +78,12 @@ revision must follow `SESSION_PROTOCOL.md` §4 (verify from source before writin
 ## S10-N2 follow-up — 2026-11-09 (post-PR #286)
 
 [`sessions/SESSION-S10-N2-GENERIC-REFLECTION-2026-11-09.md`](./sessions/SESSION-S10-N2-GENERIC-REFLECTION-2026-11-09.md) records the additional bounded analyzer hardening for unresolved generic return/receiver flows, recognized Java reflection and class-loading operations, and opaque callback-lambda parameters. PR #286 merged as `26daea8e8b2e45764a68000d02a1f93a486d2fde`. Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3. AST: 205 Java files / 414 warning/error log sinks / zero violations; Espresso 4 tests; API 35 predictive-back 1 test; R8 mapping 453,260 lines. **S10-N2 remains Partial** pending feature-complete physical release/minified logcat acceptance and broader whole-program/external-dispatch coverage.
+
+## S02-I2 follow-up — 2026-11-09 (PR #288)
+
+sessions/SESSION-S02-I2-PRODUCTION-FAIL-CLOSED-2026-11-09.md records the production fail-closed
+change for the authenticated per-user/endpoint Durable Object limiter. Missing or unavailable
+shared limiting now produces HTTP 503 on all 12 protected routes rather than using process-local
+counters; development/test can explicitly retain local fallback. Regression tests cover the store
+and route wiring. S02-I2 remains Partial pending exact-head CI/Security and authorized
+Render/Worker secret-pair read-back.

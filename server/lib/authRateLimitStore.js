@@ -19,12 +19,23 @@ function durableKey(uid, endpoint) {
   return KEY_PREFIX + digest;
 }
 
+class AuthRateLimitUnavailableError extends Error {
+  constructor(cause) {
+    super("Shared authenticated API rate limiter is unavailable");
+    this.name = "AuthRateLimitUnavailableError";
+    this.code = "AUTH_RATE_LIMIT_UNAVAILABLE";
+    this.status = 503;
+    if (cause !== undefined) this.cause = cause;
+  }
+}
+
 function createAuthRateLimitStore({
   client = null,
+  requireDurable = false,
   windowMs = DEFAULT_WINDOW_MS,
   now = () => Date.now(),
   maxLocalEntries = DEFAULT_MAX_LOCAL_ENTRIES,
-  onError = (op, err) => console.warn(`[authRateLimitStore] ${op} failed; using local fallback:`, err.message),
+  onError = (op, err) => console.warn(`[authRateLimitStore] ${op} failed:`, err.message),
 } = {}) {
   if (!Number.isSafeInteger(windowMs) || windowMs <= 0) {
     throw new TypeError("windowMs must be a positive safe integer");
@@ -77,35 +88,40 @@ function createAuthRateLimitStore({
      * configured. The DO's lock threshold is limit + 1 so the first 'limit'
      * requests are allowed and the following request is rejected.
      *
-     * If the Worker is unavailable, a bounded process-local fallback keeps
-     * the endpoint usable but does not claim cross-instance consistency.
+     * With requireDurable enabled, a missing or failed Worker is an explicit
+     * availability error and never falls back to process-local state. The
+     * bounded local fallback is only used by callers that opt out of strict
+     * shared enforcement (local development/tests).
      */
     async check(uid, endpoint, limit) {
       if (!Number.isSafeInteger(limit) || limit < 1) {
         throw new TypeError("limit must be a positive safe integer");
       }
       const key = durableKey(uid, endpoint);
-      if (client) {
-        try {
-          const result = await client.recordFailure(key, {
-            windowMs,
-            maxFails: limit + 1,
-          });
-          if (!result || typeof result.locked !== "boolean" || typeof result.count !== "number") {
-            throw new TypeError("Durable Object returned a malformed auth rate-limit result");
-          }
-          return {
-            allowed: !result.locked,
-            durable: true,
-            count: result.count,
-          };
-        } catch (err) {
-          onError("record", err);
+      if (!client) {
+        if (requireDurable) throw new AuthRateLimitUnavailableError();
+        return localCheck(key, limit);
+      }
+      try {
+        const result = await client.recordFailure(key, {
+          windowMs,
+          maxFails: limit + 1,
+        });
+        if (!result || typeof result.locked !== "boolean" || typeof result.count !== "number") {
+          throw new TypeError("Durable Object returned a malformed auth rate-limit result");
         }
+        return {
+          allowed: !result.locked,
+          durable: true,
+          count: result.count,
+        };
+      } catch (err) {
+        onError("record", err);
+        if (requireDurable) throw new AuthRateLimitUnavailableError(err);
       }
       return localCheck(key, limit);
     },
   };
 }
 
-module.exports = { createAuthRateLimitStore, durableKey };
+module.exports = { createAuthRateLimitStore, durableKey, AuthRateLimitUnavailableError };

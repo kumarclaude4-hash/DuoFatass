@@ -105,8 +105,10 @@ emulator-backed Espresso job all passed. This closes the previously documented A
 The remediation has materially advanced: all 20 scheduled Round 3 sessions have been worked through
 at source/documentation level, Firestore Rules and Android CI emulator/build gates have passed on
 recent PR heads, PR #267 corrected the App Check Rules defect, PR #269 hardened release-log helper analysis, and PR #271 improved app-owned key-buffer cleanup. That is not end-to-end assurance.
-S02-I3 still needs live Firebase revoked-token integration verification; S02-I2 needs authorized
-Render/Worker Durable Object pairing read-back; SC-12 branch protection still needs authorized
+S02-I3 still needs live Firebase revoked-token integration verification; S02-I2 now has production
+fail-closed code in PR #288 (missing/unreachable shared Durable Object returns 503 rather than
+using process-local counters) but still needs exact-head CI/Security and authorized Render/Worker
+Durable Object secret-pairing read-back; SC-12 branch protection still needs authorized
 verification; credentials must be rotated; App Check service enforcement and coordinated production
 release need live evidence. Main post-merge CI run 42445582763 has passed on the exact main SHA.
 
@@ -155,7 +157,7 @@ The tracker remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**.
 - Tracker rows are reconciled to 116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted. S06-H4 and S06-H5 were restored from the Session 06 audit: H4 is Fixed on current source; H5 remains Partial because Settings-based candidate probing is still distinguishable.
 - PRs #253, #254 and #258 are not merged. #253/#254 require rebase/merge-conflict resolution against current main and fresh checks. #258 requires correction of a Gitleaks fixture false positive and a flaky Firestore invite-expiry integration fixture.
 - S05-H2 still needs invite-only product-contract confirmation, authorized staging lifecycle/onboarding, and review/execution of the legacy UID migration dry-run/approved apply/follow-up dry-run.
-- S10-N2 remains Partial for syntax-only data-flow limitations and feature-complete physical release-logcat acceptance. S10-N3 requires isolated live Worker/R2/B2 cron acceptance; S02-I2 requires Render/Worker secret-pair read-back; S02-I3 requires Firebase revoked-token staging verification; S05-M3/S06-L4 require their staging/configuration matrices; S10-N1 requires controlled App Check rollout; SC-12 remains Open pending required reviews/checks/tags/release-environment read-back.
+- S10-N2 remains Partial for syntax-only data-flow limitations and feature-complete physical release-logcat acceptance. S10-N3 requires isolated live Worker/R2/B2 cron acceptance; S02-I2 PR #288 changes production behavior to fail closed and still requires exact-head CI/Security plus Render/Worker secret-pair read-back; S02-I3 requires Firebase revoked-token staging verification; S05-M3/S06-L4 require their staging/configuration matrices; S10-N1 requires controlled App Check rollout; SC-12 remains Open pending required reviews/checks/tags/release-environment read-back.
 - No production deployment, credential rotation, Firestore rules/TTL change, provider-console mutation, historical UID migration or physical-device testing was performed as part of this documentation update.
 
 All sign-off criteria remain unchecked until the described evidence exists or the owner formally approves a residual-risk disposition. Keep **PENDING**.
@@ -165,3 +167,19 @@ All sign-off criteria remain unchecked until the described evidence exists or th
 ## Current repository verification snapshot — 2026-11-08
 
 Current main is `b596e965d4be54b4ea8079b4036012e68188f865` after PRs #275–#277. All three exact-head CI workflows passed 10/10 jobs and Security workflows passed 3/3: #275 CI [42453798811](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798811) / Security [42453798810](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453798810); #276 CI [42453996138](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) / Security [42453996152](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152); #277 CI [42454608770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) / Security [42454608761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761). GitHub returned zero open PRs and zero open issues at this snapshot. The active default-branch ruleset still enforces no required reviews or status checks (SC-12); the 116-finding tracker remains 86 Fixed, 17 Partial, 1 Open, 12 Accepted. **This evidence does not change the sign-off decision: keep PENDING.** See `BUG_TRACKER.md` and `INDEPENDENT_REVERIFICATION_2026-11-08.md`.
+
+## Evidence addendum — 2026-11-09 (PR #288 S02-I2)
+
+PR #288 adds a strict production mode to the authenticated per-user/endpoint limiter. When
+NODE_ENV is not explicitly development or test, a missing or unavailable Durable Object
+does not fall back to per-process counters. The server returns HTTP 503 with Retry-After: 30
+for the 12 protected authenticated routes, while preserving HTTP 429 for a true limit breach.
+Unit tests cover missing configuration and Worker failure; the route-wiring test requires
+unavailable-state handling before quota-denial handling.
+
+The PR also updates the canonical tracker, server setup documentation, START_HERE, next-work
+report, independent re-verification, agent handoff, session index and new session record.
+Exact-head CI/Security results are pending at this addendum's preparation time. S02-I2 remains
+Partial until those checks pass and an authorized operator reads back the Render/Worker secret
+pairing and confirms the production Durable Object path. The remediation program remains
+PENDING; this code change is not a production deployment or sign-off.
