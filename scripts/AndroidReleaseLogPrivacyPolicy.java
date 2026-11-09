@@ -4,6 +4,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.ParenthesizedTree;
@@ -52,11 +53,12 @@ import javax.lang.model.element.Modifier;
  * sensitive getters unless the value is passed through LogRedact.
  *
  * This includes a conservative method-local alias pass plus bounded summaries for
- * uniquely resolvable app-owned helper returns, same-class and typed cross-class field writes/reads, and conservative known-override handling.
- * It is still syntax-only, not symbol-resolved whole-program analysis: ambiguous
- * overloads, unresolved virtual dispatch, reflection and third-party internals are
- * not guessed. Keep the finding Partial until residual source review and runtime
- * logcat are separately reviewed and accepted.
+ * uniquely resolvable app-owned helper returns, same-class and typed cross-class field writes/reads,
+ * conservative known-override handling, recognized reflection boundaries, lambda callbacks and
+ * same-owner method-reference callback targets. It is still syntax-only, not symbol-resolved
+ * whole-program analysis: external/library dispatch, other method-reference receiver/target
+ * shapes, unrecognized reflection APIs and third-party internals are not guessed. Keep the finding
+ * Partial until residual source review and runtime logcat are separately reviewed and accepted.
  */
 public final class AndroidReleaseLogPrivacyPolicy {
     private static final Pattern SENSITIVE_IDENTIFIER = Pattern.compile(
@@ -327,14 +329,15 @@ public final class AndroidReleaseLogPrivacyPolicy {
                   + "class GenericBox<T> { T getValue() { return null; } }\n"
                   + "class GenericReceiverFlow { void log(GenericBox<String> box) { String genericMemo = box.getValue().toString(); Log.w(\"TAG\", genericMemo); } }\n"
                   + "class ReflectionFlow { void log(String className, Object target) throws Exception { Class<?> dynamicType = Class.forName(className); java.lang.reflect.Method getter = dynamicType.getMethod(\"getName\"); Object reflected = getter.invoke(target); Log.w(\"TAG\", reflected); } }\n"
-                  + "class CallbackApi { void register(java.util.function.Consumer<Object> callback) { } }\n"
-                  + "class CallbackFlow { void register(CallbackApi api) { api.register(value -> Log.w(\"TAG\", value.toString())); } }\n", StandardCharsets.UTF_8);
+                  + "class CallbackApi { void register(java.util.function.Consumer<String> callback) { } }\n"
+                  + "class CallbackFlow { void register(CallbackApi api) { api.register(value -> Log.w(\"TAG\", value.toString())); } }\n"
+                  + "class CallbackMethodReferenceFlow { void callbackLog(String callbackPayload) { Log.w(\"TAG\", callbackPayload); } void register(CallbackApi api) { api.register(this::callbackLog); } }\n", StandardCharsets.UTF_8);
 
             ScanResult interproceduralResult = scan(interprocedural);
-            if (interproceduralResult.inspectedCalls != 23
-                    || interproceduralResult.violations.size() != 20) {
+            if (interproceduralResult.inspectedCalls != 24
+                    || interproceduralResult.violations.size() != 21) {
                 throw new IllegalStateException("Interprocedural taint fixture mismatch: expected "
-                        + "20 unsafe helper flows and 3 safe helper flows, got "
+                        + "21 unsafe helper flows and 3 safe helper flows, got "
                         + interproceduralResult.violations.size() + " violations:\\n"
                         + join(interproceduralResult.violations));
             }
@@ -365,6 +368,8 @@ public final class AndroidReleaseLogPrivacyPolicy {
                     "method-local sensitive alias/container reaches Log.w message [reflected]");
             requireViolation(interproceduralResult.violations,
                     "method-local sensitive alias/container reaches Log.w message [value]");
+            requireViolation(interproceduralResult.violations,
+                    "method-local sensitive alias/container reaches Log.w message [callbackPayload]");
             requireViolation(interproceduralResult.violations, "field:diagnostic");
             System.out.println("PASS: AST policy self-tests (redacted messages accepted; "
                     + "Throwable overloads, stack traces, aliases, device fingerprint fields and sensitive getters rejected).");
@@ -516,6 +521,27 @@ public final class AndroidReleaseLogPrivacyPolicy {
                                     info.ambiguousMethods.add(entry.getKey());
                                 }
                             }
+                            // Method references can register an app-owned method as a callback
+                            // whose arguments arrive later from a framework or SDK. Mark only
+                            // unambiguous same-owner forms (this::method, Owner::method and
+                            // Owner.this::method); the target method's parameters are tainted
+                            // by the method-local pass below.
+                            new TreeScanner<Void, Void>() {
+                                @Override
+                                public Void visitMemberReference(MemberReferenceTree reference, Void ignored) {
+                                    String qualifier = reference.getQualifierExpression().toString();
+                                    if ("this".equals(qualifier) || owner.equals(qualifier)
+                                            || (owner + ".this").equals(qualifier)) {
+                                        info.methodReferenceTargets.add(reference.getName().toString());
+                                    }
+                                    return super.visitMemberReference(reference, ignored);
+                                }
+
+                                @Override
+                                public Void visitClass(ClassTree nested, Void ignored) {
+                                    return null;
+                                }
+                            }.scan(node, null);
                             for (String field : info.fieldNames) {
                                 if (SENSITIVE_IDENTIFIER.matcher(field).matches()
                                         && !SAFE_OPERATIONAL_COUNTERS.contains(field)) {
@@ -643,6 +669,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
             List<MethodDefinition> result = new ArrayList<>();
             for (ClassSummary info : classes.values()) result.addAll(info.methods.values());
             return result;
+        }
+
+        boolean isMethodReferenceCallback(String owner, String methodName) {
+            ClassSummary info = classes.get(owner);
+            return info != null && info.methodReferenceTargets.contains(methodName);
         }
 
         MethodSummary resolve(String callerOwner, MethodInvocationTree invocation,
@@ -1002,6 +1033,7 @@ public final class AndroidReleaseLogPrivacyPolicy {
             final Map<String, String> fieldTypes = new HashMap<>();
             final Set<String> sensitiveFields = new HashSet<>();
             final Set<String> ambiguousMethods = new HashSet<>();
+            final Set<String> methodReferenceTargets = new HashSet<>();
             final Map<String, MethodDefinition> methods = new HashMap<>();
 
             ClassSummary(String owner) {
@@ -1410,7 +1442,11 @@ public final class AndroidReleaseLogPrivacyPolicy {
         @Override
         public Void visitMethod(MethodTree node, Void unused) {
             // A fresh pass is created for each method. Do not cross method or
-            // nested-type boundaries with a name-only environment.
+            // nested-type boundaries with a name-only environment. If this
+            // app-owned method is registered through a same-owner method reference,
+            // its parameters are callback-supplied opaque data just like lambda args.
+            boolean callbackTarget = returnSummaries.isMethodReferenceCallback(
+                    ownerClass, node.getName().toString());
             for (VariableTree parameter : node.getParameters()) {
                 String name = parameter.getName().toString();
                 String type = parameter.getType() == null ? "" : parameter.getType().toString();
@@ -1418,6 +1454,12 @@ public final class AndroidReleaseLogPrivacyPolicy {
                 if (CONTAINER_TYPE.matcher(type).matches()) containerLocals.add(name);
                 if (SENSITIVE_IDENTIFIER.matcher(name).matches()
                         && !SAFE_OPERATIONAL_COUNTERS.contains(name)) taintedLocals.add(name);
+                boolean safeMediaErrorCode = "VoiceMessagePlayer".equals(ownerClass)
+                        && ("what".equals(name) || "extra".equals(name));
+                if (callbackTarget && !safeMediaErrorCode) {
+                    taintedLocals.add(name);
+                    callbackParameterLocals.add(name);
+                }
                 if (isThrowableType(type)) {
                     throwableLocals.add(name);
                     taintedLocals.add(name);
