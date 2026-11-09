@@ -77,9 +77,10 @@ public class ForcedPrimaryPinRotationActivity extends AppCompatActivity {
             // Off the main thread — see SetupPinActivity for why: setPin() runs
             // 310,000 PBKDF2 iterations, plus the clash check below runs another.
             bgExecutor.execute(() -> {
-                // Same clash guard as SetupPinActivity and
+                // Same primary-PIN candidate guard as SetupPinActivity and
                 // SecurityPrivacySettingsActivity.doSavePin(): reject a new primary
-                // PIN that equals or is a prefix of whatever slot B currently holds.
+                // PIN that collides with the preserved secondary code, after consuming
+                // the shared account-scoped attempt budget.
                 // Slot B at this point is whatever survived the wipe/restore (the
                 // real armed code, since duress logout deliberately keeps it so a
                 // restore of the same account stays gated) — screen 2 replaces it
