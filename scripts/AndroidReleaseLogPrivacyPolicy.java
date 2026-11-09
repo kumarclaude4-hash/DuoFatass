@@ -1461,7 +1461,6 @@ public final class AndroidReleaseLogPrivacyPolicy {
                         && ("what".equals(name) || "extra".equals(name));
                 if (callbackTarget && !safeMediaErrorCode) {
                     taintedLocals.add(name);
-                    callbackParameterLocals.add(name);
                 }
                 if (isThrowableType(type)) {
                     throwableLocals.add(name);
