@@ -2,13 +2,13 @@
 
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Branch:** `main`  
-**Verified HEAD:** `0f5ffe15518db29b4c5895dc42ca600647201f99` (merge commit for PR #278)  
-**Tree:** `57b7115285b5f2b355c4e5edce84949febcd58e4`  
+**Repository checkpoint:** `3d47d39faac649e9d5197327a7db5cc145c2c1de` (PR #279 merge)  
+**Audited application-code HEAD/tree:** `b596e965d4be54b4ea8079b4036012e68188f865` / `d478ce4989230c3c1eb3f29c62dd019fe0054c3d` (PRs #278/#279 are documentation-only)  
 **Canonical register:** [`BUG_TRACKER.md`](../BUG_TRACKER.md)
 
 ## 1. Repository and PR reconciliation
 
-At the time of this review, GitHub returned **zero open pull requests and zero open issues** for this repository. The current mainline includes the following latest PR chain:
+After PR #279 merged, GitHub returned **zero open pull requests and zero open issues** for this repository. The audited application-code snapshot is unchanged from the post-PR #277 baseline because PRs #278 and #279 only modify documentation. The latest documentation PR chain is:
 
 | PR | Change | Merge commit | Exact-head CI | Security |
 |---|---|---|---|---|
@@ -16,8 +16,9 @@ At the time of this review, GitHub returned **zero open pull requests and zero o
 | [#276](https://github.com/kumarclaude4-hash/DuoFatass/pull/276) | Fail closed on known app-owned virtual return overrides | `79aacea3a05131f7c5afcc6c64eef182322eda3f` | [42453996138 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996138) | [42453996152 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42453996152) |
 | [#277](https://github.com/kumarclaude4-hash/DuoFatass/pull/277) | Fail closed on ambiguous helper overloads | `b596e965d4be54b4ea8079b4036012e68188f865` | [42454608770 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608770) | [42454608761 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42454608761) |
 | [#278](https://github.com/kumarclaude4-hash/DuoFatass/pull/278) | Independent tracker/handoff reconciliation | `0f5ffe15518db29b4c5895dc42ca600647201f99` | [42457565977 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) | [42457565979 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) |
+| [#279](https://github.com/kumarclaude4-hash/DuoFatass/pull/279) | Final tracker baseline alignment (documentation-only) | `3d47d39faac649e9d5197327a7db5cc145c2c1de` | [42510855878 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855878) | [42510855851 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42510855851) |
 
-For each listed CI workflow, all ten jobs completed successfully: Server + Worker tests, vendored libsignal verification, Android release-log AST, Gradle wrapper validation, lint, Android unit tests, debug APK, Espresso, API 35 predictive-back, and minified R8 release build. Each Security workflow completed all three jobs: Gitleaks, CodeQL and SBOM.
+For each listed PR-head CI workflow, all ten configured jobs completed successfully: Server + Worker tests, vendored libsignal verification, Android release-log AST, Gradle wrapper validation, lint, Android unit tests, debug APK, Espresso, API 35 predictive-back, and minified R8 release build. Each Security workflow completed all three jobs: Gitleaks, CodeQL and SBOM.
 
 Earlier same-day verification relevant to tracker corrections:
 - PR #263 S06-H4 wiring regression: [CI 42439202158 — 10/10](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439202158), [Security 42439202156 — 3/3](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42439202156).
@@ -25,7 +26,7 @@ Earlier same-day verification relevant to tracker corrections:
 
 **Historical disposition:** some older PRs were intentionally closed unmerged because they were duplicates or superseded (including #266, per the owner's instruction, and #273 as a duplicate of #272; #262's implementation was carried by #265). “Zero open PRs” does not mean every historical PR was merged; it means no outstanding PR remains to be reviewed or merged.
 
-PR #278's exact-head CI and Security workflows both completed successfully (10/10 and 3/3). Its Vercel preview status was rate-limited (`build-rate-limit`); this is an external preview quota, not a failing test. No claim is made that Vercel deployed a preview.
+PR #278's exact-head CI and Security workflows completed successfully (10/10 and 3/3). PR #279's exact-head CI and Security workflows also completed successfully (10/10 and 3/3); its post-merge Vercel status was successful. No separate post-merge GitHub Actions run was returned for PR #279's merge SHA.
 
 ## 2. Current finding inventory
 
@@ -99,4 +100,4 @@ This pass independently reconciled the live PR/issue inventory, current main SHA
 
 This is **not** a claim that all 116 original exploit scenarios were re-executed end-to-end in production or that every historical source line and provider setting was re-audited during this one pass. For findings not listed in section 3, the canonical tracker retains its previously recorded source/test evidence and residuals; a future finding-specific pass should re-run its dedicated evidence before promoting or changing disposition. No production secrets were retrieved, no live production configuration was changed, no physical-device test was performed, and no production sign-off is claimed.
 
-**Bottom line:** PR #278 is now merged; the live PR inventory was rechecked after merge and returned zero open PRs and zero open issues. PR #275–#278 exact-head CI/Security checks are green (10/10 and 3/3 per workflow). The Vercel preview was rate-limited. The refreshed register remains 116 unique findings (86/17/1/12), with the #275–#278 evidence tied to current main. Historical closed-unmerged duplicates/superseded PRs remain explicitly identified rather than mislabeled as merged.
+**Bottom line:** PR #279 is merged; the live PR inventory was rechecked after merge and returned zero open PRs and zero open issues. PRs #275–#279 exact-head CI/Security checks are green (10/10 and 3/3 per workflow). The audited source baseline remains b596e965 because #278/#279 were documentation-only. The register remains 116 unique findings (86/17/1/12). Historical closed-unmerged duplicates/superseded PRs are identified rather than mislabeled as merged.
