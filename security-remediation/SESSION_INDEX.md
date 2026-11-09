@@ -96,3 +96,16 @@ registered app-owned method. A synthetic AST regression requires a non-sensitive
 to be rejected at `Log.w` after `CallbackApi.register(this::callbackLog)`. Exact-head checks are
 pending; keep S10-N2 Partial for unmodeled external callback/dispatch and whole-program residuals,
 plus deferred feature-complete physical release-logcat acceptance.
+
+
+## S06-H5 follow-up — 2026-11-09 (PR #290 all primary-PIN collision paths)
+
+`sessions/SESSION-S06-H5-ALL-PRIMARY-PIN-COLLISION-PATHS-2026-11-09.md` records the additional
+candidate-probing paths found during source review. `SetupPinActivity` (including restored setup)
+and `ForcedPrimaryPinRotationActivity` both compared a proposed primary PIN against the preserved
+secondary-code hash without using the shared candidate budget. PR #290 applies the account-scoped
+three-attempt/15-minute throttle before those checks, regardless of whether slot B is armed, and
+uses the same generic failure for collision/cooldown/storage/auth errors. Two new
+`SecurityFindingWiringTest` regressions cover ordering and response uniformity. Exact-head
+CI/Security pending; S06-H5 remains Partial pending those checks and independent residual/device
+acceptance.
