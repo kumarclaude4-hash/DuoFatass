@@ -1,5 +1,17 @@
 # Independent Security Tracker Re-verification — 2026-11-08
 
+## 2026-11-09 addendum — S10-N2 PR #284
+
+**Latest source-changing merge:** PR #284 exact head `23eb17ac71ef6832195d77d6765106ca3bda143c`, merged as `30329d7b56ec0b26fd9b40495cdbb3d3bd999cae`; application-code tree `03e780af884f4d123b06ffc68484970066597fba`. PR #285 is a documentation-only tracker/handoff closeout and does not change this source tree.
+
+PR #284 extends `scripts/AndroidReleaseLogPrivacyPolicy.java` with bounded, fail-closed lookup of inherited app-owned methods and fields; inherited sensitive-field recognition; explicit `super` method resolution; qualified enclosing-instance resolution (`Outer.this`); and preservation of ambiguity for duplicate simple-name receiver types. Regressions cover inherited sensitive helper returns, inherited field types with setter/read flows, inherited direct-field writes, explicit superclass dispatch, duplicate simple-name ambiguity and qualified enclosing receiver dispatch.
+
+**Exact-head verification:** CI [42567271589](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42567271589) passed 10/10; Security [42567271633](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42567271633) passed 3/3. The AST self-test passed and the complete app-source scan inspected 205 Java files / 414 `Log.w/e/wtf` calls with zero violations. Espresso executed 4 tests; API 35 predictive-back executed 1 test; both passed. Debug APK and minified R8 builds passed. Server/Worker tests, unit tests, lint, Gradle-wrapper and vendored-libsignal integrity checks, Gitleaks, CodeQL and SBOM also passed.
+
+**Disposition remains Partial.** The analyzer is bounded syntax/AST analysis, not symbol-resolved whole-program proof. External/library subclass dispatch, arbitrary alias/receiver shapes beyond modeled syntax, reflection, dynamic class loading, native implementations, third-party callback internals, arbitrary generic/container semantics and full symbol/generic type resolution remain residual limitations. Physical release/minified APK logcat acceptance remains deferred until the owner declares the app feature-complete. No production deployment or production security sign-off is claimed; `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
+
+---
+
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Branch:** `main`  
 **Latest audited application-code HEAD/tree:** `665146f8195409274b29b563333de25c591f10a9` / `c33b13b178fb92582834ade431cbe3d666bcb1f0` (PR #281 is the latest source-changing merge)  
