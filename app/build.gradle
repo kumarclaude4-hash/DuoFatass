@@ -459,6 +459,9 @@ dependencies {
     // plain fast JUnit against the stubs.
     testImplementation 'org.robolectric:robolectric:4.14.1'
 
+    // Build and execute the real Worker#doWork() path with deterministic input and attempt counts.
+    testImplementation 'androidx.work:work-testing:2.9.0'
+
     // Instrumented (on-device) tests — Espresso + AndroidX Test.
     // Used for regression coverage that needs the real Android runtime (real
     // AndroidKeyStore / EncryptedSharedPreferences), which app/src/test's plain
