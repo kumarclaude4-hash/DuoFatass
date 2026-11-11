@@ -106,9 +106,11 @@ class FakeSharedPreferences implements SharedPreferences {
 
         @Override
         public boolean commit() {
-            if (!commitSucceeds) return false;
+            // Android SharedPreferences updates its in-memory map before the
+            // synchronous disk write completes; a failed commit can therefore
+            // return false while the current process already sees the new values.
             apply();
-            return true;
+            return commitSucceeds;
         }
 
         @Override
