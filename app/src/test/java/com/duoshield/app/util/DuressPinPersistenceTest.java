@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 
 /** Persistence-contract tests for the secondary-code slot write. */
 public class DuressPinPersistenceTest {
@@ -37,13 +38,13 @@ public class DuressPinPersistenceTest {
         boolean saved = DuressPinPersistence.persist(
                 preferences, SLOT, ARMED, LEGACY, "salt:hash");
 
-        assertFalse(saved);
-        assertFalse("a failed commit must not publish the new hash in the fake store",
-                preferences.contains(SLOT));
-        assertFalse("a failed commit must not publish the armed bit",
-                preferences.getBoolean(ARMED, false));
-        assertTrue("the old value must remain available for recovery",
-                preferences.contains(LEGACY));
+        assertFalse("a failed disk commit must never be reported as a durable save", saved);
+        // Android SharedPreferences mutates its in-memory map before writing the
+        // disk file. A false commit therefore cannot promise that the old values
+        // remain visible in this process; the production caller must keep its
+        // generic failure path and must not claim persistence.
+        assertEquals("the fake models Android's in-memory update semantics",
+                "salt:hash", preferences.getString(SLOT, null));
     }
 
     @Test
