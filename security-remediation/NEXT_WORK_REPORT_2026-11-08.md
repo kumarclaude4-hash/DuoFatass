@@ -1,8 +1,8 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-09 (PR #288 S02-I2, PR #289 S10-N2 and PR #290 S06-H5 merged)  
+**Updated:** 2026-11-11 (PR #292 S06-H4 durability and S06-L4 worker runtime tests merged).
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Latest audited application-code merge:** `9b1c1dd48fb584d728491e8bfeee5ef380e9b834` (PR #290 S06-H5 all primary-PIN collision paths). GitHub inventory after merge: zero open PRs and zero open issues.
+**Latest audited application-code merge:** `b73cab8049983969b1996245600a95ff227da175` (PR #292; durable secondary-code persistence and worker runtime regression coverage). GitHub inventory after merge: 0 open PRs and 0 open issues.
 
 ## Verified implementation PR #288 — S02-I2 production fail-closed rate limiting
 
@@ -36,9 +36,19 @@ Branch: `security/s06-h5-throttle-all-primary-pin-collision-paths-2026-11-09`; m
 - Added two `SecurityFindingWiringTest` regressions requiring throttle-before-check, guarded storage and generic failure/no collision-specific branch in both flows. Existing `PinChangeThrottleTest` continues to cover durable limits, reset windows, boot/clock behavior and account separation.
 - Updated in this same PR: BUG_TRACKER, START_HERE, this report, FINAL_SIGNOFF, independent re-verification, agent handoff, SESSION_INDEX and a new session record.
 - Exact-head verification before merge: CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3. The documentation-synchronized final head also passed CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) 3/3. The Android unit suite (including both wiring regressions), lint, debug APK, minified R8 (453,247-line mapping), Espresso (4 executed tests), API 35 predictive-back (1 executed test), Server + Worker tests, AST, CodeQL, Gitleaks, SBOM and integrity checks all passed. PR #290 merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Keep S06-H5 Partial pending independent residual side-channel review and feature-complete device acceptance.
+## Merged implementation PR #292 — S06-H4 durable secondary-code persistence and S06-L4 worker runtime tests
+
+PR #292 merged to `main` as `b73cab8049983969b1996245600a95ff227da175` from exact head `ab17f656f2ac352944f1f764af68280a249ced35`.
+
+- **S06-H4:** `DuressManager.setDuressPin()` now fails closed when SecurePrefs resolves to the ephemeral/in-memory tier. The slot-B hash, armed flag and legacy-key removal are committed synchronously in one preference transaction. The persistence helper reads back the hash and armed bit and confirms the legacy value is absent before success. App-owned salt and derived hash arrays are cleared in `finally`.
+- Added `DuressPinPersistenceTest` for successful commit/read-back, commit failure, incomplete read-back and invalid input; `SecurityFindingWiringTest` verifies the Activity call path and durable-tier/helper wiring.
+- **S06-L4:** WorkManager test harness support and a narrow HTTP/intent-acknowledger injection seam were added. Production defaults still use `HttpURLConnection` and compare-and-clear `PendingLockStore` operations. `AccountLockWorkerRuntimeTest` executes the actual `doWork()` path using deterministic fakes for 200/204 success, permanent 401, 503 retry, retry exhaustion, network exception and missing nonce. Assertions cover POST body/method, timeouts, disconnect, retry/failure result and intent-clear behavior.
+- Exact-head CI [42948877593](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877593) passed all jobs, including Android unit tests, lint, debug APK, Espresso (4 tests), API 35 predictive-back (1 test), minified R8/mapping verification, Server + Worker, AST, wrapper and vendored-libsignal integrity. Security [42948877583](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877583) passed CodeQL, Gitleaks and SBOM. Firestore Rules/server transactions [42948877424](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877424) passed.
+- **Disposition:** S06-H4 remains Fixed, now with the persistence/durability gap closed. S06-L4 remains Partial: fake-endpoint worker execution is not staging evidence for real network loss, lost-response/admin-unfreeze replay or production Firestore configuration. No production deployment, live secret read-back or physical-device acceptance was performed.
+
 ## Current verified mainline
 
-PR #290 is the latest source-changing merge (`9b1c1dd48fb584d728491e8bfeee5ef380e9b834`). Its exact-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) passed 3/3. The implementation-head checks [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) / [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) had also passed 10/10 and 3/3. The AST self-test/full production scan, Server + Worker, Android unit tests/lint, debug APK, minified R8, Espresso and API 35 predictive-back all passed. Earlier PR #286 CI/Security evidence remains recorded above.
+PR #292 is the latest source-changing merge (`b73cab8049983969b1996245600a95ff227da175`). Exact-head CI [42948877593](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877593), Security [42948877583](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877583) and Firestore Rules/server transactions [42948877424](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877424) all passed. CI includes unit tests, lint, debug APK, Espresso (4), API 35 predictive-back (1), minified R8/mapping, Server + Worker, AST and integrity checks. Earlier PR #286–#290 evidence remains recorded above.
 
 PR #267 was merged after its exact head `213442825113013a85650de9ac24edf0e9ec9211` passed all required pull-request workflows:
 
@@ -58,6 +68,8 @@ Post-merge workflows on the previous PR #267 baseline `8d0082d004993278645f3eb7a
 PR #269 exact-head CI [42446136767](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136767) and Security [42446136770](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42446136770) passed. The merge commit is `afdf2463c496f14a5c33ee5694fc47eff97d5e3d`. This report records exact PR-head checks; it does not claim separate post-merge main CI completion for the new commit.
 
 ## Recent merged work
+
+- PR #292 — S06-H4 synchronous/durably verified slot-B persistence and S06-L4 `AccountLockWorker#doWork()` runtime tests; merged as `b73cab8049983969b1996245600a95ff227da175`. CI [42948877593](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877593) passed; Security [42948877583](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877583) passed; Firestore Rules/server transactions [42948877424](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877424) passed. S06-L4 remains Partial for staging/device acceptance.
 
 - PR #261 — explicit active-state/future-expiry validation for invite redemption and audited invalid-state handling (S05-H2).
 - PR #264 — admin UI revoke action for invalid invite rows (S05-H2).
