@@ -267,6 +267,42 @@ public class SeedPhraseHelperTest {
     }
 
     @Test
+    public void wipeBlocksNewIdentityDerivationUntilFreshAccountOrRestoreIsExplicitlyStarted()
+            throws Exception {
+        java.lang.reflect.Field blockedField =
+                SeedPhraseHelper.class.getDeclaredField("identityDerivationBlocked");
+        blockedField.setAccessible(true);
+        byte[] syntheticSeed = new byte[64];
+
+        try {
+            SeedPhraseHelper.allowIdentityDerivationForFreshAccountOrRestore();
+            assertFalse("fresh test setup starts with derivation enabled",
+                    blockedField.getBoolean(null));
+
+            SeedPhraseHelper.blockIdentityDerivationAndClearCache();
+            assertTrue("wipe must close the derivation gate",
+                    blockedField.getBoolean(null));
+
+            try {
+                SeedPhraseHelper.deriveIdentityKeyPair(syntheticSeed);
+                fail("post-wipe identity derivation must be rejected before native key creation");
+            } catch (IllegalStateException expected) {
+                assertTrue(expected.getMessage().contains("blocked after local wipe"));
+            }
+
+            assertTrue("rejected derivation must not silently reopen the gate",
+                    blockedField.getBoolean(null));
+
+            SeedPhraseHelper.allowIdentityDerivationForFreshAccountOrRestore();
+            assertFalse("only the explicit setup/restore entry point reopens derivation",
+                    blockedField.getBoolean(null));
+        } finally {
+            SeedPhraseHelper.allowIdentityDerivationForFreshAccountOrRestore();
+            Arrays.fill(syntheticSeed, (byte) 0);
+        }
+    }
+
+    @Test
     public void identityDerivationAndCacheClearShareTheClassMonitor() throws Exception {
         java.lang.reflect.Method derive = SeedPhraseHelper.class.getDeclaredMethod(
                 "deriveIdentityKeyPair", byte[].class);
