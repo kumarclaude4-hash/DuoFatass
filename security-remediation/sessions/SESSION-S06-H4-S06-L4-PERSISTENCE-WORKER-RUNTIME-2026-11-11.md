@@ -48,3 +48,15 @@ A targeted source-and-test re-verification covered S10-N2, S07-L2, S06-H5, S06-H
 - **S05-M3 / S05-H2:** Partial pending staging/production and owner/product acceptance; existing Firestore emulator lifecycle coverage is retained.
 
 No live secrets, real identity material, staging data migration, production service or physical-device test was used. `FINAL_SIGNOFF.md` remains **PENDING**.
+
+
+## Follow-up PR #295 — failed SharedPreferences commit semantics
+
+PR #295 merged as `93bd3b4a2f17007ddc7d0159c72bdbd0da7868a1` (exact head `a069832db3bd57ef97a895ba3a3faaef7182e0bf`). This test-only follow-up corrects the earlier fake's false rollback assumption:
+
+- `FakeSharedPreferences.commit()` now applies the editor update to its in-memory map, then returns the configurable disk-write result.
+- The failed-commit test asserts that `DuressPinPersistence.persist()` returns false and therefore cannot be surfaced as durable success.
+- It explicitly allows the current process to observe the updated in-memory preference map after a false disk commit, matching Android SharedPreferences semantics; it does not promise rollback.
+- Production code, runtime behavior, dependencies and deployment configuration were not changed by PR #295.
+
+Exact-head CI [42955598180](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42955598180) passed all 10 jobs; Security [42955598156](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42955598156) passed all 3 jobs. S06-H4 remains Fixed for the source persistence contract and automated tests; physical Keystore/device acceptance remains deferred. S06-L4 remains Partial for staging and physical-device recovery acceptance.
