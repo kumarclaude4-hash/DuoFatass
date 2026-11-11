@@ -94,6 +94,16 @@ public class SecurityFindingWiringTest {
         int successMessageAt = source.indexOf("Toast.makeText(this, \"Code saved.\"", failureReturnAt);
         int finishAt = source.indexOf("finish();", successMessageAt);
 
+        String manager = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        assertTrue("secondary-code arming must reject an in-memory-only SecurePrefs tier",
+                manager.contains("if (!SecurePrefs.getTier().isDurable()) return false;"));
+        assertTrue("secondary-code arming must use the synchronous read-back persistence helper",
+                manager.contains("DuressPinPersistence.persist("));
+        assertTrue("the PBKDF2 salt and hash copies must be cleared after persistence",
+                manager.contains("Arrays.fill(salt, (byte) 0)")
+                        && manager.contains("Arrays.fill(hash, (byte) 0)"));
+
         assertTrue("the secure write result must be captured", saveAt >= 0);
         assertTrue("failed writes must take the explicit failure branch", failureAt > saveAt);
         assertTrue("the failure branch must show its generic retry message",

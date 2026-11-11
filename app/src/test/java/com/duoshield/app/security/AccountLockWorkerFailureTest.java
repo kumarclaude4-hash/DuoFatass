@@ -49,16 +49,22 @@ public class AccountLockWorkerFailureTest {
                 "return retryOrGiveUp");
         assertTrue(permanent.contains("return Result.failure()"));
         assertFalse("a rejected nonce must not clear the pending lock intent",
-                permanent.contains("PendingLockStore.clearLockIntent"));
-        assertTrue("a rejected nonce must invalidate the cached warm credential",
-                permanent.contains("PendingLockStore.clearWarmToken"));
+                permanent.contains("acknowledger.clearIntentIfTokenMatches"));
+        assertTrue("a rejected nonce must invalidate only its cached warm credential",
+                permanent.contains("acknowledger.clearWarmTokenIfMatches"));
 
         String confirmed = section(source,
                 "if (disposition == AccountLockHttpPolicy.Disposition.LOCK_CONFIRMED)",
                 "if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE)");
-        assertTrue(confirmed.contains("PendingLockStore.clearLockIntentIfTokenMatches(getApplicationContext(), nonce)"));
-        assertTrue(confirmed.contains("PendingLockStore.clearWarmTokenIfMatches(getApplicationContext(), nonce)"));
+        assertTrue(confirmed.contains("acknowledger.clearIntentIfTokenMatches(getApplicationContext(), nonce)"));
+        assertTrue(confirmed.contains("acknowledger.clearWarmTokenIfMatches(getApplicationContext(), nonce)"));
         assertTrue(confirmed.contains("return Result.success()"));
+
+        String productionAcknowledger = section(source,
+                "private static final LockIntentAcknowledger DEFAULT_ACKNOWLEDGER",
+                "private final ConnectionOpener");
+        assertTrue(productionAcknowledger.contains("PendingLockStore.clearLockIntentIfTokenMatches"));
+        assertTrue(productionAcknowledger.contains("PendingLockStore.clearWarmTokenIfMatches"));
 
         assertTrue(source.contains("Missing nonce — account lock NOT confirmed"));
         assertTrue(source.contains("PUSH_SERVER_URL not configured — account lock NOT confirmed"));

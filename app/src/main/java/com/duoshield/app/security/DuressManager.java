@@ -11,6 +11,7 @@ import com.duoshield.app.backup.BackupScheduler;
 import com.duoshield.app.crypto.signal.SignalKeyManager;
 import com.duoshield.app.util.PinManager;
 import com.duoshield.app.util.SecurePrefs;
+import com.duoshield.app.util.DuressPinPersistence;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -24,6 +25,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.security.spec.KeySpec;
 import javax.crypto.SecretKeyFactory;
@@ -196,20 +198,27 @@ public class DuressManager {
                 || pin.length() > com.duoshield.app.util.PinManager.MAX_PIN_LEN) {
             return false;
         }
+
+        byte[] salt = new byte[16];
+        byte[] hash = null;
         try {
-            byte[] salt = new byte[16];
+            SharedPreferences preferences = SecurePrefs.get(context);
+            // An in-memory fallback can accept commit() but cannot survive process death.
+            // Never report a secondary code as armed unless the resolved store is durable.
+            if (!SecurePrefs.getTier().isDurable()) return false;
+
             new SecureRandom().nextBytes(salt);
-            byte[] hash   = pbkdf2(pin, salt);
+            hash = pbkdf2(pin, salt);
             String stored = bytesToHex(salt) + ":" + bytesToHex(hash);
-            SecurePrefs.get(context).edit()
-                    .putString(slotKey, stored)
-                    .putBoolean(armKey, true)
-                    .remove(KEY_DURESS_LEGACY)
-                    .apply();
-            return true;
+            return DuressPinPersistence.persist(
+                    preferences, slotKey, armKey, KEY_DURESS_LEGACY, stored);
         } catch (Exception e) {
-            android.util.Log.e("DuressManager", "Failed to store secondary code" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            android.util.Log.e("DuressManager", "Failed to store secondary code"
+                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
+        } finally {
+            Arrays.fill(salt, (byte) 0);
+            if (hash != null) Arrays.fill(hash, (byte) 0);
         }
     }
 

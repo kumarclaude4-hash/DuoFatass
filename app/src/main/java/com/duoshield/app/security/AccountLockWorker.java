@@ -15,11 +15,13 @@ import com.duoshield.app.BuildConfig;
 
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -76,8 +78,43 @@ public class AccountLockWorker extends Worker {
      */
     private static final int MAX_ATTEMPTS = 7;
 
+    interface ConnectionOpener {
+        HttpURLConnection open(URL url) throws IOException;
+    }
+
+    interface LockIntentAcknowledger {
+        void clearIntentIfTokenMatches(Context context, String nonce);
+        void clearWarmTokenIfMatches(Context context, String nonce);
+    }
+
+    private static final LockIntentAcknowledger DEFAULT_ACKNOWLEDGER =
+            new LockIntentAcknowledger() {
+                @Override
+                public void clearIntentIfTokenMatches(Context context, String nonce) {
+                    PendingLockStore.clearLockIntentIfTokenMatches(context, nonce);
+                }
+
+                @Override
+                public void clearWarmTokenIfMatches(Context context, String nonce) {
+                    PendingLockStore.clearWarmTokenIfMatches(context, nonce);
+                }
+            };
+
+    private final ConnectionOpener connectionOpener;
+    private final LockIntentAcknowledger acknowledger;
+
     public AccountLockWorker(@NonNull Context ctx, @NonNull WorkerParameters params) {
+        this(ctx, params, url -> (HttpURLConnection) url.openConnection(), DEFAULT_ACKNOWLEDGER);
+    }
+
+    AccountLockWorker(
+            @NonNull Context ctx,
+            @NonNull WorkerParameters params,
+            @NonNull ConnectionOpener connectionOpener,
+            @NonNull LockIntentAcknowledger acknowledger) {
         super(ctx, params);
+        this.connectionOpener = Objects.requireNonNull(connectionOpener, "connectionOpener");
+        this.acknowledger = Objects.requireNonNull(acknowledger, "acknowledger");
     }
 
     /**
@@ -128,7 +165,7 @@ public class AccountLockWorker extends Worker {
                     .toString()
                     .getBytes(StandardCharsets.UTF_8);
 
-            HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
+            HttpURLConnection conn = connectionOpener.open(new URL(endpoint));
             try {
                 conn.setRequestMethod("POST");
                 conn.setDoOutput(true);
@@ -143,8 +180,8 @@ public class AccountLockWorker extends Worker {
                 if (disposition == AccountLockHttpPolicy.Disposition.LOCK_CONFIRMED) {
                     Log.d(TAG, "Account lock confirmed by push server.");
                     // Clear the durable intent only after a confirmed 200/204.
-                    PendingLockStore.clearLockIntentIfTokenMatches(getApplicationContext(), nonce);
-                    PendingLockStore.clearWarmTokenIfMatches(getApplicationContext(), nonce);
+                    acknowledger.clearIntentIfTokenMatches(getApplicationContext(), nonce);
+                    acknowledger.clearWarmTokenIfMatches(getApplicationContext(), nonce);
                     return Result.success();
                 }
                 if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE) {
@@ -154,7 +191,7 @@ public class AccountLockWorker extends Worker {
                     // The credential is permanently rejected. Preserve the
                     // lock intent, but invalidate this warm copy so the next
                     // authenticated foreground session requests a fresh nonce.
-                    PendingLockStore.clearWarmTokenIfMatches(getApplicationContext(), nonce);
+                    acknowledger.clearWarmTokenIfMatches(getApplicationContext(), nonce);
                     Log.e(TAG, "Push server rejected lock request (HTTP " + code
                             + ") — account lock NOT confirmed; durable intent retained.");
                     return Result.failure();
