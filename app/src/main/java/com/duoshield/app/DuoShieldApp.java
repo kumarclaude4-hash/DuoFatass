@@ -210,13 +210,12 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
 
 
     /**
-     * Applies the app-wide screenshot policy to every Activity window.
+     * Clears FLAG_SECURE from every Activity window so screenshots remain
+     * available across the app under the current product policy.
      *
-     * <p>FLAG_SECURE is a window property, not an Application property. Applying
-     * it through Application.ActivityLifecycleCallbacks closes the inheritance
-     * gap for screens that do not extend BaseActivity, while the BaseActivity
-     * hook remains as defense in depth. The callback is registered once per
-     * process and is automatically scoped to this Application instance.
+     * <p>FLAG_SECURE is a window property, not an Application property.
+     * Application.ActivityLifecycleCallbacks applies the clear operation to
+     * every Activity, including screens outside the BaseActivity hierarchy.
      */
     private void installScreenshotAllowedLifecycle() {
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
