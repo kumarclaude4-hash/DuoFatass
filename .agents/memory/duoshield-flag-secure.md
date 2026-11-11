@@ -1,22 +1,26 @@
 ---
-name: DuoShield FLAG_SECURE — REMOVED
-description: FLAG_SECURE removed from all screens 2026-08-03; screenshots enabled everywhere
+name: DuoShield screenshot capture policy
+description: Screenshots are allowed on every app screen until app finalization; do not re-enable FLAG_SECURE without explicit product direction
 ---
 
-## Status — REMOVED (2026-08-03)
+## Current product policy — 2026-11-11
 
-`FLAG_SECURE` has been fully removed from every activity. Screenshots and screen recording are allowed on all screens with no exceptions.
+Screenshots must remain allowed on every DuoShield app screen until the app is finalized. This is a user-directed product decision, not a configurable setting.
 
-## What was changed
+## Implementation contract
 
-- `BaseActivity.onCreate()` — now always calls `clearFlags(FLAG_SECURE)` (removed preference-based conditional)
-- `MainActivity.onCreate()` — same, always clears
-- `LockScreenActivity.onCreate()` — same, always clears
-- `RestoreFromSeedActivity.onCreate()` — hardcoded `addFlags` removed
-- `SeedPhraseDisplayActivity.onCreate()` — hardcoded `addFlags` removed
-- `SetupPinActivity.onCreate()` — hardcoded `addFlags` removed
-- `SecurityPrivacySettingsActivity.applyScreenshotFlag()` — now always clears, never adds
+- BaseActivity.applyScreenshotSecurity(Activity) always calls clearFlags(FLAG_SECURE) and must never add that flag.
+- DuoShieldApp applies the capture-allowed policy from Application Activity lifecycle callbacks on both Activity creation and resume. This covers BaseActivity subclasses and direct AppCompatActivity screens.
+- The former app_screenshot_enabled preference is ignored, including stale values retained by existing installations.
+- The Security & Privacy screen displays a fixed “Screenshots allowed” status. Do not restore the toggle unless the product owner explicitly changes the policy.
+- New Activities are covered automatically by the Application lifecycle callback. Do not add per-screen FLAG_SECURE calls.
 
-**Why:** User explicitly requested screenshots enabled across full app with no exceptions.
+## Android platform consequence
 
-**How to apply:** Do NOT re-add FLAG_SECURE to any screen without an explicit user request. If a new Activity is added, no FLAG_SECURE action is needed — BaseActivity subclasses inherit the clearFlags() call automatically.
+Android's FLAG_SECURE suppresses screenshots, screen recording and recents-task thumbnails together. Clearing it to allow screenshots also allows screen recording and recents thumbnails. Do not claim that those other capture paths remain blocked.
+
+LockScreenCover is an opaque, touch-consuming transition overlay for the lock flow. It is not a screenshot-protection mechanism and must not be described as one.
+
+## Finding / QA handling
+
+S08-H2 remains Partial and intentionally deferred while the user-directed capture policy is in effect. Revisit capture-blocking only after the app is finalized and the owner explicitly chooses a new policy. Do not promote the finding to Fixed merely because CI passes; do not run physical-device acceptance before the app is declared feature-complete.

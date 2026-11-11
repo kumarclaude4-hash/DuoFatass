@@ -88,7 +88,7 @@ The earlier PR table is retained in prior handoffs only. At the 2026-11-08 curre
 | S05-H2 | Partial | Product contract; synthetic staging lifecycle/onboarding; authorized legacy UID cleanup dry-run/apply/read-back. Core invite lifecycle code and invalid-state fail-closed handling are merged in PRs #261/#264. |
 | S06-L4 | Partial | Staging retry/recovery race + Firestore config + deferred device matrix |
 | S07-L2 | Partial | Supported deterministic native-key destruction or approved residual |
-| S08-H2 | Partial | Screenshot/recording/recents device acceptance |
+| S08-H2 | Partial (capture-blocking deferred) | User-directed all-screen screenshot allowance until finalization; revisit capture blocking only after an explicit policy change |
 | S08-H5 | Partial | Real Keystore migration/recovery + support path |
 | S07-M1 | Partial | Same migration acceptance as S08-H5; keep both tracker rows |
 | S08-L3 | Partial | 4/5/6-digit keypad, debounce, backspace and duress device acceptance |
@@ -209,17 +209,20 @@ This does **not** deterministically destroy native key handles. Pinned libsignal
 
 **Next:** retain the app-owned cleanup; request/track an upstream-supported explicit destruction API or record an owner-approved residual-risk decision. Do not use reflection, unsafe native access or forced GC. Keep Partial; physical memory/remanence testing remains separate release QA.
 
-## 3.6 S08-H2 — Screenshot/screen-recording/recents protection
+## 3.6 S08-H2 — Screenshot/screen-recording/recents policy
 
-**Status:** Partial; lifecycle enforcement merged, device acceptance pending.  
-**Code:** `DuoShieldApp` ActivityLifecycleCallbacks, `BaseActivity`, `FLAG_SECURE`, `app_screenshot_enabled`.  
-**Test:** `ScreenshotProtectionLifecycleTest`; PR #236.
+**Status:** Partial; capture blocking is intentionally deferred by the user's 2026-11-11 product direction.  
+**Current policy:** Screenshots remain allowed on every app screen until the app is finalized.  
+**Code:** DuoShieldApp ActivityLifecycleCallbacks and BaseActivity.applyScreenshotSecurity(Activity); the old app_screenshot_enabled preference is ignored and its Settings toggle is removed.  
+**Test:** ScreenshotProtectionLifecycleTest now guards the allow-everywhere policy and Activity lifecycle coverage; current branch fix/screenshots-allowed-globally.
 
-Protection is applied in `onActivityCreated` before first frame and `onActivityResumed` after settings/external UI; BaseActivity remains defense in depth.
+The Application lifecycle callback clears FLAG_SECURE on every Activity creation and resume, covering BaseActivity subclasses and direct AppCompatActivity screens. No per-user switch can disable the policy. Existing persisted preference values do not change it.
 
-**After feature-complete:** test fresh install/default policy; explicit opt-in; screenshots, screen recording and recents thumbnails; setting toggles while backgrounded; direct AppCompat screens; lock/call screens; supported API/OEM matrix; no first-frame leakage.
+**Platform consequence:** Android FLAG_SECURE blocks screenshots, screen recording and recents thumbnails as a combined window-security control. Allowing screenshots therefore also leaves screen recording and recents thumbnails available. Do not state that those capture paths remain blocked. LockScreenCover only provides a temporary opaque lock-transition cover.
 
-**Acceptance:** device/OEM/API/build, steps, expected/actual and sanitized evidence. Keep Partial.
+**After feature-complete:** ask the product owner whether capture blocking should be introduced at all. If yes, design and test the new policy across fresh installs, upgrades, direct Activity screens, lock/call screens, recording, recents thumbnails and the supported API/OEM matrix. Do not re-enable FLAG_SECURE before an explicit decision.
+
+**Acceptance:** record the final product decision and, if capture blocking is selected, device/OEM/API/build, steps, expected/actual and sanitized evidence. Keep Partial while capture blocking is deferred.
 
 ## 3.7 S08-H5 + S07-M1 — Legacy plaintext migration/recovery
 
@@ -375,7 +378,7 @@ Do not begin until owner declares app feature-complete. Then perform one planned
 |---|---|
 | S11-H1 | Predictive-back edge gesture on LockScreenActivity and all no-skip gates |
 | S11-M1 | Active/minimized call, timeout, notification return, unlock resumes call |
-| S08-H2 | Fresh install/explicit opt-in; screenshots, recording, recents |
+| S08-H2 | After feature-complete, obtain an explicit decision whether to introduce capture blocking; until then all app screens allow screenshots, screen recording and recents capture |
 | S08-L3 | 4/5/6 digit PIN, debounce, backspace, interrupted entry, duress |
 | S08-L4 | No content flash, cover blocks touch, clears on PIN/duress/no-PIN/sign-out |
 | S08-H5 / S07-M1 | Real Keystore migration, process death, reboot, retry and recovery |

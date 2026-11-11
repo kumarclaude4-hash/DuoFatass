@@ -31,7 +31,7 @@ public class SecurityPrivacySettingsActivity extends BaseActivity {
     private static final String[] LOCK_LBL = {"Immediately", "30 seconds", "1 minute", "3 minutes", "5 minutes", "15 minutes", "30 minutes"};
 
     private SharedPreferences prefs;
-    private SwitchCompat      switchAppScreenshot, switchRelayOnlyCalls;
+    private SwitchCompat      switchRelayOnlyCalls;
     private LinearLayout      rowManageUnlockCodes;
     private LinearLayout      layoutPinInputs, layoutPinSet;
     private EditText          etNewPin, etConfirmPin;
@@ -53,7 +53,6 @@ public class SecurityPrivacySettingsActivity extends BaseActivity {
 
         prefs = getSharedPreferences("duoshield_prefs", MODE_PRIVATE);
 
-        switchAppScreenshot  = findViewById(R.id.switchAppScreenshot);
         switchRelayOnlyCalls = findViewById(R.id.switchRelayOnlyCalls);
         layoutPinInputs     = findViewById(R.id.layoutPinInputs);
         layoutPinSet        = findViewById(R.id.layoutPinSet);
@@ -71,13 +70,8 @@ public class SecurityPrivacySettingsActivity extends BaseActivity {
         Button btnChangePinMode = findViewById(R.id.btnChangePinMode);
 
         // ── Restore saved state ───────────────────────────────────────────────
-        // Screenshot default comes from BaseActivity.SCREENSHOTS_ALLOWED_BY_DEFAULT so the
-        // switch matches the enforced window flag. The default is false: FLAG_SECURE is
-        // applied on a fresh install unless the user explicitly opts in to screenshots.
-        // The preference is an intentional user choice and is applied across activities.
-        if (switchAppScreenshot != null)
-            switchAppScreenshot.setChecked(prefs.getBoolean("app_screenshot_enabled",
-                    com.duoshield.app.BaseActivity.SCREENSHOTS_ALLOWED_BY_DEFAULT));
+        // Screenshot capture is intentionally enabled app-wide until finalization;
+        // the former user toggle is no longer exposed or read.
         if (switchRelayOnlyCalls != null)
             switchRelayOnlyCalls.setChecked(prefs.getBoolean("relay_only_calls_enabled", false));
         updateAutoSignOutLabel();
@@ -97,9 +91,6 @@ public class SecurityPrivacySettingsActivity extends BaseActivity {
 
         // Shake to lock has no toggle: it is an implicit part of the duress /
         // secondary-code capability and is gated in BaseActivity, not here.
-
-        // Screenshot toggle — requires the app PIN to change (security gate).
-        if (switchAppScreenshot != null) attachScreenshotListener();
 
         // ── Relay-only calls (F8 fix) ────────────────────────────────────────
         // Forces WebRTC to use only TURN relay candidates so the call partner
@@ -286,54 +277,6 @@ public class SecurityPrivacySettingsActivity extends BaseActivity {
         Button cancel = findViewById(R.id.btnCancelPinForm);
         if (cancel != null) cancel.setVisibility(View.VISIBLE);
         if (etNewPin != null) etNewPin.requestFocus();
-    }
-
-    // ── Screenshot toggle helpers ─────────────────────────────────────────────
-
-    private boolean screenshotListenerGuard = false;
-
-    private void attachScreenshotListener() {
-        if (switchAppScreenshot == null) return;
-        switchAppScreenshot.setOnCheckedChangeListener((btn, checked) -> {
-            if (screenshotListenerGuard) return;
-
-            if (!PinManager.hasPinSet(this)) {
-                prefs.edit().putBoolean("app_screenshot_enabled", checked).apply();
-                applyScreenshotFlag(checked);
-                return;
-            }
-
-            screenshotListenerGuard = true;
-            switchAppScreenshot.setChecked(!checked);
-            screenshotListenerGuard = false;
-
-            final boolean desired = checked;
-            promptCurrentPin(
-                checked ? "Enable screenshots" : "Disable screenshots",
-                () -> {
-                    screenshotListenerGuard = true;
-                    switchAppScreenshot.setChecked(desired);
-                    screenshotListenerGuard = false;
-                    prefs.edit().putBoolean("app_screenshot_enabled", desired).apply();
-                    applyScreenshotFlag(desired);
-                });
-        });
-    }
-
-    /**
-     * S08-H2 fix: this previously ignored {@code allow} entirely and always cleared
-     * FLAG_SECURE, so toggling the switch off did nothing on this screen (and, before
-     * BaseActivity's matching fix, anywhere else either). Now applies the requested
-     * state to this activity's own window immediately, for instant feedback in this
-     * screen; BaseActivity.onCreate() re-reads the persisted preference and applies it
-     * app-wide on every other screen, including this one on its next recreation.
-     */
-    private void applyScreenshotFlag(boolean allow) {
-        if (allow) {
-            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
-        } else {
-            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
-        }
     }
 
     // ── Lock timeout ──────────────────────────────────────────────────────────
