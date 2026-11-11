@@ -103,6 +103,31 @@ public class CallSessionStructureTest {
         assertTrue(c.contains("AppLockManager.onActivityStopped(this)"));
     }
 
+    @Test public void callAndChatScreensNeverCountWhileAnOlderBackgroundTimestampIsPending() throws IOException {
+        String call = src("call/CallActivity.java");
+        String callStart = methodBody(call, "protected void onStart()");
+        int callPendingCheck = callStart.indexOf("AppLockManager.hasBackgroundTimestamp(this)");
+        int callCount = callStart.indexOf("AppLockManager.onActivityStarted()");
+        assertTrue("call must check the pending background timestamp before incrementing foreground count",
+                callPendingCheck >= 0 && callCount > callPendingCheck);
+        String callStop = methodBody(call, "protected void onStop()");
+        assertTrue("call decrements only when it previously incremented", callStop.contains("if (countsForLock)"));
+        assertTrue("call clears its local counted bit before decrementing",
+                callStop.indexOf("countsForLock = false") < callStop.indexOf("AppLockManager.onActivityStopped(this)"));
+
+        String chat = src("call/InCallChatActivity.java");
+        String chatStart = methodBody(chat, "protected void onStart()");
+        int chatPendingCheck = chatStart.indexOf("AppLockManager.hasBackgroundTimestamp(this)");
+        int chatCount = chatStart.indexOf("AppLockManager.onActivityStarted()");
+        assertTrue("in-call chat must preserve an older pending background timestamp",
+                chatPendingCheck >= 0 && chatCount > chatPendingCheck);
+        String chatStop = methodBody(chat, "protected void onStop()");
+        assertTrue("chat decrements only when it previously incremented", chatStop.contains("if (countsForLock)"));
+        assertTrue("chat clears its local counted bit before decrementing",
+                chatStop.indexOf("countsForLock = false") < chatStop.indexOf("AppLockManager.onActivityStopped(this)"));
+    }
+
+
     // ── return-to-call bar & PiP wiring ──────────────────────────────────────
 
     @Test public void baseActivity_showsAndDismissesTheBarWithTheScreen() throws IOException {
