@@ -191,7 +191,7 @@ public class AccountLockWorker extends Worker {
                     // The credential is permanently rejected. Preserve the
                     // lock intent, but invalidate this warm copy so the next
                     // authenticated foreground session requests a fresh nonce.
-                    PendingLockStore.clearWarmTokenIfMatches(getApplicationContext(), nonce);
+                    acknowledger.clearWarmTokenIfMatches(getApplicationContext(), nonce);
                     Log.e(TAG, "Push server rejected lock request (HTTP " + code
                             + ") — account lock NOT confirmed; durable intent retained.");
                     return Result.failure();
