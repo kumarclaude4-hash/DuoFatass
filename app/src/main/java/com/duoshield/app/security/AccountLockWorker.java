@@ -15,11 +15,13 @@ import com.duoshield.app.BuildConfig;
 
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -76,8 +78,22 @@ public class AccountLockWorker extends Worker {
      */
     private static final int MAX_ATTEMPTS = 7;
 
+    interface ConnectionOpener {
+        HttpURLConnection open(URL url) throws IOException;
+    }
+
+    private final ConnectionOpener connectionOpener;
+
     public AccountLockWorker(@NonNull Context ctx, @NonNull WorkerParameters params) {
+        this(ctx, params, url -> (HttpURLConnection) url.openConnection());
+    }
+
+    AccountLockWorker(
+            @NonNull Context ctx,
+            @NonNull WorkerParameters params,
+            @NonNull ConnectionOpener connectionOpener) {
         super(ctx, params);
+        this.connectionOpener = Objects.requireNonNull(connectionOpener, "connectionOpener");
     }
 
     /**
@@ -128,7 +144,7 @@ public class AccountLockWorker extends Worker {
                     .toString()
                     .getBytes(StandardCharsets.UTF_8);
 
-            HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
+            HttpURLConnection conn = connectionOpener.open(new URL(endpoint));
             try {
                 conn.setRequestMethod("POST");
                 conn.setDoOutput(true);
