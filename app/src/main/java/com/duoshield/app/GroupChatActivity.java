@@ -216,8 +216,8 @@ public class GroupChatActivity extends BaseActivity {
                     new java.util.Date(persistedServerMs));
         }
 
-        // FLAG_SECURE is applied globally in BaseActivity.onCreate()
-        // based on the "app_screenshot_enabled" preference.
+        // Screenshot capture is intentionally allowed across every app screen
+        // until finalization; the Application lifecycle policy clears FLAG_SECURE.
 
         // ── Views ──────────────────────────────────────────────────────────
         TextView tvGroupName   = findViewById(R.id.tv_group_name);
