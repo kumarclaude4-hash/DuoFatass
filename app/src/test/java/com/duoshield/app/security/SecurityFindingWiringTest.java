@@ -57,6 +57,9 @@ public class SecurityFindingWiringTest {
                 derive.contains("if (identityDerivationBlocked)"));
         assertTrue("wipe barrier must block before evicting the cache",
                 helper.contains("public static synchronized void blockIdentityDerivationAndClearCache()"));
+        assertTrue("the old cache-only clear must not be the wipe call",
+                !readProjectFile("app/src/main/java/com/duoshield/app/util/WipeHelper.java")
+                        .contains("SeedPhraseHelper.clearDerivationCache();"));
         assertTrue("only the explicit setup/restore method may reopen the gate",
                 helper.contains("allowIdentityDerivationForFreshAccountOrRestore()"));
 
