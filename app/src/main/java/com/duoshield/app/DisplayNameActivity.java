@@ -103,6 +103,10 @@ public class DisplayNameActivity extends AppCompatActivity {
         // tier was removed. A SOFTWARE tier here is expected and permitted.
         Log.i(TAG, "proceed: secure store tier=" + SecurePrefs.getTier());
 
+        // This is the explicit new-account creation entry point. A previous
+        // local wipe may have closed the process-wide identity-derivation gate.
+        SeedPhraseHelper.allowIdentityDerivationForFreshAccountOrRestore();
+
         new Thread(() -> {
             try {
                 Log.i(TAG, "[1/3] Generating mnemonic + identity keys…");
