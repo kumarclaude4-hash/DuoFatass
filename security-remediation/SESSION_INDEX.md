@@ -17,6 +17,10 @@
 > attack is still live** — do not read "part 1 landed" as "fixed." See `sessions/SESSION-01.md` §12
 > and `SESSION_PROTOCOL.md`'s "Next session" prompt for the remaining work.
 
+## Current product-policy override — 2026-11-11
+
+The historical S3-18 entry below records the earlier secure-by-default implementation. It is superseded for current product behaviour by the user's 2026-11-11 direction: screenshots remain allowed on every app screen until app finalization. See sessions/SESSION-S08-H2-CAPTURE-ALLOWED-2026-11-11.md and the current S08-H2 row in ../BUG_TRACKER.md. Do not re-enable FLAG_SECURE or restore a user-facing screenshot toggle before an explicit product-policy change.
+
 The remediation program is executed in **three fixed rounds**. Round numbers 01–03 are fixed slots;
 each round's actual work may span many individual working sessions (see the protocol's budget
 guidance) — the table below tracks the round, not a session count.
