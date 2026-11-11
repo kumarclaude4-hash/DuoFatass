@@ -168,3 +168,41 @@ NEXT SESSION: only pursue a newly reproduced S10-N2 residual within the bounded 
 **Evidence:** PR #286 exact head `91751692e7c491a1aba948b2b1da4f2bbada120c`, merge `26daea8e8b2e45764a68000d02a1f93a486d2fde`. CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10; Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3. AST self-test passed; source scan: 205 Java files, 414 `Log.w/e/wtf` sinks, zero violations. Server + Worker tests, Android unit tests, lint, debug APK, minified R8 build, Espresso (4 tests) and API 35 predictive-back (1 test) passed. R8 mapping generation produced 453,260 lines.
 
 **Disposition:** S10-N2 remains **Partial**. This is conservative syntax-level analysis rather than compiler-attributed, symbol-resolved whole-program analysis. External/library subclass dispatch, bytecode proxies, method references and opaque third-party callback internals, unrecognized reflection/dynamic-loading mechanisms, native behavior, arbitrary generic/container semantics, and receiver/alias forms outside the modeled paths remain residual. Physical release/minified APK logcat acceptance is still deferred until the owner declares the app feature-complete. Do not change `FINAL_SIGNOFF.md` from PENDING.
+
+
+## Engineering re-verification and merged code closeout — 2026-11-11
+
+PR #292 merged to main as `b73cab8049983969b1996245600a95ff227da175`.
+
+### S06-H4 — durable secondary-code arming
+
+The final verification pass found that the prior UI fix depended on a setter which used asynchronous `SharedPreferences.Editor.apply()` and returned success before disk persistence was confirmed. PR #292 closes this code gap:
+
+- `DuressManager.setDuressPin()` refuses an in-memory-only `SecurePrefs` tier.
+- Slot-B hash, armed state and legacy-key removal are committed in one synchronous preference transaction.
+- Hash, armed state and legacy-key removal are read back before success is returned.
+- App-owned salt and derived hash arrays are cleared in `finally`.
+- Regression coverage includes success, failed commit, incomplete read-back, invalid input and call-site wiring.
+
+Disposition remains **Fixed** for the source implementation. Device/Keystore acceptance remains part of the deferred feature-complete physical-device pass.
+
+### S06-L4 — runtime worker execution
+
+PR #292 added `AccountLockWorkerRuntimeTest` using WorkManager `TestWorkerBuilder`, a synthetic HTTP connection and a fake lock-intent acknowledger. It executes the real worker `doWork()` path for confirmed 200/204, permanent 401, retryable 503, bounded-attempt exhaustion, a network exception and missing nonce. It asserts the POST body/content type/timeouts, connection cleanup, result mapping and that only confirmed success clears the intent.
+
+The final PR-head verification passed:
+- CI run [42948877593](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877593): all 10 jobs passed — Android release-log AST, vendored libsignal, Gradle wrapper, Server + Worker, lint, Android unit tests, debug APK, API 35 predictive-back, Espresso and minified R8.
+- Security run [42948877583](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877583): all 3 jobs passed — Gitleaks, CodeQL and SBOM.
+- Firestore Rules/server transaction run [42948877424](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877424): passed.
+
+Disposition remains **Partial** because runtime fakes and emulator jobs do not replace the authorized staging lost-response/admin-unfreeze scenario, physical wipe/reboot/sign-in/network-loss acceptance, or production Firestore configuration verification.
+
+### Re-verification of the other requested workstreams
+
+- **S10-N2:** Current analyzer/self-test and CI wiring are in place, including the latest method-reference callback regression. No new reproducible source defect was confirmed in this pass. Whole-program symbol resolution, unmodeled external/native/third-party callback paths and physical release/minified logcat acceptance remain residual; keep Partial.
+- **S07-L2:** App-owned cache/intermediate cleanup is implemented. The pinned libsignal Java API still has no deterministic public native-key destroy method; do not claim synchronous native erasure. Keep Partial pending upstream API support or an approved residual-risk decision.
+- **S06-H5:** Settings, restored setup and forced primary rotation all use the account-scoped attempt throttle before hidden secondary-code inspection. No missing candidate-check entry point was confirmed. Independent side-channel review and device acceptance remain; keep Partial.
+- **S05-M3:** Admin-session emulator tests already exercise cross-instance validation/revocation, concurrent global revocation and expiry. Production rules/index/TTL deployment and staging/outage acceptance remain.
+- **S05-H2:** Invite lifecycle, pseudonymous redemption and Firestore/HTTP integration tests are present. Owner confirmation of invite-only onboarding, historical UID cleanup execution and staging/Android onboarding acceptance remain.
+
+No production deployment, live secret read-back, live data migration or physical-device acceptance was performed. The tracker baseline remains 116 findings: 86 Fixed, 17 Partial, 1 Open and 12 Accepted. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**.
