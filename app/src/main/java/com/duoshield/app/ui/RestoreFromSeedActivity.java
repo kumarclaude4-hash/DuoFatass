@@ -256,6 +256,10 @@ public class RestoreFromSeedActivity extends AppCompatActivity {
             return;
         }
 
+        // Only a user-submitted, valid recovery phrase may reopen identity
+        // derivation after a wipe. Generic startup/background code cannot.
+        SeedPhraseHelper.allowIdentityDerivationForFreshAccountOrRestore();
+
         setLoading(true);
         setStep("Verifying identity…");
         final String finalMnemonic   = mnemonic;
