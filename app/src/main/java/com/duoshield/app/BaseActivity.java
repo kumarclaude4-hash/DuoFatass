@@ -40,41 +40,23 @@ public class BaseActivity extends AppCompatActivity {
     private ShakeDetector shakeDetector;
 
     /**
-     * SharedPreferences key for the user-facing "Allow screenshots" toggle in
-     * SecurityPrivacySettingsActivity. Read here (not just there) so every
-     * BaseActivity-derived screen actually enforces the choice — see S08-H2.
+     * Product policy: screenshots are allowed on every app screen until the app
+     * is finalized. Never re-enable FLAG_SECURE without an explicit product decision.
+     *
+     * <p>Legacy app_screenshot_enabled preferences are intentionally ignored so
+     * existing installs cannot silently restore screenshot blocking.
      */
-    private static final String KEY_APP_SCREENSHOT_ENABLED = "app_screenshot_enabled";
+    public static final boolean SCREENSHOTS_ALLOWED_BY_DEFAULT = true;
 
     /**
-     * Applies (or lifts) {@code FLAG_SECURE} on {@code activity}'s window based on the
-     * {@code app_screenshot_enabled} preference.
+     * Enforces the app-wide capture policy for an Activity window.
      *
-     * <p>S08-H2 fix: every one of {@link #onCreate}, {@link MainActivity#onCreate},
-     * {@link LockScreenActivity#onCreate}, and
-     * {@link com.duoshield.app.ui.SecurityPrivacySettingsActivity#applyScreenshotFlag}
-     * unconditionally called {@code clearFlags(FLAG_SECURE)} — screenshots, screen
-     * recording, and the recents-list thumbnail were <em>always</em> allowed app-wide,
-     * regardless of what the "Allow screenshots" toggle said. This is the single point
-     * BaseActivity-derived activities now route through, matching what GroupChatActivity's
-     * and ChatMediaActivity's onResume() comments already claimed was happening globally.
-     *
-     * <p>Secure-by-default: on a fresh install, {@code getBoolean} returns {@code false}
-     * and {@link WindowManager.LayoutParams#FLAG_SECURE} remains set unless the user
-     * explicitly enables screenshots in Security & Privacy settings. The settings screen
-     * reads this same constant so its initial switch state matches the enforced window flag.
+     * <p>Android's FLAG_SECURE blocks screenshots as well as screen recording and
+     * recents thumbnails. The current product policy permits capture everywhere,
+     * so always clear the flag regardless of any legacy preference value.
      */
-    public static final boolean SCREENSHOTS_ALLOWED_BY_DEFAULT = false;
-
     static void applyScreenshotSecurity(android.app.Activity activity) {
-        boolean screenshotsAllowed = activity
-                .getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .getBoolean(KEY_APP_SCREENSHOT_ENABLED, SCREENSHOTS_ALLOWED_BY_DEFAULT);
-        if (screenshotsAllowed) {
-            activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        } else {
-            activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        }
+        activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
     }
 
     @Override
