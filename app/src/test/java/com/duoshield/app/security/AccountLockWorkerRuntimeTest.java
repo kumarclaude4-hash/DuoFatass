@@ -13,7 +13,11 @@ import androidx.work.WorkerParameters;
 import androidx.work.testing.TestWorkerBuilder;
 
 import org.json.JSONObject;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
+
+import com.duoshield.app.util.SecurePrefsSessionTestFixture;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
@@ -38,6 +42,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AccountLockWorkerRuntimeTest {
 
     private static final String NONCE = "synthetic-one-time-lock-nonce";
+
+    @Before
+    public void installIsolatedSessionState() {
+        SecurePrefsSessionTestFixture.install(NONCE);
+    }
+
+    @After
+    public void clearIsolatedSessionState() {
+        SecurePrefsSessionTestFixture.clear();
+    }
 
     @Test
     public void confirmed200PostsNonceAndClearsMatchingIntentAndWarmToken() throws Exception {
