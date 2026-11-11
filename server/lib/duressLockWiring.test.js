@@ -83,8 +83,17 @@ test("worker classifies only 200/204 as confirmed and preserves intent on perman
     "if (disposition == AccountLockHttpPolicy.Disposition.LOCK_CONFIRMED)",
     "if (disposition == AccountLockHttpPolicy.Disposition.PERMANENT_FAILURE)"
   );
-  assert.ok(confirmed.includes("PendingLockStore.clearLockIntent"));
+  assert.ok(confirmed.includes("acknowledger.clearIntentIfTokenMatches"));
+  assert.ok(confirmed.includes("acknowledger.clearWarmTokenIfMatches"));
   assert.ok(confirmed.includes("return Result.success()"));
+
+  const defaultAcknowledger = section(
+    WORKER_SOURCE,
+    "private static final LockIntentAcknowledger DEFAULT_ACKNOWLEDGER",
+    "private final ConnectionOpener"
+  );
+  assert.ok(defaultAcknowledger.includes("PendingLockStore.clearLockIntentIfTokenMatches"));
+  assert.ok(defaultAcknowledger.includes("PendingLockStore.clearWarmTokenIfMatches"));
 
   const failed = section(
     WORKER_SOURCE,
@@ -92,7 +101,8 @@ test("worker classifies only 200/204 as confirmed and preserves intent on perman
     "return retryOrGiveUp"
   );
   assert.ok(failed.includes("return Result.failure()"));
-  assert.equal(failed.includes("PendingLockStore.clearLockIntent"), false);
+  assert.equal(failed.includes("acknowledger.clearIntentIfTokenMatches"), false);
+  assert.ok(failed.includes("acknowledger.clearWarmTokenIfMatches"));
   assert.ok(WORKER_SOURCE.includes("Missing nonce — account lock NOT confirmed"));
   assert.ok(WORKER_SOURCE.includes("PUSH_SERVER_URL not configured — account lock NOT confirmed"));
 });
@@ -102,5 +112,5 @@ test("retry cap remains bounded and failure leaves the durable lock intent intac
   const retry = section(WORKER_SOURCE, "private Result retryOrGiveUp", "\n    }\n}");
   assert.ok(retry.includes("return Result.failure()"));
   assert.ok(retry.includes("return Result.retry()"));
-  assert.equal(retry.includes("PendingLockStore.clearLockIntent"), false);
+  assert.equal(retry.includes("acknowledger.clearIntentIfTokenMatches"), false);
 });
