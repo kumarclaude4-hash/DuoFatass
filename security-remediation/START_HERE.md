@@ -10,7 +10,7 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Latest main merge (2026-11-09):** PR #290 merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Its exact-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) passed 3/3. Espresso executed 4 tests, API 35 predictive-back executed 1 test, debug APK and minified R8 passed. PR #288's S02-I2 code fix and PR #289's S10-N2 method-reference callback hardening are also merged and verified. Outstanding work is now in the residual/operator/device gates, not an open code PR. See `../BUG_TRACKER.md` and `NEXT_WORK_REPORT_2026-11-08.md` for the current evidence and residual scope.
+**Latest main merge (2026-11-11):** PR #292 merged as `b73cab8049983969b1996245600a95ff227da175`. Exact-head CI [42948877593](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877593), Security [42948877583](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877583) and Firestore Rules/server transactions [42948877424](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42948877424) passed. It closes the S06-H4 durable secondary-code persistence gap and adds actual WorkManager `doWork()` runtime tests for S06-L4. Espresso 4 tests, API 35 predictive-back 1, debug APK and minified R8/mapping verification passed. S06-L4 stays Partial for real staging/network-loss/admin-unfreeze and production Firestore acceptance. PRs #288–#290 remain merged. See `../BUG_TRACKER.md` and `NEXT_WORK_REPORT_2026-11-08.md` for current residuals.
 
 PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
 
@@ -22,12 +22,12 @@ The canonical `../BUG_TRACKER.md` retains **116 findings: 86 Fixed, 17 Partial, 
 
 ---
 
-## Current state — 2026-11-09 (post-PR #290 merged)
+## Current state — 2026-11-11 (post-PR #292 merged)
 
 ```
-LATEST SOURCE-CHANGING MERGE: PR #290 — 9b1c1dd48fb584d728491e8bfeee5ef380e9b834
-LATEST VERIFIED APP-CODE BASELINE: PR #290; exact-head CI 10/10 and Security 3/3 passed
-MERGED: PR #290 (S06-H5 all primary-PIN collision paths; CI 10/10, Security 3/3, Espresso 4, API 35 1, debug APK and R8 passed); PR #289 (S10-N2 same-owner method-reference callback taint; CI 10/10, Security 3/3); PR #288 (S02-I2 production fail-closed; CI 10/10, Security 3/3, Firestore Rules/server transactions passed); PR #287 (docs-only S10-N2 closeout); PR #286 (S10-N2 generic/reflection/lambda-callback fail-closed; CI 10/10, Security 3/3); PR #285 (docs-only closeout); PR #284 (S10-N2 inherited app-owned member/receiver resolution; CI 10/10, Security 3/3); PR #283/#282 (docs-only); PR #281 (S10-N2 chained app-owned receiver resolution; CI 10/10, Security 3/3); PRs #275-#280 and earlier remediations listed above.
+LATEST SOURCE-CHANGING MERGE: PR #292 — b73cab8049983969b1996245600a95ff227da175
+LATEST VERIFIED APP-CODE BASELINE: PR #292; CI all jobs, Security 3/3 and Firestore Rules/server transactions passed
+MERGED: PR #292 (S06-H4 durable secondary-code persistence; S06-L4 WorkManager worker runtime tests; CI all jobs, Security 3/3, Firestore integration passed); PR #290 (S06-H5 all primary-PIN collision paths; CI 10/10, Security 3/3, Espresso 4, API 35 1, debug APK and R8 passed); PR #289 (S10-N2 method-reference callback taint; CI 10/10, Security 3/3); PR #288 (S02-I2 production fail-closed; CI 10/10, Security 3/3, Firestore Rules/server transactions passed); PR #287 (docs-only S10-N2 closeout); PR #286 (S10-N2 generic/reflection/lambda-callback fail-closed; CI 10/10, Security 3/3); PR #285 (docs-only closeout); PR #284 (S10-N2 inherited app-owned member/receiver resolution; CI 10/10, Security 3/3); PR #283/#282 (docs-only); PR #281 (S10-N2 chained app-owned receiver resolution; CI 10/10, Security 3/3); PRs #275-#280 and earlier remediations listed above.
 PR #267 head: 213442825113013a85650de9ac24edf0e9ec9211
 CI: 42443323887 — passed (Android unit, lint, debug APK, Espresso, API 35 predictive-back, R8, Server + Worker).
 SECURITY: 42443323988 — passed (CodeQL, Gitleaks, SBOM).
@@ -35,12 +35,12 @@ FIRESTORE RULES: 42443323886 — passed.
 FIRESTORE RULES + SERVER TRANSACTIONS: 42443323962 — passed (200 Rules tests + 6 server transaction tests).
 OPEN PRS: none; OPEN ISSUES: none (rechecked 2026-11-09).
 PR #266: intentionally closed unmerged; its documentation changes were not applied to main.
-TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted. S02-I2 code-side downgrade fixed by PR #288; live Worker/Render configuration read-back remains. S10-N2 method-reference code fix merged in PR #289; whole-program/device residuals remain. S06-H5 primary-PIN candidate throttle now covers Settings, Setup and forced rotation in merged PR #290; exact-head CI 10/10 and Security 3/3 passed. Independent side-channel and device-acceptance residuals remain.
+TRACKER: 116 findings — 86 Fixed, 17 Partial, 1 Open, 12 Accepted. PR #292 adds durable S06-H4 persistence and executable S06-L4 WorkManager coverage; S06-L4 remains Partial for live staging/device acceptance. S06-H5 remains Partial for independent side-channel/device acceptance; S02-I2 remains Partial for authorized Render/Worker secret-pair read-back and production runtime confirmation. Other Partial/Open items include staging/operator acceptance, owner decisions, upstream API limits, repository governance and physical-device checks explicitly deferred until feature-complete.
 S10-N2: remains Partial. PR #286's validated baseline covers unresolved generic returns/receivers, recognized reflection/class-loading surfaces and opaque lambda callback parameters. PR #289 adds same-owner method-reference callback target taint (`this::method`, `Owner::method`, `Owner.this::method`) with a synthetic `callbackArg` → `Log.w` regression; CI 10/10 and Security 3/3 passed. Remaining: external/library dispatch, unrecognized reflection/dynamic APIs, other method-reference receiver/target shapes, native behavior, arbitrary generic/container semantics, whole-program symbol resolution and feature-complete physical release/minified logcat acceptance.
 NEXT: use BUG_TRACKER.md, NEXT_WORK_REPORT_2026-11-08.md and INDEPENDENT_REVERIFICATION_2026-11-08.md; older dated worklists are historical.
 SCHEDULE: S3-20 is the final numbered Round 3 session. Do not invent S3-21 or reopen a fourth audit round.
 PHYSICAL DEVICE TESTING: deferred until the owner explicitly declares the app feature-complete.
-FINAL SIGN-OFF: PENDING.
+FINAL SIGN-OFF: PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF.
 ```
 
 PR #274 exact-head workflows passed before merge: CI [42450251567](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251567) and Security [42450251553](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42450251553). The combined post-merge Vercel status for `d1ee9ac01e0809a6e398958be423097bc082e9d7` was successful. No separate post-merge GitHub Actions workflow run was returned at this snapshot; do not infer one from PR-head checks.
@@ -61,7 +61,7 @@ security-remediation/NEXT_WORK_REPORT_2026-11-08.md, the agentic handoff and BUG
 
 If the historical `NEXT ACTION` above says S3-20 complete, do **not** start a new numbered Round 3
 session. Follow the refreshed work report for source-review priorities, owner decisions, operator
-acceptance and feature-complete device deferrals. PR #290 is the only open PR; no open issues were returned. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
+acceptance and feature-complete device deferrals. PR #292 is merged; latest GitHub inventory returned zero open PRs and zero open issues. Continue from NEXT_WORK_REPORT_2026-11-08.md; do not reopen superseded branches.
 
 
 ---
