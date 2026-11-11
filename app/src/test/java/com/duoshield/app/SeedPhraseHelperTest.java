@@ -282,6 +282,14 @@ public class SeedPhraseHelperTest {
             SeedPhraseHelper.blockIdentityDerivationAndClearCache();
             assertTrue("wipe must close the derivation gate",
                     blockedField.getBoolean(null));
+            assertTrue("wipe barrier and derivation must serialize on the class monitor",
+                    java.lang.reflect.Modifier.isSynchronized(
+                            SeedPhraseHelper.class.getDeclaredMethod(
+                                    "blockIdentityDerivationAndClearCache").getModifiers()));
+            assertTrue("only the dedicated re-entry API can reopen the gate",
+                    java.lang.reflect.Modifier.isSynchronized(
+                            SeedPhraseHelper.class.getDeclaredMethod(
+                                    "allowIdentityDerivationForFreshAccountOrRestore").getModifiers()));
 
             try {
                 SeedPhraseHelper.deriveIdentityKeyPair(syntheticSeed);
