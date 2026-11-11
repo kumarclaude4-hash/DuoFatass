@@ -43,14 +43,13 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
     public void onCreate() {
         super.onCreate();
 
-        // S08-H2: enforce the screenshot preference for EVERY Activity, not only
-        // screens that happen to extend BaseActivity. Several sensitive flows
-        // (calls, PIN/recovery/onboarding and update/preview screens) are direct
-        // AppCompatActivity subclasses and otherwise bypass BaseActivity's
-        // onCreate hook. onActivityCreated runs before the first Activity frame;
-        // onActivityResumed reapplies the current preference after returning from
-        // external UI or changing the setting while this process stays alive.
-        installScreenshotProtectionLifecycle();
+        // S08-H2: enforce the current product policy for EVERY Activity, not only
+        // screens that extend BaseActivity. Captures are intentionally allowed on
+        // all app screens until finalization. Several flows are direct
+        // AppCompatActivity subclasses, so the Application lifecycle callback
+        // clears FLAG_SECURE on creation and again on resume, overriding any
+        // stale per-window flag set by an Activity implementation.
+        installScreenshotAllowedLifecycle();
 
         // S08-H3 upgrade cleanup: older releases used Glide's shared disk cache
         // for decrypted private B2 media. New MessageAdapter requests disable
@@ -219,7 +218,7 @@ public class DuoShieldApp extends Application implements Configuration.Provider 
      * hook remains as defense in depth. The callback is registered once per
      * process and is automatically scoped to this Application instance.
      */
-    private void installScreenshotProtectionLifecycle() {
+    private void installScreenshotAllowedLifecycle() {
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override
             public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
