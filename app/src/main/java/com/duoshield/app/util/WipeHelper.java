@@ -154,7 +154,7 @@ public class WipeHelper {
         // process's life after every wipe path, including DURESS. See
         // SeedPhraseHelper.clearDerivationCache()'s javadoc for the full detail.
         try {
-            com.duoshield.app.crypto.SeedPhraseHelper.clearDerivationCache();
+            com.duoshield.app.crypto.SeedPhraseHelper.blockIdentityDerivationAndClearCache();
         } catch (Exception e) {
             Log.e(TAG, "Failed to clear SeedPhraseHelper derivation cache during wipe (" + com.duoshield.app.util.LogRedact.error(e) + ")");
         }
