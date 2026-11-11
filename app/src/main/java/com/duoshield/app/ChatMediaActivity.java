@@ -1544,8 +1544,8 @@ public class ChatMediaActivity extends BaseActivity {
         if (conversationId != null) {
             NotificationVisibility.enterConversation(conversationId, this);
         }
-        // FLAG_SECURE is now applied globally in BaseActivity.onCreate()
-        // based on the "app_screenshot_enabled" preference.
+        // Screenshot capture is intentionally allowed across every app screen
+        // until finalization; the Application lifecycle policy clears FLAG_SECURE.
         markMessagesAsReadAndSeen();
         clearBadge();
         applyWallpaper();
