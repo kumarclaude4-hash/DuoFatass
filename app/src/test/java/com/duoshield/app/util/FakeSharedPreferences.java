@@ -22,6 +22,12 @@ class FakeSharedPreferences implements SharedPreferences {
 
     private final Map<String, Object> data = new HashMap<>();
 
+    private boolean commitSucceeds = true;
+
+    void setCommitSucceeds(boolean succeeds) {
+        commitSucceeds = succeeds;
+    }
+
     @Override
     public Map<String, ?> getAll() {
         return new HashMap<>(data);
@@ -100,6 +106,7 @@ class FakeSharedPreferences implements SharedPreferences {
 
         @Override
         public boolean commit() {
+            if (!commitSucceeds) return false;
             apply();
             return true;
         }
