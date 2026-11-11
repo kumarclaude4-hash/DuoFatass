@@ -88,8 +88,9 @@ public final class SeedPhraseHelper {
      *
      * <p>Called from every {@code WipeHelper.eraseLocalData()} path (voluntary wipe,
      * unpair and duress). This method shares the class monitor with derivation, so cache
-     * eviction cannot overlap an executing derivation. A later derivation call can still
-     * populate a fresh cache entry; callers must prevent new identity work after wipe.
+     * eviction cannot overlap an executing derivation. WipeHelper uses
+     * {@link #blockIdentityDerivationAndClearCache()} to reject all later derivations
+     * until an explicit account-creation or validated-restore entry point reopens them.
      *
      * <p>The cache-owned seed fingerprint copy is zeroed before the entry is released.
      * The {@link IdentityKeyPair} is then eligible for collection once other callers
