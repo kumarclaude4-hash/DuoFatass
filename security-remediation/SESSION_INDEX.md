@@ -117,3 +117,8 @@ uses the same generic failure for collision/cooldown/storage/auth errors. Two ne
 passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331)
 passed 3/3. Espresso 4, API 35 1, debug APK and R8 passed. S06-H5 remains Partial pending independent
 residual/device acceptance.
+
+
+## S11-M1 call-lock lifecycle regression coverage — 2026-11-11
+
+`sessions/SESSION-S11-M1-CALL-LOCK-LIFECYCLE-2026-11-11.md` records new Robolectric tests for the AppLockManager foreground reference counter plus stronger call/chat lifecycle ordering guards. The tests cover last-Activity background timestamp creation, no timestamp during Activity navigation, preservation of pending timestamps until explicit foreground confirmation, and guarded decrements for CallActivity/InCallChatActivity. This increases automated coverage but does not replace the deferred notification-driven live-call, authentication-return and OEM/device acceptance. S11-M1 remains Partial.

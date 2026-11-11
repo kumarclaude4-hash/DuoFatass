@@ -127,6 +127,8 @@ blanking the screen pauses the activity, and releasing there would turn the scre
 | `CallBackPolicyTest` | back decision table; back path never reaches `hangup()`; system back is an `OnBackPressedCallback`; only `endCall()` ends a call; screen registers no receivers |
 | `CallSessionPolicyTest` | detach / resume / lock-on-return decision tables; `formatDuration`; PiP crop math |
 | `CallSessionStructureTest` | `onDestroy` decides via policy and never hangs up itself; sinks detached before renderers released before teardown; teardown idempotent; history row written once; headless teardown posted after the manager call returns; lock participation rules; lock redirect only after authentication; chat counted by `AppLockManager`; bar shown/dismissed with the screen; viewers opt out; PiP declared on both screens; chat PiP shows only the remote tile and keeps its sink while floating |
+| `AppLockManagerLifecycleTest` | Robolectric execution of the real preference-backed foreground reference count: Activity navigation does not start the background timer; only the last stop records it; a newly started Activity does not erase a pending timestamp; explicit foreground confirmation clears it |
+| `CallSessionStructureTest.callAndChatScreensNeverCountWhileAnOlderBackgroundTimestampIsPending` | CallActivity and InCallChatActivity check for an older pending timestamp before incrementing and only decrement if their own start incremented the shared counter |
 | `CallTaskIsolationTest` | manifest `taskAffinity` + `FLAG_ACTIVITY_NEW_TASK` at every launch site |
 | `PredictiveBackOverrideTest` | no `onBackPressed()` overrides; gate screens use `BackPressGuard` |
 

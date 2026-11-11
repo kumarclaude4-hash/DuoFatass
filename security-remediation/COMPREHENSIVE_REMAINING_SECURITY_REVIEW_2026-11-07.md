@@ -322,10 +322,11 @@ Seven legacy `onBackPressed()` overrides replaced with `OnBackPressedCallback`. 
 
 ## 3.14 S11-M1 — Call lifecycle/app-lock timeout
 
-**Status:** Partial; source implementation merged, runtime call/notification acceptance pending.  
-**Code:** `CallActivity`, `InCallChatActivity`, `AppLockManager`, `LockScreenActivity`.
+**Status:** Partial; source implementation and new lifecycle-counter regression coverage are present; live-call/notification acceptance remains pending.  
+**Code:** `CallActivity`, `InCallChatActivity`, `AppLockManager`, `LockScreenActivity`.  
+**Tests added in PR #297:** Robolectric `AppLockManagerLifecycleTest` exercises preference-backed foreground/background count transitions and timestamp preservation; `CallSessionStructureTest` verifies both call screens check the pending timestamp before incrementing and only decrement when they previously counted themselves.
 
-Call screens count as foreground without overwriting an existing background timestamp. CallActivity checks lock on return, not first start; after authentication LockScreenActivity can return to active call.
+Call screens count as foreground without overwriting an existing background timestamp. CallActivity checks lock on return, not first start; after authentication LockScreenActivity can return to the active call. The new automated tests verify the counter behavior and call-screen wiring, but they do not instantiate a real WebRTC call or simulate notification-driven return through the credential flow.
 
 **After feature-complete:** short timeout; start call and prove no premature lock; minimize, wait beyond timeout, tap ongoing notification; verify lock before call UI/chat; unlock and confirm same call/audio resumes; incoming call while already locked; process recreation, call end and stale notification.
 
