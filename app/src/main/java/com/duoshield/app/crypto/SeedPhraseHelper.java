@@ -64,6 +64,10 @@ public final class SeedPhraseHelper {
 
     private static final AtomicReference<CachedDerivation> derivationCache = new AtomicReference<>();
 
+    // Guarded by SeedPhraseHelper.class. A wipe blocks new key derivations until
+    // an explicit new-account or validated-restore flow re-opens the gate.
+    private static boolean identityDerivationBlocked = false;
+
     private static class CachedDerivation {
         final byte[] seedFingerprint;
         final IdentityKeyPair pair;
@@ -101,6 +105,30 @@ public final class SeedPhraseHelper {
             // deterministic destruction API in the pinned dependency.
             cached.clearSeedFingerprint();
         }
+    }
+
+    /**
+     * Blocks further identity-key derivations and evicts the cache as part of a
+     * local wipe. Both actions share the class monitor with derivation, so a
+     * derivation already in progress completes before the cache is cleared and
+     * every later derivation is rejected.
+     *
+     * <p>This does not synchronously destroy libsignal's native key handles or
+     * revoke references already returned to callers. That remains the separate
+     * S07-L2 native-lifetime limitation.
+     */
+    public static synchronized void blockIdentityDerivationAndClearCache() {
+        identityDerivationBlocked = true;
+        clearDerivationCache();
+    }
+
+    /**
+     * Re-opens identity derivation only for a deliberate new-account creation or
+     * a restore after the user has supplied and validated a recovery phrase.
+     * Do not call this from generic application startup or background services.
+     */
+    public static synchronized void allowIdentityDerivationForFreshAccountOrRestore() {
+        identityDerivationBlocked = false;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -559,6 +587,9 @@ public final class SeedPhraseHelper {
      */
     public static synchronized IdentityKeyPair deriveIdentityKeyPair(byte[] seed)
             throws InvalidKeyException {
+        if (identityDerivationBlocked) {
+            throw new IllegalStateException("Identity derivation is blocked after local wipe");
+        }
         if (seed == null || seed.length < 32) {
             throw new IllegalArgumentException("seed must be at least 32 bytes");
         }
