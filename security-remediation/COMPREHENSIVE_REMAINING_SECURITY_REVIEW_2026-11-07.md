@@ -86,7 +86,7 @@ The earlier PR table is retained in prior handoffs only. At the 2026-11-08 curre
 | S03-M3 | Partial | Owner risk decision or versioned protocol |
 | S05-M3 | Partial | Multi-instance staging + Firestore rules/index/TTL read-back |
 | S05-H2 | Partial | Product contract; synthetic staging lifecycle/onboarding; authorized legacy UID cleanup dry-run/apply/read-back. Core invite lifecycle code and invalid-state fail-closed handling are merged in PRs #261/#264. |
-| S06-L4 | Partial | Staging retry/recovery race + Firestore config + deferred device matrix |
+| S06-L4 | Partial | PR #292 adds WorkManager `TestWorkerBuilder`/Robolectric execution of the real `AccountLockWorker#doWork()` path for HTTP 200/204, permanent 401, retryable 503, attempt exhaustion, network exception and missing nonce, with request/acknowledgement/disconnect assertions. Exact-head CI 10/10, Security 3/3 and Firestore Rules/server transactions passed. Remaining: authorized staging lost-response/admin-unfreeze race, production Firestore config and physical wipe/reboot/sign-in/network-loss recovery. |
 | S07-L2 | Partial | Supported deterministic native-key destruction or approved residual |
 | S08-H2 | Partial | Screenshot/recording/recents device acceptance |
 | S08-H5 | Partial | Real Keystore migration/recovery + support path |
@@ -101,7 +101,7 @@ The earlier PR table is retained in prior handoffs only. At the 2026-11-08 curre
 | S02-I2 | Partial | Render/Worker secret pairing read-back + Durable Object proof |
 | S02-I3 | Partial | Firebase revoked-token integration across all 12 routes |
 | SC-12 | Open | Required checks/reviews/tags/production environment governance |
-| S06-H4 | Fixed | The arming UI now checks the boolean result of `DuressManager.setDuressPin()`; a failed write is surfaced generically, while only success reports “Code saved.” and exits. The setter accepts the supported 4–6 digit range. A focused false/true UI test would improve coverage. |
+| S06-H4 | Fixed | PR #292 strengthens the previous UI boolean check: `DuressManager.setDuressPin()` now requires a durable `SecurePrefs` tier, commits the slot-B hash/armed bit/legacy-key removal synchronously, and verifies all three values by read-back before returning true. App-owned salt/hash arrays are cleared in `finally`. `DuressPinPersistenceTest` covers success, failed commit, incomplete read-back and invalid input; `SecurityFindingWiringTest` guards the setter/UI boundary. Exact-head CI 10/10, Security 3/3 and Firestore Rules/server transactions passed. Physical Keystore/device-flow acceptance remains deferred. |
 | S06-H5 | Partial | PR #265 adds a UID-scoped three-attempt/15-minute throttle that counts successful and rejected PIN changes, fails closed on storage errors and unifies collision/cooldown/storage failures. Residual side-channel review and feature-complete device acceptance remain; do not describe the pre-PR #265 Settings collision branch as current. |
 
 S07-M1 and S08-H5 concern the same legacy migration stream from separate classifications. Coordinate them together but preserve both finding IDs/statuses. The tracker is authoritative if any narrative document differs.
