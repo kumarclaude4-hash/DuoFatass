@@ -206,3 +206,10 @@ Disposition remains **Partial** because runtime fakes and emulator jobs do not r
 - **S05-H2:** Invite lifecycle, pseudonymous redemption and Firestore/HTTP integration tests are present. Owner confirmation of invite-only onboarding, historical UID cleanup execution and staging/Android onboarding acceptance remain.
 
 No production deployment, live secret read-back, live data migration or physical-device acceptance was performed. The tracker baseline remains 116 findings: 86 Fixed, 17 Partial, 1 Open and 12 Accepted. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**.
+
+
+### PR #295 — SharedPreferences failed-commit test semantics (2026-11-11)
+
+PR #295 merged as `93bd3b4a2f17007ddc7d0159c72bdbd0da7868a1` (head `a069832db3bd57ef97a895ba3a3faaef7182e0bf`). This is a **test-only** correction to S06-H4, not a production-source change. `FakeSharedPreferences.commit()` now applies the in-memory editor update before returning its configurable disk-write result, matching Android SharedPreferences behavior. The failed-commit regression asserts that `DuressPinPersistence.persist()` returns false; it deliberately does not assert that the process-local preference map rolls back, because Android does not promise that. The production contract remains: a false commit must never be reported as a durable save, and the UI must stay on its generic failure path.
+
+Exact-head CI [42955598180](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42955598180) passed **10/10 jobs**; Security [42955598156](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42955598156) passed **3/3 jobs**. PR #295 changed only `DuressPinPersistenceTest.java` and `FakeSharedPreferences.java`; no production behavior, dependency, runtime configuration or deployment setting changed.
