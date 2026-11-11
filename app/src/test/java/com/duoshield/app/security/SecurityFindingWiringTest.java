@@ -37,12 +37,48 @@ public class SecurityFindingWiringTest {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/util/WipeHelper.java");
         int eraseAt = source.indexOf("public static void eraseLocalData(");
-        int clearAt = source.indexOf("SeedPhraseHelper.clearDerivationCache();", eraseAt);
+        int clearAt = source.indexOf("SeedPhraseHelper.blockIdentityDerivationAndClearCache();", eraseAt);
         int nextPublicOperation = source.indexOf("public static void wipeAll(", eraseAt);
 
         assertTrue("eraseLocalData must exist", eraseAt >= 0);
         assertTrue("the derivation cache must be cleared inside eraseLocalData",
                 clearAt > eraseAt && (nextPublicOperation < 0 || clearAt < nextPublicOperation));
+    }
+
+    @Test
+    public void identityDerivationGateReopensOnlyForNewAccountAndValidatedRestore()
+            throws IOException {
+        String helper = readProjectFile(
+                "app/src/main/java/com/duoshield/app/crypto/SeedPhraseHelper.java");
+        String derive = helper.substring(
+                helper.indexOf("public static synchronized IdentityKeyPair deriveIdentityKeyPair"),
+                helper.indexOf("// e) deriveUserId"));
+        assertTrue("derive must reject work after a wipe",
+                derive.contains("if (identityDerivationBlocked)"));
+        assertTrue("wipe barrier must block before evicting the cache",
+                helper.contains("public static synchronized void blockIdentityDerivationAndClearCache()"));
+        assertTrue("only the explicit setup/restore method may reopen the gate",
+                helper.contains("allowIdentityDerivationForFreshAccountOrRestore()"));
+
+        String create = readProjectFile(
+                "app/src/main/java/com/duoshield/app/DisplayNameActivity.java");
+        int createEntry = create.indexOf("private void proceed(");
+        int createAllow = create.indexOf(
+                "SeedPhraseHelper.allowIdentityDerivationForFreshAccountOrRestore();", createEntry);
+        int createDerive = create.indexOf("SeedPhraseHelper.deriveIdentityKeyPair(seed)", createEntry);
+        assertTrue("new-account creation must reopen derivation before deriving its identity",
+                createEntry >= 0 && createAllow > createEntry && createAllow < createDerive);
+
+        String restore = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/RestoreFromSeedActivity.java");
+        int restoreEntry = restore.indexOf("private void attemptRestore()");
+        int validatedPhrase = restore.indexOf("if (!SeedPhraseHelper.validateMnemonic(mnemonic))", restoreEntry);
+        int restoreAllow = restore.indexOf(
+                "SeedPhraseHelper.allowIdentityDerivationForFreshAccountOrRestore();", restoreEntry);
+        int restoreDispatch = restore.indexOf("new Thread(() ->", restoreAllow);
+        assertTrue("restore must validate the user-supplied phrase before reopening derivation",
+                restoreEntry >= 0 && validatedPhrase > restoreEntry
+                        && restoreAllow > validatedPhrase && restoreDispatch > restoreAllow);
     }
 
     @Test
