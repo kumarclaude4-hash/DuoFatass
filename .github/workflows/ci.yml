@@ -207,13 +207,6 @@ jobs:
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
-      # TEMPORARY: resolve and print hashes for the new test-only WorkManager
-      # artifact and its transitive metadata; remove after the verified hashes are pinned.
-      - name: Bootstrap missing test-only Gradle verification metadata
-        run: |
-          ./gradlew --write-verification-metadata sha256 :app:dependencies --configuration debugUnitTestCompileClasspath --no-daemon
-          grep -A8 -B1 -E 'group="androidx.work" name="work-testing"|group="androidx.lifecycle" name="lifecycle-livedata-core" version="2.5.1"' gradle/verification-metadata.xml
-
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon
 
