@@ -233,3 +233,21 @@ This addendum supersedes the 2026-11-08 source baseline above **for S10-N2 only*
 Exact PR head `91751692e7c491a1aba948b2b1da4f2bbada120c` merged as `26daea8e8b2e45764a68000d02a1f93a486d2fde`; resulting app-code tree `7bb1d14010ecc7702ac3323fab53646c9da06d57`. Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3. AST self-tests and production scan passed (205 Java files, 414 `Log.w/e/wtf` sinks, zero violations); Espresso 4 tests, API 35 predictive-back 1 test, debug APK, minified R8 and Server + Worker tests passed. R8 mapping verification generated a 453,260-line file.
 
 **Disposition remains Partial.** The analyzer is not compiler-attributed, symbol-resolved whole-program taint analysis. Unrecognized reflection/dynamic paths, external/library dispatch, bytecode proxies, method references and opaque third-party callback internals, native behavior, arbitrary generic/container semantics, and unmodeled aliases/receivers remain residual. Physical release/minified APK logcat acceptance remains deferred until the owner declares the app feature-complete. `FINAL_SIGNOFF.md` remains PENDING.
+
+
+## Current-mainline re-verification addendum — 2026-11-12
+
+This addendum supersedes older main-SHA/open-inventory statements for current repository state; earlier review notes remain historical.
+
+- **Main SHA:** `4341ecf84d8579b651d6853c480f0c1a6129a324`.
+- **Current GitHub inventory:** one open PR (#293, documentation-only and based on stale main); zero open issues. No code PR remains open.
+- **Current main CI:** [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186), all 10 jobs successful.
+- **Current main Security:** [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183), all 3 jobs successful.
+- **PR #296:** all-screen screenshot allowance merged; exact-head CI 42968129815 10/10 and Security 42968129829 3/3.
+- **PR #297:** S11-M1 foreground-count runtime and call/chat lifecycle-ordering regressions merged; exact-head CI 42970830267 10/10 and Security 42970830194 3/3. These tests do not execute live WebRTC notification return or the complete credential overlay on physical devices.
+- **PR #292/#295:** current tracker evidence records durable secondary-code commit/read-back and runtime WorkManager worker tests. They do not replace real Keystore and staging recovery evidence.
+- **SC-03:** `gradle/verification-metadata.xml` has `verify-metadata=true`, 493 component entries and platform-specific `aapt2-8.6.0-11315950-linux.jar` checksum. Current main lint/build/R8 CI jobs pass. The root SC-03 report is marked as a superseded historical investigation.
+- **Ruleset:** live `Hello` ruleset (ID 26629873) still has zero required approvals and no required status checks. Classic branch-protection read is 403 through this integration; production-release environment read-back is unavailable. SC-12 remains Open.
+- **Tracker:** 116 unique findings remain 86 Fixed, 17 Partial, 1 Open, 12 Accepted. Governance classification aliases do not create more unique findings.
+
+**Scope limitation:** this is fresh inventory/evidence reconciliation plus selected-file re-read, not a replay of every original exploit scenario, live production audit, secret-rotation exercise or physical-device pass. No production secrets/provider configuration, staging data or physical device was touched. `FINAL_SIGNOFF.md` remains PENDING.
