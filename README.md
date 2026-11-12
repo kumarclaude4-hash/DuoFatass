@@ -161,11 +161,13 @@ Required repository secrets:
 
 | Secret | Purpose |
 |---|---|
-| `GOOGLE_SERVICES_JSON` | Firebase config |
-| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | FCM service account |
-| `KEYSTORE_BASE64` | Base64-encoded release keystore |
-| `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` | Signing credentials |
-| `WORKER_URL` / `WORKER_SECRET` | Cloudflare Worker for media |
+| `GOOGLE_SERVICES_JSON` | Firebase client configuration required to build the app |
+| `KEYSTORE_BASE64` | Base64-encoded release signing keystore |
+| `KEYSTORE_PASSWORD` | Release keystore password |
+| `KEY_ALIAS` | Release signing key alias |
+| `KEY_PASSWORD` | Release signing key password |
+
+The release workflow also accepts optional non-secret routing/build values through its environment inputs: `B2_BUCKET`, `B2_REGION`, `PUSH_SERVER_URL`, and `WORKER_URL`. These values are written to `local.properties` as public client endpoints/metadata and have safe defaults in the workflow. Admin service-account credentials, B2 application keys and `WORKER_SECRET` are not required by the Android release build and must remain on their server/Worker runtimes; they must never be packaged in an APK.
 
 The release workflow publishes ABI-specific signed APKs (`arm64-v8a` and `armeabi-v7a`), matching ZIP archives, and a `SHA256SUMS` manifest through GitHub Releases. The in-app updater selects the compatible APK and verifies it before installation.
 
