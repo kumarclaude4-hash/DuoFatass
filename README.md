@@ -156,7 +156,7 @@ echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
 ### Signed release APK (GitHub Actions)
 
-Triggered automatically on every push to `main` via [`.github/workflows/release.yml`](.github/workflows/release.yml).  
+Triggered by pushing an immutable version tag matching `v*` (for example `v1.4.1`) or by manually dispatching `.github/workflows/release.yml` with an existing version tag. Ordinary pushes to `main` run CI; they do not publish a signed release.
 Required repository secrets:
 
 | Secret | Purpose |
@@ -201,7 +201,7 @@ GitHub repo
     └─ GitHub Actions CI/CD
             ├── Lint + compile check  (every push / PR)
             ├── Debug APK build       (every push / PR)
-            ├── Signed release APK    (every push to main)
+            ├── Signed release APK    (immutable v* tag / manual dispatch)
             └── Firestore rules test  (on rules/test file changes)
 ```
 
@@ -209,7 +209,7 @@ GitHub repo
 |---|---|---|---|
 | Push server (FCM relay) | `/server` | `https://duofat.onrender.com` | ✅ on `git push` |
 | Storage Worker (R2 → B2) | `/worker` | Cloudflare Workers | ✅ on `git push` |
-| Android app | `/app` | GitHub Releases (APK) | ✅ on `git push` |
+| Android app | `/app` | GitHub Releases (APK) | ✅ on immutable `v*` tag / manual release dispatch |
 
 ---
 
