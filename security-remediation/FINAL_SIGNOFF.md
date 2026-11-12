@@ -1,9 +1,13 @@
 # FINAL SIGN-OFF
 
 > Status: **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF.**
-> Updated 2026-11-09 after PR #290 merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. The current evidence snapshot is dated 2026-11-09; older dated sections below are historical. This document is the release/sign-off gate, not a progress claim.
+> Updated 2026-11-12. Status remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. This is the release/sign-off gate, not a progress claim.
 
-## Current evidence snapshot — 2026-11-09
+## Current evidence snapshot — 2026-11-12
+
+Current main: `4341ecf84d8579b651d6853c480f0c1a6129a324`. PR #296 merged the all-screen screenshot allowance; PR #297 merged the S11-M1 lifecycle runtime/structural regression tests. Current main CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) passed **10/10** and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) passed **3/3**. The 116-unique-finding roll-up remains 86 Fixed, 17 Partial, 1 Open and 12 Accepted. S06-H4 and S06-L4 evidence has advanced through PR #292/#295; S11-M1 automated coverage advanced through PR #297. Those changes do not close their remaining physical-device/staging acceptance. SC-12 remains Open: the live default-branch ruleset still requires zero approvals and no CI/Security checks. No production secrets were read or changed; no production deployment, provider-console enforcement, live staging verification or physical-device acceptance is claimed. Keep this sign-off **PENDING**.
+
+## Historical evidence snapshot — 2026-11-09
 
 The canonical register is [`../BUG_TRACKER.md`](../BUG_TRACKER.md). Its row-level roll-up remains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23). S06-H4 is Fixed. S06-H5 remains Partial: PR #265 added a UID-scoped successful/failed attempt throttle and unified rejection response, but bounded probing is not proof that every side channel is impossible.
 
