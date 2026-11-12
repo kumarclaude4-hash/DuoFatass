@@ -496,3 +496,12 @@ PR merges and green CI are not a coordinated production release. Do not sign whi
 - Do not sign `FINAL_SIGNOFF.md` while required evidence/owner/operator gates remain.
 
 **Bottom line:** remaining work is a portfolio of bounded code analysis, owner decisions, isolated staging verification, provider-console configuration, governance controls and deferred device acceptance. Each category needs its own evidence. Never substitute one kind of proof for another.
+
+
+## Current-mainline addendum — 2026-11-12
+
+Main is `4341ecf84d8579b651d6853c480f0c1a6129a324`. PR #296 merged the all-screen screenshot-allowed policy; PR #297 merged S11-M1 foreground lifecycle runtime/structural regressions. Current main CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) passed 10/10 and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) passed 3/3.
+
+The canonical tracker remains 116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted. S06-H4/S06-L4 have PR #292/#295 durability and worker runtime evidence. S11-M1 has PR #297 lifecycle coverage. Real WebRTC notification return, credential-overlay behavior, Keystore behavior, staging and OEM/device acceptance remain. S08-H2 remains an intentional capture-policy deferral. Current Gradle metadata has 493 component entries, `verify-metadata=true`, and the Linux `aapt2` checksum; the root SC-03 investigation is superseded by passing current main CI. See `RELEASE_READINESS_2026-11-12.md` for the ordered owner/operator/staging/device plan.
+
+The ruleset still has no required approvals or status checks. No live credentials, production configuration, production data, staging lifecycle, signed current release or physical device were changed or tested in this documentation/source-review pass. Production sign-off remains **PENDING**.
