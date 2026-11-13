@@ -314,8 +314,10 @@ public class PinManager {
      */
     public static boolean tryRecordPinChangeAttempt(Context ctx) {
         try {
+            SharedPreferences preferences = SecurePrefs.get(ctx);
             return PinChangeThrottle.tryRecord(
-                    SecurePrefs.get(ctx),
+                    preferences,
+                    SecurePrefs.getTier(),
                     scopedKey(KEY_PIN_CHANGE_PREFIX),
                     System.currentTimeMillis(),
                     SystemClock.elapsedRealtime(),
