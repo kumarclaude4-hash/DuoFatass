@@ -127,3 +127,15 @@ residual/device acceptance.
 ## Current mainline/release-readiness baseline — 2026-11-12
 
 Main is `4341ecf84d8579b651d6853c480f0c1a6129a324`. PR #296 merged the all-screen screenshot-allowed policy; PR #297 merged S11-M1 AppLockManager lifecycle runtime/structural regressions. Current main push CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) both passed. S06-H4/S06-L4 PR #292/#295 evidence and S11-M1 PR #297 evidence are reflected in the canonical tracker. See [RELEASE_READINESS_2026-11-12.md](RELEASE_READINESS_2026-11-12.md) for the ordered owner/operator/staging/device gates. No production deployment, secret rotation, live staging test or physical-device acceptance is claimed. `FINAL_SIGNOFF.md` remains PENDING.
+
+
+## S06-H5 durable candidate-throttle storage guard — 2026-11-13
+
+`sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md` records a targeted
+re-review finding that `PinChangeThrottle` could accept a successful in-memory
+`commit()` on `SecurePrefs.SecurityTier.NONE`, allowing the candidate budget to
+disappear on process death. The current branch passes the resolved storage tier
+from `PinManager` and rejects non-durable storage before any candidate is inspected.
+A pure regression and source-wiring regression cover the guard. S06-H5 remains
+Partial pending exact-head CI/Security, independent residual review and later
+feature-complete device acceptance.
