@@ -1,15 +1,15 @@
 # DuoShield — Release Readiness and Remaining Work
 
-**Updated:** 2026-11-12  
+**Updated:** 2026-11-13  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `4341ecf84d8579b651d6853c480f0c1a6129a324`  
+**Current main:** `8f261240452eadc3aae5037711019d778f1a855e`  
 **Decision:** NOT SIGNED OFF — `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
 
 ## 1. Verified current baseline
 
-Current main push workflows:
-- [CI 42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186): 10/10 jobs passed — Server/Worker, release-log AST, vendored libsignal integrity, Gradle wrapper integrity, lint, Android unit tests, Espresso, debug APK, API 35 predictive-back and minified R8.
-- [Security 42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183): 3/3 jobs passed — CodeQL, Gitleaks and SBOM.
+Current main push workflows after PR #298:
+- [CI 43464392035](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392035): 10/10 jobs passed.
+- [Security 43464392151](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392151): 3/3 jobs passed.
 
 Recent merged work:
 - PR #292: durable secondary/duress PIN persistence and runtime AccountLockWorker tests; CI 10/10, Security 3/3, Firestore Rules/server transactions passed.
@@ -23,7 +23,7 @@ The canonical tracker retains **116 unique findings: 86 Fixed, 17 Partial, 1 Ope
 
 | Priority | Task | Owner | Acceptance evidence |
 |---|---|---|---|
-| P0 | Reconcile tracker/handoff and supersede stale PR #293 | Repository automation | Current-main documentation PR merged; SHA, counts, workflow IDs and residuals agree |
+| P0 | Tracker/handoff closeout | Repository automation | PR #298 merged; current-main SHA and post-merge CI/Security evidence recorded |
 | P1 | Focused residual review of S06-H5 PIN collision observability | Security engineering | Reproducible channel fixed with regression, or residual formally accepted |
 | P1 | Review S10-N2 analyzer residual surface without weakening fail-closed behavior | Security engineering | Source review, regression for any proven false negative, full AST self-test and CI |
 | P1 | Review S07-L2 upstream libsignal explicit destruction API | Crypto engineering/upstream | Supported API and safe upgrade proof, or owner-approved residual-risk acceptance |
@@ -132,3 +132,17 @@ DuoShield is ready for production sign-off only when:
 - trust-boundary review and owner release approval are recorded.
 
 Until then, leave `FINAL_SIGNOFF.md` **PENDING**.
+
+
+## 9. New S06-H5 code-side hardening — 2026-11-13
+
+A targeted re-review found that the PIN-change throttle accepted `SharedPreferences.commit()`
+without checking whether `SecurePrefs` resolved to a durable tier. The `NONE` tier is
+in-memory-only, so a process restart could silently reset the candidate-attempt budget.
+
+Branch `security/s06-h5-throttle-requires-durable-secureprefs-2026-11-13` passes the
+resolved tier into `PinChangeThrottle`, rejects null/non-durable tiers before candidate
+inspection, adds a NONE-tier regression and strengthens the production-wiring test.
+The three-attempt/15-minute behavior remains unchanged. S06-H5 stays Partial until its
+exact-head CI/Security checks, independent residual review and later feature-complete
+device acceptance pass. Do not treat this code branch as a completed finding or sign-off.
