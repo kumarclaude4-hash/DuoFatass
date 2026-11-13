@@ -17,7 +17,7 @@ Recent merged work:
 - PR #296: screenshots allowed globally until app finalization; exact-head CI 10/10, Security 3/3.
 - PR #297: AppLockManager foreground lifecycle runtime tests and CallActivity/InCallChatActivity ordering regressions; exact-head CI 10/10, Security 3/3.
 
-The canonical tracker retains **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Governance classification aliases in the severity display are not additional unique findings. No open GitHub issues. PR #293 is a stale documentation-only PR and is being superseded by this current-main closeout.
+The canonical tracker retains **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Governance classification aliases in the severity display are not additional unique findings. No open GitHub issues. Stale PR #293 was closed unmerged and superseded by merged PR #298. PR #299 is the current open code PR for the S06-H5 durable-storage throttle guard.
 
 ## 2. Remaining repository work
 
@@ -146,3 +146,13 @@ inspection, adds a NONE-tier regression and strengthens the production-wiring te
 The three-attempt/15-minute behavior remains unchanged. S06-H5 stays Partial until its
 exact-head CI/Security checks, independent residual review and later feature-complete
 device acceptance pass. Do not treat this code branch as a completed finding or sign-off.
+
+
+## Current engineering PR — S06-H5 durable throttle (2026-11-13)
+
+[PR #299](https://github.com/kumarclaude4-hash/DuoFatass/pull/299) hardens
+`PinChangeThrottle` against the in-memory-only SecurePrefs `NONE` tier. The helper now
+rejects non-durable storage before candidate inspection; the new regression proves an
+ephemeral call cannot consume or grant an attempt. This preserves the current three-attempt
+policy. Exact-head CI/Security are required before merge. S06-H5 remains Partial pending
+independent side-channel and later feature-complete device acceptance.
