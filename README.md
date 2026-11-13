@@ -156,16 +156,18 @@ echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
 ### Signed release APK (GitHub Actions)
 
-Triggered automatically on every push to `main` via [`.github/workflows/release.yml`](.github/workflows/release.yml).  
+Triggered by pushing a version tag matching `v*` (for example `v1.4.1`) or by manually dispatching `.github/workflows/release.yml` with an existing version tag. Ordinary pushes to `main` run CI; they do not publish a signed release. Protect release tags from mutation as part of SC-12 before production publication; the current repository governance handoff still tracks that protection as outstanding.
 Required repository secrets:
 
 | Secret | Purpose |
 |---|---|
-| `GOOGLE_SERVICES_JSON` | Firebase config |
-| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | FCM service account |
-| `KEYSTORE_BASE64` | Base64-encoded release keystore |
-| `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` | Signing credentials |
-| `WORKER_URL` / `WORKER_SECRET` | Cloudflare Worker for media |
+| `GOOGLE_SERVICES_JSON` | Firebase client configuration required to build the app |
+| `KEYSTORE_BASE64` | Base64-encoded release signing keystore |
+| `KEYSTORE_PASSWORD` | Release keystore password |
+| `KEY_ALIAS` | Release signing key alias |
+| `KEY_PASSWORD` | Release signing key password |
+
+The release workflow also accepts optional non-secret routing/build values through its environment inputs: `B2_BUCKET`, `B2_REGION`, `PUSH_SERVER_URL`, and `WORKER_URL`. These values are written to `local.properties` as public client endpoints/metadata and have safe defaults in the workflow. Admin service-account credentials, B2 application keys and `WORKER_SECRET` are not required by the Android release build and must remain on their server/Worker runtimes; they must never be packaged in an APK.
 
 The release workflow publishes ABI-specific signed APKs (`arm64-v8a` and `armeabi-v7a`), matching ZIP archives, and a `SHA256SUMS` manifest through GitHub Releases. The in-app updater selects the compatible APK and verifies it before installation.
 
@@ -201,7 +203,7 @@ GitHub repo
     └─ GitHub Actions CI/CD
             ├── Lint + compile check  (every push / PR)
             ├── Debug APK build       (every push / PR)
-            ├── Signed release APK    (every push to main)
+            ├── Signed release APK    (immutable v* tag / manual dispatch)
             └── Firestore rules test  (on rules/test file changes)
 ```
 
@@ -209,7 +211,7 @@ GitHub repo
 |---|---|---|---|
 | Push server (FCM relay) | `/server` | `https://duofat.onrender.com` | ✅ on `git push` |
 | Storage Worker (R2 → B2) | `/worker` | Cloudflare Workers | ✅ on `git push` |
-| Android app | `/app` | GitHub Releases (APK) | ✅ on `git push` |
+| Android app | `/app` | GitHub Releases (APK) | ✅ on immutable `v*` tag / manual release dispatch |
 
 ---
 

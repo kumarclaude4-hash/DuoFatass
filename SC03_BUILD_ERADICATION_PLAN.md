@@ -1,13 +1,16 @@
 # SC-03 / S3-19b — Gradle Dependency Verification: Findings Report & Eradication Plan
 
-**Status as of this report: BLOCKED — not fixed.**
-**Goal:** get a real, signed (or at minimum unsigned-but-installable) APK out of GitHub Actions, produced by a build that passes with `verify-metadata=true` fully enforced.
+**Current disposition (2026-11-12): FIXED — this historical plan is superseded.**
+**Current evidence:** `gradle/verification-metadata.xml` has `verify-metadata=true`, 493 component records and includes the platform-specific `com.android.tools.build:aapt2:8.6.0-11315950` Linux artifact checksum. Current main commit `4341ecf84d8579b651d6853c480f0c1a6129a324` passed GitHub CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) 10/10, including lint, unit tests, debug APK, Espresso, API 35 predictive-back and minified R8; Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) passed 3/3. The SC-03 code/CI dependency-verification gap is closed. Signing secrets and signed release publication are separate gates; no current signed release is claimed.
+
+The original investigation below is preserved for audit history only. Do not execute its old Phase A–D steps or repeat the missing-aapt2 recovery work.
+
 
 This file exists at the repo root so it survives sandbox recycling (unlike `/tmp` logs from prior sessions, which did not).
 
 ---
 
-## 1. Background
+## 1. Historical background (state before SC-03 closure)
 
 `SC-03` (tracked in `BUG_TRACKER.md` line 84, status **Partial**, session `S3-03`) is the finding that the app shipped with **no Gradle dependency verification at all** — no `gradle/verification-metadata.xml` existed, so a compromised or swapped dependency (malicious `.jar`/`.aar`, or a JitPack-served artifact built from a mutable Git ref) could enter the build undetected.
 
@@ -15,7 +18,7 @@ The fix scaffolded `gradle/verification-metadata.xml` with `<verify-metadata>tru
 
 ---
 
-## 2. Current Repo State (verified this session)
+## 2. Historical repo state (captured before SC-03 closure)
 
 **Citation:** `git log --oneline -10`, `git status`, direct inspection of `gradle/verification-metadata.xml`
 
@@ -65,7 +68,7 @@ Before proposing any new build, all existing evidence sources were checked and r
 
 ---
 
-## 5. What Already Works (do not re-litigate)
+## 5. Historical task evidence (pre-closure)
 
 Confirmed in a prior session via a real, non-dry-run, task-executing Gradle run against a corrected (436-component) metadata file:
 
@@ -98,7 +101,7 @@ This is a **separate concern from SC-03**: it's a release-signing/secrets-provis
 
 ---
 
-## 7. Eradication Plan
+## 7. Historical eradication plan — superseded by current status at top
 
 ### Phase A — Close the SC-03 dependency-verification gap (blocks *all* APKs, debug and release)
 
@@ -146,6 +149,6 @@ This is a **separate concern from SC-03**: it's a release-signing/secrets-provis
 
 ---
 
-## 8. Immediate Next Action
+## 8. Historical immediate next action — no longer current
 
 **Phase A, steps 1–4** is the smallest unit of work that unblocks everything else — it requires no secrets, no repo-settings access, and produces the debug-APK-from-CI deliverable once merged (Phase B). Phase C (signed release) is a separate, independent decision gated on keystore secret availability, which needs your confirmation since this session's GitHub token could not list repo secrets.

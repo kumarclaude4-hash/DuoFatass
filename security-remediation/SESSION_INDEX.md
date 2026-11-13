@@ -122,3 +122,8 @@ residual/device acceptance.
 ## S11-M1 call-lock lifecycle regression coverage — 2026-11-11
 
 `sessions/SESSION-S11-M1-CALL-LOCK-LIFECYCLE-2026-11-11.md` records new Robolectric tests for the AppLockManager foreground reference counter plus stronger call/chat lifecycle ordering guards. The tests cover last-Activity background timestamp creation, no timestamp during Activity navigation, preservation of pending timestamps until explicit foreground confirmation, and guarded decrements for CallActivity/InCallChatActivity. This increases automated coverage but does not replace the deferred notification-driven live-call, authentication-return and OEM/device acceptance. S11-M1 remains Partial.
+
+
+## Current mainline/release-readiness baseline — 2026-11-12
+
+Main is `4341ecf84d8579b651d6853c480f0c1a6129a324`. PR #296 merged the all-screen screenshot-allowed policy; PR #297 merged S11-M1 AppLockManager lifecycle runtime/structural regressions. Current main push CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) both passed. S06-H4/S06-L4 PR #292/#295 evidence and S11-M1 PR #297 evidence are reflected in the canonical tracker. See [RELEASE_READINESS_2026-11-12.md](RELEASE_READINESS_2026-11-12.md) for the ordered owner/operator/staging/device gates. No production deployment, secret rotation, live staging test or physical-device acceptance is claimed. `FINAL_SIGNOFF.md` remains PENDING.
