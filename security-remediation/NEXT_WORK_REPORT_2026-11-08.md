@@ -201,3 +201,13 @@ NEXT SESSION: only pursue a newly reproduced S10-N2 residual within the bounded 
   side-channel residual review and feature-complete device acceptance pass.
 - No production credential, provider setting, staging identity/data or physical device
   was used or changed. `FINAL_SIGNOFF.md` remains PENDING.
+
+
+## PR #299 merged — S06-H5 durable-throttle guard (2026-11-13)
+
+PR #299 merged to main as `be7c0e7ee8eee1289da5fd4af9b84183998781b5`.
+- Exact PR-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed 10/10; Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed 3/3.
+- Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed 10/10; Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed 3/3.
+- The throttle rejects the in-memory-only SecurePrefs `NONE` tier before candidate inspection. The regression proves NONE does not create/consume an attempt and a subsequent durable SOFTWARE-tier call remains attempt one.
+- S06-H5 remains Partial for independent side-channel review and feature-complete physical-device acceptance.
+- Current GitHub inventory: zero open PRs and zero open issues. No production credentials, provider settings, staging data or physical device was changed/tested. `FINAL_SIGNOFF.md` remains PENDING.
