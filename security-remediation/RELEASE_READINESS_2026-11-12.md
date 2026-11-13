@@ -2,14 +2,18 @@
 
 **Updated:** 2026-11-13  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `8f261240452eadc3aae5037711019d778f1a855e`  
+**Current main:** `${sha}`  
 **Decision:** NOT SIGNED OFF — `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
 
 ## 1. Verified current baseline
 
-Current main push workflows after PR #298:
-- [CI 43464392035](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392035): 10/10 jobs passed.
-- [Security 43464392151](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392151): 3/3 jobs passed.
+PR #299 exact-head workflows:
+- [CI 43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730): 10/10 jobs passed.
+- [Security 43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858): 3/3 jobs passed.
+
+Post-merge main workflows:
+- [CI 43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719): 10/10 jobs passed.
+- [Security 43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761): 3/3 jobs passed.
 
 Recent merged work:
 - PR #292: durable secondary/duress PIN persistence and runtime AccountLockWorker tests; CI 10/10, Security 3/3, Firestore Rules/server transactions passed.
@@ -17,7 +21,7 @@ Recent merged work:
 - PR #296: screenshots allowed globally until app finalization; exact-head CI 10/10, Security 3/3.
 - PR #297: AppLockManager foreground lifecycle runtime tests and CallActivity/InCallChatActivity ordering regressions; exact-head CI 10/10, Security 3/3.
 
-The canonical tracker retains **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Governance classification aliases in the severity display are not additional unique findings. No open GitHub issues. Stale PR #293 was closed unmerged and superseded by merged PR #298. PR #299 is the current open code PR for the S06-H5 durable-storage throttle guard.
+The canonical tracker retains **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Governance classification aliases in the severity display are not additional unique findings. No open GitHub issues. Stale PR #293 was closed unmerged and superseded by merged PR #298. PR #299 merged the S06-H5 durable-storage throttle guard; no open PRs remain.
 
 ## 2. Remaining repository work
 
@@ -140,19 +144,22 @@ A targeted re-review found that the PIN-change throttle accepted `SharedPreferen
 without checking whether `SecurePrefs` resolved to a durable tier. The `NONE` tier is
 in-memory-only, so a process restart could silently reset the candidate-attempt budget.
 
-Branch `security/s06-h5-throttle-requires-durable-secureprefs-2026-11-13` passes the
-resolved tier into `PinChangeThrottle`, rejects null/non-durable tiers before candidate
-inspection, adds a NONE-tier regression and strengthens the production-wiring test.
-The three-attempt/15-minute behavior remains unchanged. S06-H5 stays Partial until its
-exact-head CI/Security checks, independent residual review and later feature-complete
-device acceptance pass. Do not treat this code branch as a completed finding or sign-off.
+PR #299 merged as `be7c0e7ee8eee1289da5fd4af9b84183998781b5`. The exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730)
+passed 10/10 and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858)
+passed 3/3; post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719)
+passed 10/10 and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761)
+passed 3/3. The merged helper rejects null/non-durable tiers before candidate inspection;
+the NONE-tier regression proves ephemeral storage cannot consume or grant an attempt.
+The three-attempt/15-minute behavior is unchanged. S06-H5 remains Partial pending
+independent residual review and later feature-complete device acceptance. Do not treat
+the merged code change as final finding closure or production sign-off.
 
 
 ## Current engineering PR — S06-H5 durable throttle (2026-11-13)
 
-[PR #299](https://github.com/kumarclaude4-hash/DuoFatass/pull/299) hardens
-`PinChangeThrottle` against the in-memory-only SecurePrefs `NONE` tier. The helper now
-rejects non-durable storage before candidate inspection; the new regression proves an
-ephemeral call cannot consume or grant an attempt. This preserves the current three-attempt
-policy. Exact-head CI/Security are required before merge. S06-H5 remains Partial pending
-independent side-channel and later feature-complete device acceptance.
+[PR #299](https://github.com/kumarclaude4-hash/DuoFatass/pull/299) merged as `be7c0e7ee8eee1289da5fd4af9b84183998781b5`.
+Its exact-head CI passed 10/10 and Security passed 3/3; post-merge main CI and Security
+also passed 10/10 and 3/3. The helper rejects non-durable storage before candidate
+inspection; the NONE-tier regression proves ephemeral storage cannot consume or grant
+an attempt. This preserves the existing three-attempt policy. S06-H5 remains Partial
+pending independent side-channel and later feature-complete device acceptance.
