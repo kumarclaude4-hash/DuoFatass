@@ -551,7 +551,10 @@ public class DuressManager {
         // plain overwrites.
         if (enteredPin != null && !enteredPin.isEmpty()) {
             try {
-                com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin);
+                if (!com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)) {
+                    android.util.Log.e("DuressManager",
+                            "Device-gate PIN promotion was not durably confirmed; continuing duress teardown.");
+                }
             } catch (Exception e) {
                 android.util.Log.e("DuressManager", "Device-gate promotion failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
