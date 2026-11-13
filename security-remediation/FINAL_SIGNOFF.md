@@ -1,11 +1,11 @@
 # FINAL SIGN-OFF
 
 > Status: **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF.**
-> Updated 2026-11-12. Status remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. This is the release/sign-off gate, not a progress claim.
+> Updated 2026-11-13. Status remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. This is the release/sign-off gate, not a progress claim.
 
-## Current evidence snapshot — 2026-11-12
+## Current evidence snapshot — 2026-11-13
 
-Current main: `4341ecf84d8579b651d6853c480f0c1a6129a324`. PR #296 merged the all-screen screenshot allowance; PR #297 merged the S11-M1 lifecycle runtime/structural regression tests. Current main CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) passed **10/10** and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) passed **3/3**. The 116-unique-finding roll-up remains 86 Fixed, 17 Partial, 1 Open and 12 Accepted. S06-H4 and S06-L4 evidence has advanced through PR #292/#295; S11-M1 automated coverage advanced through PR #297. Those changes do not close their remaining physical-device/staging acceptance. SC-12 remains Open: the live default-branch ruleset still requires zero approvals and no CI/Security checks. No production secrets were read or changed; no production deployment, provider-console enforcement, live staging verification or physical-device acceptance is claimed. Keep this sign-off **PENDING**.
+Current main: `8f261240452eadc3aae5037711019d778f1a855e` (PR #298). Post-merge main CI [43464392035](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392035) passed **10/10** and Security [43464392151](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392151) passed **3/3**. The 116-unique-finding roll-up remains 86 Fixed, 17 Partial, 1 Open and 12 Accepted. PR #296/#297 implement the all-screen screenshot policy and call-lock lifecycle regressions; their remaining user-policy/device acceptance is unchanged. PR #298 reconciled the tracker/release-readiness documentation. S06-H4/S06-L4 still require real Keystore, staging and device evidence. The current S06-H5 code branch adds a durable-SecurePrefs-tier requirement to primary-PIN candidate throttling and a NONE-tier regression, but exact-head CI/Security are pending and S06-H5 remains Partial. SC-12 remains Open: the live default-branch ruleset has zero required approvals and no required CI/Security checks. No production secrets were read or changed; no production deployment, provider-console enforcement, live staging verification or physical-device acceptance is claimed. Keep this sign-off **PENDING**.
 
 ## Historical evidence snapshot — 2026-11-09
 
@@ -216,3 +216,20 @@ no collision-specific branch or message remains. Two new `SecurityFindingWiringT
 assert ordering, guarded writes and generic failure behavior.
 
 Exact implementation-head CI [42612569269](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569269) passed 10/10 and Security [42612569340](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42612569340) passed 3/3. The final documentation-synchronized head also passed CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) 3/3. The full Android unit suite, lint, debug APK, minified R8 (453,247-line mapping), Espresso (4 tests executed), API 35 predictive-back (1 test executed), Server + Worker tests, AST, CodeQL, Gitleaks, SBOM and integrity checks passed. PR #290 merged to main as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. S06-H5 remains Partial until independent residual/feature-complete device acceptance is recorded. This PR does not perform physical-device or production acceptance.
+
+
+## S06-H5 durable-throttle follow-up — 2026-11-13 (PR checks pending)
+
+A targeted source review found the primary-PIN attempt throttle relied on a successful
+`SharedPreferences.commit()` without proving the resolved `SecurePrefs` tier was
+durable. On the in-memory-only `NONE` tier, attempt state would be lost at process
+death. The current S06-H5 branch passes the resolved storage tier into
+`PinChangeThrottle` and rejects non-durable tiers before candidate inspection. A pure
+regression proves the ephemeral tier cannot create or consume an attempt and that a
+subsequent durable attempt remains attempt one; a source-wiring regression verifies
+the tier is passed by `PinManager`.
+
+This narrows one code-level fail-open path but does not eliminate the broader
+S06-H5 observability residual or device acceptance. S06-H5 remains **Partial**.
+Exact-head PR CI/Security must pass before merge. This addendum does not change the
+production approval decision: **PENDING**.
