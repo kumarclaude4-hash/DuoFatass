@@ -150,6 +150,8 @@ public class SecurePrefs {
     private static volatile SharedPreferences testMainOverride;
     private static volatile SharedPreferences testDeviceGateOverride;
     private static volatile SharedPreferences testSessionStateOverride;
+    private static volatile SecurityTier testMainTierOverride;
+    private static volatile SecurityTier testDeviceGateTierOverride;
 
     public static SharedPreferences get(Context context) {
         if (testMainOverride != null) return testMainOverride;
@@ -369,11 +371,17 @@ public class SecurePrefs {
      * check {@link #isInitialized()} as well — {@link DeviceSecurityGate} does.
      */
     public static SecurityTier getTier() {
+        if (testMainOverride != null && testMainTierOverride != null) {
+            return testMainTierOverride;
+        }
         return tier;
     }
 
     /** Which tier resolved for the device-gate file returned by {@link #getDeviceGate}. */
     public static SecurityTier getDeviceGateTier() {
+        if (testDeviceGateOverride != null && testDeviceGateTierOverride != null) {
+            return testDeviceGateTierOverride;
+        }
         return deviceGateTier;
     }
 
@@ -440,9 +448,23 @@ public class SecurePrefs {
     static void setTestOverridesForUnitTests(SharedPreferences main,
                                              SharedPreferences deviceGate,
                                              SharedPreferences sessionState) {
+        // Ordinary fake stores model durable SOFTWARE-tier storage. Tests that
+        // exercise fallback behavior must opt into NONE explicitly below.
+        setTestOverridesForUnitTests(main, deviceGate, sessionState,
+                SecurityTier.SOFTWARE, SecurityTier.SOFTWARE);
+    }
+
+    /** Test-only. Additionally injects the resolved tiers of both independent stores. */
+    static void setTestOverridesForUnitTests(SharedPreferences main,
+                                             SharedPreferences deviceGate,
+                                             SharedPreferences sessionState,
+                                             SecurityTier mainTier,
+                                             SecurityTier deviceGateTier) {
         testMainOverride         = main;
         testDeviceGateOverride   = deviceGate;
         testSessionStateOverride = sessionState;
+        testMainTierOverride     = mainTier;
+        testDeviceGateTierOverride = deviceGateTier;
     }
 
     /** Test-only. Clears injected fakes and resets caches. */
@@ -450,6 +472,8 @@ public class SecurePrefs {
         testMainOverride         = null;
         testDeviceGateOverride   = null;
         testSessionStateOverride = null;
+        testMainTierOverride     = null;
+        testDeviceGateTierOverride = null;
         reset();
     }
 }
