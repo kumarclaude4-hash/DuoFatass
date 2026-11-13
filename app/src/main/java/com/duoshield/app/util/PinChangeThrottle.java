@@ -24,11 +24,17 @@ final class PinChangeThrottle {
 
     static synchronized boolean tryRecord(
             SharedPreferences preferences,
+            SecurePrefs.SecurityTier storageTier,
             String scope,
             long wallNow,
             long elapsedNow,
             long bootId) {
-        if (preferences == null || scope == null || scope.isEmpty()
+        // A successful SharedPreferences.commit() on SecurePrefs' NONE tier
+        // only updates the in-memory fallback. It would disappear on process
+        // death and silently reset the candidate budget, so do not inspect or
+        // permit a candidate unless the resolved account store is durable.
+        if (storageTier == null || !storageTier.isDurable()
+                || preferences == null || scope == null || scope.isEmpty()
                 || wallNow <= 0L || elapsedNow < 0L) {
             return false;
         }
