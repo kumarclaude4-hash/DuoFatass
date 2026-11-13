@@ -139,3 +139,16 @@ from `PinManager` and rejects non-durable storage before any candidate is inspec
 A pure regression and source-wiring regression cover the guard. S06-H5 remains
 Partial pending exact-head CI/Security, independent residual review and later
 feature-complete device acceptance.
+
+
+## S06-H5 durable-throttle storage guard — PR #299 merged (2026-11-13)
+
+`sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md` records the finding and
+implementation. PR #299 merged as `be7c0e7ee8eee1289da5fd4af9b84183998781b5`. Exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730)
+passed 10/10 and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858)
+passed 3/3. Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719)
+and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761)
+also passed 10/10 and 3/3. The helper now rejects non-durable SecurePrefs tiers
+before candidate inspection; the NONE-tier regression guards against an ephemeral
+budget reset. S06-H5 remains Partial pending independent residual review and
+feature-complete device acceptance. `FINAL_SIGNOFF.md` remains PENDING.
