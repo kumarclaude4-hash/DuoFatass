@@ -10,7 +10,9 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Current main baseline (2026-11-12):** `4341ecf84d8579b651d6853c480f0c1a6129a324`. PR #296 applies the all-screen screenshot-allowed policy until finalization; exact-head CI [42968129815](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42968129815) passed 10/10 and Security [42968129829](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42968129829) passed 3/3. PR #297 adds S11-M1 app-lock foreground lifecycle runtime/structural regressions; exact-head CI [42970830267](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42970830267) passed 10/10 and Security [42970830194](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42970830194) passed 3/3. Post-merge main CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) passed 10/10 and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) passed 3/3. S11-M1 remains Partial only for live-call/notification/credential and OEM/device acceptance.
+**Current main baseline (2026-11-13):** PR #298 documentation closeout merged as `8f261240452eadc3aae5037711019d778f1a855e`. Post-merge main CI [43464392035](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392035) passed 10/10 and Security [43464392151](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392151) passed 3/3. PR #296 implements the all-screen screenshot-allowed policy until finalization; PR #297 adds S11-M1 app-lock foreground lifecycle runtime/structural regressions. S08-H2 remains intentionally deferred and S11-M1 remains Partial pending live-call/notification/credential and OEM/device acceptance.
+
+**Current code follow-up:** branch `security/s06-h5-throttle-requires-durable-secureprefs-2026-11-13` closes a fail-open storage-tier gap in S06-H5 candidate throttling. The helper now rejects SecurePrefs' in-memory-only `NONE` tier before candidate inspection; a regression proves the attempt budget is not consumed or granted on ephemeral storage. See `sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. Keep S06-H5 Partial until exact-head CI/Security, independent side-channel review and feature-complete device acceptance pass.
 
 PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
 
@@ -137,3 +139,13 @@ post-merge addendum in `../BUG_TRACKER.md` and the explicit unresolved items in 
 Current main push CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) is green 10/10 and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) is green 3/3. The stale SC-03 eradication plan is superseded: current dependency verification has 493 components, includes the Linux aapt2 checksum and is exercised by current Gradle CI. README release instructions now correctly state that signed releases trigger on immutable `v*` tags or manual dispatch, not every push to main.
 
 Remaining work is organized in `RELEASE_READINESS_2026-11-12.md`. Keep provider/secret rotation, Firebase/Firestore live configuration, Render/Worker pairing, staging acceptance, SC-12 governance, owner decisions and feature-complete physical-device acceptance separate from repository code changes. Do not mark `FINAL_SIGNOFF.md` complete until their evidence exists or a residual risk is formally approved.
+
+## Current security work branch — S06-H5 durable throttle (2026-11-13)
+
+The PIN candidate budget previously accepted a successful in-memory `commit()` from
+`SecurePrefs.SecurityTier.NONE`, allowing the attempt budget to disappear at process
+death. The current S06-H5 branch passes the resolved storage tier into
+`PinChangeThrottle` and denies the attempt unless that tier is durable. Tests cover
+the ephemeral tier and assert the production wiring. See
+`sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. This is a mitigation
+within an existing Partial finding, not a new finding or a production sign-off.
