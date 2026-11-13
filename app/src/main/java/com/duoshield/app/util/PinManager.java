@@ -510,23 +510,52 @@ public class PinManager {
         return true;
     }
 
-    public static void setDevicePin(Context ctx, String pin) {
+    /**
+     * Stores the device-gate PIN only when the isolated store is durable and
+     * its synchronous write can be read back exactly. A successful in-memory
+     * apply on SecurePrefs' NONE tier must never advance first-run onboarding.
+     *
+     * @return true only after durable commit and read-back verification.
+     */
+    public static boolean setDevicePin(Context ctx, String pin) {
+        byte[] salt = null;
+        byte[] hash = null;
         try {
-            byte[] salt = new byte[16];
+            if (pin == null || pin.length() < MIN_PIN_LEN || pin.length() > MAX_PIN_LEN) {
+                return false;
+            }
+            SharedPreferences preferences = SecurePrefs.getDeviceGate(ctx);
+            SecurePrefs.SecurityTier storageTier = SecurePrefs.getDeviceGateTier();
+            if (storageTier == null || !storageTier.isDurable()) {
+                android.util.Log.e("PinManager",
+                        "Device-gate PIN save refused: no durable secure store.");
+                return false;
+            }
+
+            salt = new byte[16];
             new SecureRandom().nextBytes(salt);
-            byte[] hash = pbkdf2(pin, salt);
+            hash = pbkdf2(pin, salt);
             String stored = bytesToHex(salt) + ":" + bytesToHex(hash);
-            // S08-L3: do not persist the plaintext PIN length beside the hash. Scrub
-            // any value a pre-fix build left behind for this device instead.
-            SecurePrefs.getDeviceGate(ctx).edit()
-                    .putString(KEY_DEVICE_PIN_HASH, stored)
-                    .remove(KEY_DEVICE_PIN_LEN)
-                    .apply();
+            boolean saved = DeviceGatePinPersistence.persist(
+                    preferences,
+                    storageTier,
+                    KEY_DEVICE_PIN_HASH,
+                    KEY_DEVICE_PIN_LEN,
+                    stored);
+            if (!saved) {
+                android.util.Log.e("PinManager",
+                        "Device-gate PIN save failed durable commit/read-back verification.");
+            }
+            return saved;
         } catch (Exception e) {
-            android.util.Log.e("PinManager", "Failed to store device-level PIN hash" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            android.util.Log.e("PinManager", "Failed to store device-level PIN hash"
+                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            return false;
+        } finally {
+            if (salt != null) java.util.Arrays.fill(salt, (byte) 0);
+            if (hash != null) java.util.Arrays.fill(hash, (byte) 0);
         }
     }
-
     /**
      * Returns {@link #MAX_PIN_LEN}. See {@link #getPinLength} — the same S08-L3
      * fix applies to the device-scoped gate PIN.
