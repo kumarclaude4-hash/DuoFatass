@@ -181,3 +181,23 @@ NEXT SESSION: only pursue a newly reproduced S10-N2 residual within the bounded 
 - README release instructions now match the workflow: signed release publication is by immutable `v*` tag or manual dispatch, not every push to main.
 
 **Still external/owner-controlled:** credential rotation; Firestore production rules/index/TTL read-back; App Check rollout; Render/Worker Durable Object pairing; Firebase revoked-token staging; invite/admin-session/duress/media-migration staging; SC-12 ruleset/environment settings; owner decisions (S03-M3, invite-only contract and residual approvals); and the feature-complete device matrix. No production data, secret, provider setting or device was changed/tested. Keep `FINAL_SIGNOFF.md` PENDING.
+
+
+## Current main and S06-H5 durable-storage correction — 2026-11-13
+
+- PR #298 merged to main as `8f261240452eadc3aae5037711019d778f1a855e`.
+  Post-merge CI [43464392035](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392035)
+  passed 10/10 and Security [43464392151](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392151)
+  passed 3/3.
+- Targeted S06-H5 review found `PinChangeThrottle` relied on `commit()` success without
+  checking whether `SecurePrefs` resolved to a durable tier. `SecurityTier.NONE` is an
+  in-memory-only fallback; process death resets the attempt budget.
+- The branch
+  `security/s06-h5-throttle-requires-durable-secureprefs-2026-11-13` now passes the
+  resolved tier into the helper and rejects non-durable storage before candidate checking.
+  Pure tests assert the NONE tier leaves no attempt count and a later SOFTWARE-tier
+  attempt remains the first; source-wiring tests verify the tier is passed by PinManager.
+- S06-H5 remains Partial until the new exact-head CI/Security gates, independent
+  side-channel residual review and feature-complete device acceptance pass.
+- No production credential, provider setting, staging identity/data or physical device
+  was used or changed. `FINAL_SIGNOFF.md` remains PENDING.
