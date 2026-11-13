@@ -156,7 +156,7 @@ echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
 ### Signed release APK (GitHub Actions)
 
-Triggered by pushing an immutable version tag matching `v*` (for example `v1.4.1`) or by manually dispatching `.github/workflows/release.yml` with an existing version tag. Ordinary pushes to `main` run CI; they do not publish a signed release.
+Triggered by pushing a version tag matching `v*` (for example `v1.4.1`) or by manually dispatching `.github/workflows/release.yml` with an existing version tag. Ordinary pushes to `main` run CI; they do not publish a signed release. Protect release tags from mutation as part of SC-12 before production publication; the current repository governance handoff still tracks that protection as outstanding.
 Required repository secrets:
 
 | Secret | Purpose |
