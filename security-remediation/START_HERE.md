@@ -10,9 +10,9 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Current main baseline (2026-11-13):** PR #298 documentation closeout merged as `8f261240452eadc3aae5037711019d778f1a855e`. Post-merge main CI [43464392035](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392035) passed 10/10 and Security [43464392151](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43464392151) passed 3/3. PR #296 implements the all-screen screenshot-allowed policy until finalization; PR #297 adds S11-M1 app-lock foreground lifecycle runtime/structural regressions. S08-H2 remains intentionally deferred and S11-M1 remains Partial pending live-call/notification/credential and OEM/device acceptance.
+**Current main baseline (2026-11-13):** PR #299 merged as `be7c0e7ee8eee1289da5fd4af9b84183998781b5`. Its exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed 10/10 and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed 3/3. Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed 10/10 and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed 3/3. PR #296 implements the all-screen screenshot-allowed policy until finalization; PR #297 adds S11-M1 app-lock foreground lifecycle runtime/structural regressions. S08-H2 remains intentionally deferred and S11-M1 remains Partial pending live-call/notification/credential and OEM/device acceptance.
 
-**Current code follow-up:** PR #299 (branch `security/s06-h5-throttle-requires-durable-secureprefs-2026-11-13`) closes a fail-open storage-tier gap in S06-H5 candidate throttling. The helper now rejects SecurePrefs' in-memory-only `NONE` tier before candidate inspection; a regression proves the attempt budget is not consumed or granted on ephemeral storage. See `sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. Keep S06-H5 Partial until exact-head CI/Security, independent side-channel review and feature-complete device acceptance pass.
+**Merged S06-H5 hardening:** PR #299 (branch `security/s06-h5-throttle-requires-durable-secureprefs-2026-11-13`) closes a fail-open storage-tier gap in candidate throttling. The helper rejects SecurePrefs' in-memory-only `NONE` tier before candidate inspection; the regression proves the attempt budget is not consumed or granted on ephemeral storage. See `sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. S06-H5 remains Partial pending independent side-channel review and feature-complete device acceptance.
 
 PR #267 corrected the Firebase App Check integration: Firestore Rules cannot inspect App Check token metadata, so the unsupported `request.app` helper was removed. The committed rules are now tested verbatim; App Check remains a Firebase service-layer rollout requiring operator-controlled monitoring, enforcement and isolated staging evidence.
 
@@ -134,18 +134,17 @@ build, Espresso (2 tests executed), Gradle wrapper validation, and libsignal int
 post-merge addendum in `../BUG_TRACKER.md` and the explicit unresolved items in `FINAL_SIGNOFF.md`.
 
 
-## Current repository closeout — 2026-11-12
+## Current repository closeout — 2026-11-13
 
-Current main push CI [42983530186](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530186) is green 10/10 and Security [42983530183](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42983530183) is green 3/3. The stale SC-03 eradication plan is superseded: current dependency verification has 493 components, includes the Linux aapt2 checksum and is exercised by current Gradle CI. README release instructions now correctly state that signed releases trigger on immutable `v*` tags or manual dispatch, not every push to main.
+Current main is `be7c0e7ee8eee1289da5fd4af9b84183998781b5` after PR #299. Exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed 10/10 and 3/3. Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed 10/10 and 3/3. The stale SC-03 eradication plan is superseded: current dependency verification has 493 components, includes the Linux aapt2 checksum and is exercised by current Gradle CI. README release instructions now correctly state that signed releases trigger on immutable `v*` tags or manual dispatch, not every push to main.
 
 Remaining work is organized in `RELEASE_READINESS_2026-11-12.md`. Keep provider/secret rotation, Firebase/Firestore live configuration, Render/Worker pairing, staging acceptance, SC-12 governance, owner decisions and feature-complete physical-device acceptance separate from repository code changes. Do not mark `FINAL_SIGNOFF.md` complete until their evidence exists or a residual risk is formally approved.
 
-## Current security work branch — S06-H5 durable throttle (2026-11-13)
+## Merged S06-H5 durable throttle — PR #299 (2026-11-13)
 
 The PIN candidate budget previously accepted a successful in-memory `commit()` from
 `SecurePrefs.SecurityTier.NONE`, allowing the attempt budget to disappear at process
-death. The current S06-H5 branch passes the resolved storage tier into
-`PinChangeThrottle` and denies the attempt unless that tier is durable. Tests cover
-the ephemeral tier and assert the production wiring. See
-`sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. This is a mitigation
+death. PR #299 merged the resolved-tier check into `PinChangeThrottle`. The helper
+denies attempts unless the tier is durable; pure and wiring regressions cover the guard.
+See `sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. This is a mitigation
 within an existing Partial finding, not a new finding or a production sign-off.
