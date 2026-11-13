@@ -149,6 +149,15 @@ public class SecurityFindingWiringTest {
                 "app/src/main/java/com/duoshield/app/util/PinManager.java");
         assertTrue("Settings changes must use the dedicated durable throttle",
                 source.contains("PinChangeThrottle.tryRecord("));
+        int attemptAt = source.indexOf("public static boolean tryRecordPinChangeAttempt(Context ctx)");
+        int prefsAt = source.indexOf("SharedPreferences preferences = SecurePrefs.get(ctx)", attemptAt);
+        int throttleAt = source.indexOf("PinChangeThrottle.tryRecord(", prefsAt);
+        assertTrue("the PIN throttle must resolve the account preference store first",
+                prefsAt > attemptAt);
+        assertTrue("the resolved durable storage tier must be supplied to the throttle",
+                throttleAt > prefsAt
+                        && source.substring(throttleAt, source.indexOf("} catch", throttleAt))
+                                .contains("SecurePrefs.getTier()"));
         assertTrue("attempt state must be scoped to the current account",
                 source.contains("scopedKey(KEY_PIN_CHANGE_PREFIX)"));
         assertTrue("a throttle storage error must fail closed",
