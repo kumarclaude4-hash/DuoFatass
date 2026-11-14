@@ -254,7 +254,7 @@ public class DevicePinGateActivity extends AppCompatActivity {
                     handleWrongPin();
                 }
             });
-        }).start();
+        });
     }
 
     private void handleWrongPin() {
