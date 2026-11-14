@@ -6,25 +6,26 @@ two previously-separate tracking systems (`audit/` session reports +
 `RISK_REGISTER.md` / `REMEDIATION_PROGRESS.md`), which had drifted out of sync
 with each other and — in several rows — with the actual code.
 
-**Latest verified mainline baseline (2026-11-13):** PR #299 S06-H5 durable-throttle
-hardening merged to `main` as `be7c0e7ee8eee1289da5fd4af9b84183998781b5`. PR #298 documentation closeout merged immediately
-before it as `8f261240452eadc3aae5037711019d778f1a855e`. PR #299 exact-head CI
-[43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed all 10 jobs
-and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858)
-passed all 3 jobs. Post-merge main CI
-[43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed all 10 jobs
-and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761)
-passed all 3 jobs. PR #296/#297 remain the latest screenshot-policy and call-lock lifecycle
-changes; PR #292/#295 remain the latest duress persistence/worker-runtime hardening.
+**Latest verified mainline baseline (2026-11-14):** PR #300 documentation-only
+handoff reconciliation merged to `main` as `4c4a4a8d0055277eaf1f7b6ba601b507225f1428`. The latest source-changing merge
+remains PR #299, which hardened S06-H5 durable PIN-change throttling as
+`be7c0e7ee8eee1289da5fd4af9b84183998781b5`. PR #300 exact-head CI
+[43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473)
+passed all 10 jobs and Security
+[43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660)
+passed all 3 jobs. Post-PR #300 main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072)
+and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050)
+were in progress when this update was written. PR #296/#297 remain the latest screenshot-policy
+and call-lock lifecycle changes; PR #292/#295 remain the latest duress persistence/worker-runtime hardening.
 The original finding catalog was first re-derived from source at `298f916` (2026-08-11);
 that is historical provenance, not the current code baseline. The register retains
 116 unique findings: 86 Fixed, 17 Partial, 1 Open and 12 Accepted. The current S06-H5
 durable-storage correction described below does not change its disposition or counts.
 Provider, staging, governance and physical-device acceptance remain separate.
 
-## Current repository and audited code baseline — 2026-11-13
+## Current repository and audited code baseline — 2026-11-14
 
-- **Current main HEAD:** `be7c0e7ee8eee1289da5fd4af9b84183998781b5` (PR #299). PR #296 merged the all-screen screenshot allowance; PR #297 added S11-M1 lifecycle regression coverage; PR #298 reconciled release-readiness documentation; PR #299 hardened the S06-H5 primary-PIN candidate throttle against ephemeral SecurePrefs storage.
+- **Current main HEAD:** `4c4a4a8d0055277eaf1f7b6ba601b507225f1428` (PR #300, documentation-only). Latest source-changing merge: PR #299 at `be7c0e7ee8eee1289da5fd4af9b84183998781b5`. PR #296 merged the all-screen screenshot allowance; PR #297 added S11-M1 lifecycle regression coverage; PR #298 reconciled release-readiness documentation; PR #299 hardened the S06-H5 primary-PIN candidate throttle against ephemeral SecurePrefs storage.
 - **PR #299 exact-head CI:** [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed 10/10.
 - **PR #299 exact-head Security:** [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed 3/3.
 - **Post-PR #299 main CI:** [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed 10/10.
@@ -32,8 +33,10 @@ Provider, staging, governance and physical-device acceptance remain separate.
 - **PR #288 S02-I2:** merged as `78a99b478e90ec3337df3c92997de3ac16efbe5e`. Exact-head CI [42583301825](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301825) passed 10/10; Security [42583301910](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301910) passed 3/3; Firestore Rules/server transactions [42583301878](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42583301878) passed. Code-side production fallback closed; authorized Render/Worker secret-pair read-back/runtime confirmation remains.
 - **PR #289 S10-N2:** merged as `ab7bbe954fab03c6ed1c55f7ad87b66c193dca85`. Exact-head CI [42585457006](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457006) passed 10/10 and Security [42585457009](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42585457009) passed 3/3. It adds same-owner method-reference callback tainting and a synthetic AST regression. S10-N2 remains Partial for unmodelled method-reference/external-dispatch shapes, whole-program analysis limitations and physical release-logcat acceptance.
 - **PR #290 S06-H5:** merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Exact-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) passed 3/3. Espresso executed 4 tests; API 35 predictive-back executed 1 test; debug APK and minified R8 passed (453,247-line mapping). The PR adds throttle-before-check and generic-failure wiring regressions to restored setup and forced primary rotation.
-- **Open PRs:** 0; rechecked after PR #299 merge.
-- **Open GitHub issues:** 0; rechecked 2026-11-13.
+- **PR #300 exact-head CI:** [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473) passed 10/10; Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660) passed 3/3.
+- **Post-PR #300 main workflows:** CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072) and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050) were running at the 2026-11-14 documentation checkpoint.
+- **Open PRs:** 0 after PR #300 merged; rechecked at merge.
+- **Open GitHub issues:** 0; rechecked 2026-11-14.
 - **Finding register:** 116 unique findings — **86 Fixed, 17 Partial, 1 Open, 12 Accepted** (Critical 4; High 31; Medium 27; Low 31; Informational 23).
 - **Current S10-N2 progress:** PR #286 extends the bounded AST guard to fail closed on unresolved class/method generic return types and generic receiver chains, common Java reflection/class-loading APIs, and opaque callback-lambda parameters. It preserves lexical scoping and the narrowly safe exception-class-name and MediaPlayer error-code diagnostics. Regression coverage includes generic `T` returns, `Class.forName → getMethod → Method.invoke`, callback payload logging and safe callback exception-class output. Exact-head CI [42575704977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704977) passed 10/10 and Security [42575704959](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42575704959) passed 3/3; AST scanned 205 Java files / 414 warning/error sinks with zero violations; Espresso executed 4 tests, API 35 predictive-back 1 test, and R8 generated a 453,260-line mapping. S10-N2 remains Partial: the guard is bounded syntax-level analysis, not symbol-resolved whole-program proof; unmodelled external/library dispatch, reflective/dynamic shapes, native/callback internals, arbitrary generic/container semantics and feature-complete physical release/minified APK logcat acceptance remain.
 - **Documentation closeout PR #278:** merged as `0f5ffe15518db29b4c5895dc42ca600647201f99`; exact-head CI [42457565977](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565977) passed 10/10 and Security [42457565979](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42457565979) passed 3/3.
