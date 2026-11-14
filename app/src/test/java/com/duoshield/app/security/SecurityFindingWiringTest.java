@@ -72,9 +72,14 @@ public class SecurityFindingWiringTest {
                 "app/src/main/java/com/duoshield/app/util/PinManager.java");
 
         assertTrue("account PIN writer must scrub the historical plaintext length key",
-                source.contains("ed.remove(KEY_LEN_PREFIX + user.getUid())"));
+                source.contains("persistPinHash(accountStore, accountTier, key, accountHash,")
+                        && source.contains("String lengthKey = KEY_LEN_PREFIX + user.getUid()"));
         assertTrue("the device PIN writer must retain its dedicated length-key cleanup",
-                source.contains("remove(KEY_DEVICE_PIN_LEN)"));
+                source.contains("persistPinHash(store, tier, KEY_DEVICE_PIN_HASH,")
+                        && source.contains("stored, KEY_DEVICE_PIN_LEN"));
+        assertTrue("the shared PIN writer must remove every legacy metadata key before success",
+                source.contains("editor.remove(removedKey)")
+                        && source.contains("preferences.contains(removedKey)"));
         assertTrue("account PIN length getter must be present",
                 source.contains("public static int getPinLength(Context ctx)"));
         assertTrue("device PIN length getter must be present",
