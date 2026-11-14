@@ -10,7 +10,7 @@ Do exactly what is below, in order. Do not improvise a different plan. Do not de
 
 All 20 scheduled Round 3 remediation sessions are complete at the source/documentation level. That is not equivalent to end-to-end sign-off. Firestore Rules emulator coverage, Android unit/lint/build/Espresso/API 35/R8 checks, server/Worker tests and security scanning remain part of the automated gate; operator, staging and physical-device acceptance are separate.
 
-**Current main baseline (2026-11-13):** PR #299 merged as `be7c0e7ee8eee1289da5fd4af9b84183998781b5`. Its exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed 10/10 and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed 3/3. Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed 10/10 and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed 3/3. PR #296 implements the all-screen screenshot-allowed policy until finalization; PR #297 adds S11-M1 app-lock foreground lifecycle runtime/structural regressions. S08-H2 remains intentionally deferred and S11-M1 remains Partial pending live-call/notification/credential and OEM/device acceptance.
+**Current main baseline (2026-11-14):** PR #300 documentation-only reconciliation merged as `4c4a4a8d0055277eaf1f7b6ba601b507225f1428`. The latest application-code merge remains PR #299. PR #299 exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed 10/10 and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed 3/3; post-merge code-main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed 10/10 and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed 3/3. PR #300 exact-head CI [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473) passed 10/10 and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660) passed 3/3. Post-PR #300 main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072) and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050) were still running at this snapshot. PR #296 implements the all-screen screenshot-allowed policy until finalization; PR #297 adds S11-M1 app-lock foreground lifecycle runtime/structural regressions. S08-H2 remains intentionally deferred and S11-M1 remains Partial pending live-call/notification/credential and OEM/device acceptance.
 
 **Merged S06-H5 hardening:** PR #299 (branch `security/s06-h5-throttle-requires-durable-secureprefs-2026-11-13`) closes a fail-open storage-tier gap in candidate throttling. The helper rejects SecurePrefs' in-memory-only `NONE` tier before candidate inspection; the regression proves the attempt budget is not consumed or granted on ephemeral storage. See `sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. S06-H5 remains Partial pending independent side-channel review and feature-complete device acceptance.
 
@@ -134,9 +134,9 @@ build, Espresso (2 tests executed), Gradle wrapper validation, and libsignal int
 post-merge addendum in `../BUG_TRACKER.md` and the explicit unresolved items in `FINAL_SIGNOFF.md`.
 
 
-## Current repository closeout — 2026-11-13
+## Current repository closeout — 2026-11-14
 
-Current main is `be7c0e7ee8eee1289da5fd4af9b84183998781b5` after PR #299. Exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed 10/10 and 3/3. Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed 10/10 and 3/3. The stale SC-03 eradication plan is superseded: current dependency verification has 493 components, includes the Linux aapt2 checksum and is exercised by current Gradle CI. README release instructions now correctly state that signed releases trigger on immutable `v*` tags or manual dispatch, not every push to main.
+Current main is `4c4a4a8d0055277eaf1f7b6ba601b507225f1428` after documentation-only PR #300; latest source-changing merge is PR #299. PR #300 exact-head CI [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473) and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660) passed 10/10 and 3/3. Post-PR #300 main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072) and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050) were running at this checkpoint. The stale SC-03 eradication plan is superseded: current dependency verification has 493 components, includes the Linux aapt2 checksum and is exercised by current Gradle CI. README release instructions now correctly state that signed releases trigger on immutable `v*` tags or manual dispatch, not every push to main.
 
 Remaining work is organized in `RELEASE_READINESS_2026-11-12.md`. Keep provider/secret rotation, Firebase/Firestore live configuration, Render/Worker pairing, staging acceptance, SC-12 governance, owner decisions and feature-complete physical-device acceptance separate from repository code changes. Do not mark `FINAL_SIGNOFF.md` complete until their evidence exists or a residual risk is formally approved.
 
@@ -148,3 +148,11 @@ death. PR #299 merged the resolved-tier check into `PinChangeThrottle`. The help
 denies attempts unless the tier is durable; pure and wiring regressions cover the guard.
 See `sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. This is a mitigation
 within an existing Partial finding, not a new finding or a production sign-off.
+
+
+## Post-PR #300 current-main checkpoint — 2026-11-14
+
+PR #300 merged documentation-only handoff corrections as `4c4a4a8d0055277eaf1f7b6ba601b507225f1428`. Its exact-head
+CI and Security passed 10/10 and 3/3. Main workflows triggered by this documentation
+merge are tracked in BUG_TRACKER and RELEASE_READINESS; their then-current state was
+in progress when this note was written. The last code-changing merge remains PR #299.
