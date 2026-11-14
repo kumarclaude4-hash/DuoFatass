@@ -23,6 +23,7 @@ public final class PinHashPersistence {
     private static final String DEVICE_PENDING_ACCOUNT_LEGACY_KEY = "__pin_sync_pending_account_legacy_key";
     private static final String DEVICE_PENDING_ACCOUNT_LENGTH_KEY = "__pin_sync_pending_account_length_key";
     private static final String DEVICE_PENDING_DEVICE_LENGTH_KEY = "__pin_sync_pending_device_length_key";
+    private static final String ACCOUNT_HASH_KEY_PREFIX = "app_pin_hash_";
     private static final String ACCOUNT_PENDING_TX_PREFIX = "__pin_sync_pending_tx_";
     private static final String ACCOUNT_PENDING_HASH_PREFIX = "__pin_sync_pending_hash_";
 
@@ -39,7 +40,7 @@ public final class PinHashPersistence {
             String storedHash,
             String... removalKeys) {
         if (preferences == null || tier == null || !tier.isDurable()
-                || isBlank(hashKey) || storedHash == null || storedHash.isEmpty()) {
+                || isBlank(hashKey) || !isValidHashRecord(storedHash)) {
             return false;
         }
 
@@ -88,9 +89,9 @@ public final class PinHashPersistence {
         if (accountPreferences == null || devicePreferences == null
                 || accountTier == null || !accountTier.isDurable()
                 || deviceTier == null || !deviceTier.isDurable()
-                || isBlank(accountHashKey) || isBlank(deviceHashKey)
-                || accountStoredHash == null || accountStoredHash.isEmpty()
-                || deviceStoredHash == null || deviceStoredHash.isEmpty()) {
+                || !isValidAccountHashKey(accountHashKey) || isBlank(deviceHashKey)
+                || !isValidHashRecord(accountStoredHash)
+                || !isValidHashRecord(deviceStoredHash)) {
             return false;
         }
 
@@ -198,8 +199,8 @@ public final class PinHashPersistence {
                     ? accountLengthKey : journalAccountLengthKey;
             String effectiveDeviceLengthKey = deviceLengthKey != null
                     ? deviceLengthKey : journalDeviceLengthKey;
-            if (isBlank(accountHashKey) || accountStoredHash == null || accountStoredHash.isEmpty()
-                    || deviceStoredHash == null || deviceStoredHash.isEmpty()) {
+            if (!isValidAccountHashKey(accountHashKey) || !isValidHashRecord(accountStoredHash)
+                    || !isValidHashRecord(deviceStoredHash)) {
                 return false;
             }
 
@@ -333,6 +334,27 @@ public final class PinHashPersistence {
         } catch (RuntimeException ignored) {
             return false;
         }
+    }
+
+    private static boolean isValidAccountHashKey(String key) {
+        return key != null && key.startsWith(ACCOUNT_HASH_KEY_PREFIX)
+                && key.length() > ACCOUNT_HASH_KEY_PREFIX.length();
+    }
+
+    /** salt is 16 bytes (32 hex chars); PBKDF2 output is 32 bytes (64 hex chars). */
+    private static boolean isValidHashRecord(String value) {
+        if (value == null) return false;
+        int separator = value.indexOf(':');
+        if (separator != 32 || value.length() != 97) return false;
+        for (int i = 0; i < value.length(); i++) {
+            if (i == separator) continue;
+            char ch = value.charAt(i);
+            boolean hex = (ch >= '0' && ch <= '9')
+                    || (ch >= 'a' && ch <= 'f')
+                    || (ch >= 'A' && ch <= 'F');
+            if (!hex) return false;
+        }
+        return true;
     }
 
     private static boolean sameNullable(String expected, String actual) {
