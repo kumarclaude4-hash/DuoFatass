@@ -5,7 +5,7 @@
 
 ## Current evidence snapshot — 2026-11-13
 
-Current main: `be7c0e7ee8eee1289da5fd4af9b84183998781b5` (PR #299). PR #299 exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed **10/10** and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed **3/3**. Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed **10/10** and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed **3/3**. The 116-unique-finding roll-up remains 86 Fixed, 17 Partial, 1 Open and 12 Accepted. PR #296/#297 implement the all-screen screenshot policy and call-lock lifecycle regressions; their remaining user-policy/device acceptance is unchanged. PR #298 reconciled the tracker/release-readiness documentation. PR #299 adds the SecurePrefs durable-tier requirement to primary-PIN candidate throttling and its NONE-tier regression; S06-H5 remains Partial pending independent side-channel review and feature-complete device acceptance. S06-H4/S06-L4 still require real Keystore, staging and device evidence. SC-12 remains Open: the live default-branch ruleset has zero required approvals and no required CI/Security checks. No production secrets were read or changed; no production deployment, provider-console enforcement, live staging verification or physical-device acceptance is claimed. Keep this sign-off **PENDING**.
+Current main: `4c4a4a8d0055277eaf1f7b6ba601b507225f1428` (PR #300, documentation-only). Latest code-changing merge: PR #299. PR #299 exact-head CI [43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730) passed **10/10** and Security [43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858) passed **3/3**. Post-merge main CI [43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719) passed **10/10** and Security [43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761) passed **3/3**. The 116-unique-finding roll-up remains 86 Fixed, 17 Partial, 1 Open and 12 Accepted. PR #296/#297 implement the all-screen screenshot policy and call-lock lifecycle regressions; their remaining user-policy/device acceptance is unchanged. PR #298 reconciled the tracker/release-readiness documentation. PR #299 adds the SecurePrefs durable-tier requirement to primary-PIN candidate throttling and its NONE-tier regression; S06-H5 remains Partial pending independent side-channel review and feature-complete device acceptance. PR #300 is a documentation-only current-main handoff reconciliation; exact-head CI [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473) passed 10/10 and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660) passed 3/3. Post-merge main workflows [CI 43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072) and [Security 43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050) were still running at this checkpoint. S06-H4/S06-L4 still require real Keystore, staging and device evidence. SC-12 remains Open: the live default-branch ruleset has zero required approvals and no required CI/Security checks. No production secrets were read or changed; no production deployment, provider-console enforcement, live staging verification or physical-device acceptance is claimed. Keep this sign-off **PENDING**.
 
 ## Historical evidence snapshot — 2026-11-09
 
@@ -249,3 +249,15 @@ a PIN candidate. The pure regression proves that ephemeral storage cannot consum
 grant an attempt and that a subsequent durable attempt remains attempt one. S06-H5
 remains **Partial** for independent side-channel review and physical-device acceptance.
 Production sign-off remains **PENDING**.
+
+
+## PR #300 current-main handoff reconciliation — 2026-11-14
+
+PR #300 merged as `4c4a4a8d0055277eaf1f7b6ba601b507225f1428` and changes documentation only. Exact-head CI
+[43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473)
+passed 10/10 and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660)
+passed 3/3. Post-merge main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072)
+and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050)
+were running when this record was written. This documentation merge does not change
+the app-code baseline or the open acceptance gates. Production sign-off remains
+**PENDING**.
