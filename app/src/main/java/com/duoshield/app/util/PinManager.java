@@ -167,6 +167,12 @@ public class PinManager {
             }
 
             boolean devicePinPresent = hasDevicePinSet(ctx);
+            if (devicePinPresent && (accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                    || accountPreferences.contains(KEY_DEVICE_PIN_LEN))) {
+                // The legacy device credential must be fully migrated and scrubbed
+                // before a cross-store primary-PIN rotation can begin.
+                return false;
+            }
             String accountHash = createStoredPinHash(pin);
             boolean saved;
             if (devicePinPresent) {
@@ -472,15 +478,7 @@ public class PinManager {
             // verifyPin being called before migration has run)
             stored = sp.getString(KEY_PIN_LEGACY, null);
         }
-        if (stored == null) return false;
-        int sep = stored.indexOf(':');
-        if (sep < 0) return false;
-        try {
-            byte[] salt     = hexToBytes(stored.substring(0, sep));
-            byte[] expected = hexToBytes(stored.substring(sep + 1));
-            byte[] actual   = pbkdf2(entered, salt);
-            return constantTimeEquals(expected, actual);
-        } catch (Exception e) { return false; }
+        return verifyStoredHash(entered, stored);
     }
 
     public static void clearPin(Context ctx) {
@@ -516,9 +514,30 @@ public class PinManager {
             return devicePreferences.getString(KEY_DEVICE_PIN_HASH, null) != null
                     || SecurePrefs.get(ctx).getString(KEY_DEVICE_PIN_HASH, null) != null;
         }
-        if (devicePreferences.getString(KEY_DEVICE_PIN_HASH, null) != null) return true;
-
         SharedPreferences accountPreferences = SecurePrefs.get(ctx);
+        if (devicePreferences.getString(KEY_DEVICE_PIN_HASH, null) != null) {
+            // A previous migration may have committed the destination hash but
+            // failed to scrub the old account-scoped copy. Retry that cleanup
+            // before any operation treats the device/account stores as aligned.
+            if (accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                    || accountPreferences.contains(KEY_DEVICE_PIN_LEN)) {
+                try {
+                    boolean cleaned = accountPreferences.edit()
+                            .remove(KEY_DEVICE_PIN_HASH)
+                            .remove(KEY_DEVICE_PIN_LEN)
+                            .commit();
+                    if (!cleaned || accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                            || accountPreferences.contains(KEY_DEVICE_PIN_LEN)) {
+                        return true; // retain VERIFY mode; setPin() separately refuses split migration.
+                    }
+                } catch (RuntimeException ignored) {
+                    return true;
+                }
+            }
+            return true;
+        }
+
+
         String legacy = accountPreferences.getString(KEY_DEVICE_PIN_HASH, null);
         if (legacy == null) return false;
 
@@ -576,15 +595,7 @@ public class PinManager {
             if (!SecurePrefs.getTier().isDurable()) return false;
             stored = legacyPreferences.getString(KEY_DEVICE_PIN_HASH, null);
         }
-        if (stored == null) return false;
-        int sep = stored.indexOf(':');
-        if (sep < 0) return false;
-        try {
-            byte[] salt     = hexToBytes(stored.substring(0, sep));
-            byte[] expected = hexToBytes(stored.substring(sep + 1));
-            byte[] actual   = pbkdf2(entered, salt);
-            return constantTimeEquals(expected, actual);
-        } catch (Exception e) { return false; }
+        return verifyStoredHash(entered, stored);
     }
 
     /**
@@ -652,6 +663,29 @@ public class PinManager {
             if (key.startsWith(KEY_PIN_PREFIX)) return true;
         }
         return false;
+    }
+
+    /** Verifies a stored salted-PBKDF2 record and clears every mutable key buffer. */
+    private static boolean verifyStoredHash(String entered, String stored) {
+        if (entered == null || stored == null) return false;
+        int separator = stored.indexOf(':');
+        if (separator != 32 || stored.length() != 97) return false;
+
+        byte[] salt = null;
+        byte[] expected = null;
+        byte[] actual = null;
+        try {
+            salt = hexToBytes(stored.substring(0, separator));
+            expected = hexToBytes(stored.substring(separator + 1));
+            actual = pbkdf2(entered, salt);
+            return constantTimeEquals(expected, actual);
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (salt != null) Arrays.fill(salt, (byte) 0);
+            if (expected != null) Arrays.fill(expected, (byte) 0);
+            if (actual != null) Arrays.fill(actual, (byte) 0);
+        }
     }
 
     /** Repairs an interrupted account/device PIN synchronization before use. */
