@@ -9,12 +9,12 @@ with each other and — in several rows — with the actual code.
 **Latest verified mainline baseline (2026-11-14):** PR #301 documentation-only
 handoff reconciliation merged to `main` as `cf5b496e406c0d27bfd2408ec160661dbf7885cd`. The latest source-changing merge
 remains PR #299, which hardened S06-H5 durable PIN-change throttling as
-`be7c0e7ee8eee1289da5fd4af9b84183998781b5`. PR #301 exact-head CI
+`be7c0e7ee8eee1289da5fd4af9b84183998781b5`. PR #300 exact-head CI
 [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473)
 passed all 10 jobs and Security
-[43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157)
+[43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660)
 passed all 3 jobs. PR #301 merged after exact-head CI [43536863859](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536863859)
-and Security [43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157) passed. No separate post-PR #301 main run is claimed. A new source-review finding, S06-H6, is recorded Partial while the PIN persistence remediation branch awaits PR validation. PR #296/#297 remain the latest screenshot-policy
+and Security [43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157) passed. No separate post-PR #301 main run is claimed. A new source-review finding, S06-H6, is recorded Partial in open PR #303 while its exact-head CI/Security validation is in progress after correcting an initial executor compile failure. PR #296/#297 remain the latest screenshot-policy
 and call-lock lifecycle changes; PR #292/#295 remain the latest duress persistence/worker-runtime hardening.
 The original finding catalog was first re-derived from source at `298f916` (2026-08-11);
 that is historical provenance, not the current code baseline. The register retains
