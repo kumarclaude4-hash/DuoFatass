@@ -165,17 +165,17 @@ public final class PinHashPersistence {
             String accountLengthKey,
             String deviceLengthKey) {
         if (accountPreferences == null || devicePreferences == null
-                || accountTier == null || !accountTier.isDurable()
-                || deviceTier == null || !deviceTier.isDurable()
-                || isBlank(deviceHashKey)) {
+                || accountTier == null || deviceTier == null || isBlank(deviceHashKey)) {
             return false;
         }
 
         try {
             String transactionId = devicePreferences.getString(DEVICE_PENDING_TX, null);
             if (transactionId == null) {
-                return clearOrphanAccountStages(accountPreferences);
+                if (!hasAccountStages(accountPreferences)) return true;
+                return accountTier.isDurable() && clearOrphanAccountStages(accountPreferences);
             }
+            if (!accountTier.isDurable() || !deviceTier.isDurable()) return false;
 
             String accountHashKey = devicePreferences.getString(DEVICE_PENDING_ACCOUNT_KEY, null);
             String accountStoredHash = devicePreferences.getString(DEVICE_PENDING_ACCOUNT_HASH, null);
@@ -274,6 +274,18 @@ public final class PinHashPersistence {
                     .commit();
         } catch (RuntimeException ignored) {
             // Keeping the journal is safe; the next PIN access retries recovery.
+        }
+    }
+
+    private static boolean hasAccountStages(SharedPreferences preferences) {
+        try {
+            for (String key : preferences.getAll().keySet()) {
+                if (key.startsWith(ACCOUNT_PENDING_TX_PREFIX)
+                        || key.startsWith(ACCOUNT_PENDING_HASH_PREFIX)) return true;
+            }
+            return false;
+        } catch (RuntimeException ignored) {
+            return true;
         }
     }
 
