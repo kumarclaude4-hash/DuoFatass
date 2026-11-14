@@ -211,16 +211,55 @@ public class SecurityFindingWiringTest {
     public void devicePinSetupStopsWhenDurableSaveFails() throws IOException {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/ui/DevicePinGateActivity.java");
-        int saveAt = source.indexOf("if (!PinManager.setDevicePin(this, pin))");
-        int proceedAt = source.indexOf("proceedToWelcome();", saveAt);
-        assertTrue("device gate setup must check the persistence result", saveAt >= 0);
+        int workerAt = source.indexOf("pinPersistenceExecutor.execute(() -> {");
+        int saveAt = source.indexOf("boolean saved = PinManager.setDevicePin(getApplicationContext(), pin)", workerAt);
+        int uiAt = source.indexOf("runOnUiThread(() -> {", saveAt);
+        int failureAt = source.indexOf("if (!saved)", uiAt);
+        int proceedAt = source.indexOf("proceedToWelcome();", failureAt);
+        assertTrue("device gate PIN persistence must run off the main thread", workerAt >= 0);
+        assertTrue("device gate setup must check the persistence result", saveAt > workerAt);
+        assertTrue("the persistence result must be handled on the UI thread",
+                uiAt > saveAt && failureAt > uiAt);
         assertTrue("device gate setup may proceed only after the successful-save branch",
-                proceedAt > saveAt);
-        String failureBody = source.substring(saveAt, proceedAt);
+                proceedAt > failureAt);
+        String failureBody = source.substring(failureAt, proceedAt);
         assertTrue("failed persistence must show a generic error",
                 failureBody.contains("Couldn't securely save your PIN"));
         assertTrue("failed persistence must return without opening Welcome",
                 failureBody.contains("return;"));
+    }
+
+    @Test
+    public void failedDuressTeardownRestoresUsableLockScreen() throws IOException {
+        String manager = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        String lockScreen = readProjectFile(
+                "app/src/main/java/com/duoshield/app/LockScreenActivity.java");
+        assertTrue("duress teardown must report whether it started",
+                manager.contains("public static boolean performLogout(Context context, String enteredPin)"));
+        int callerAt = lockScreen.indexOf("boolean teardownStarted = DuressManager.performLogout(this, entered)");
+        int failureAt = lockScreen.indexOf("if (!teardownStarted)", callerAt);
+        int nextBranchAt = lockScreen.indexOf("                }", failureAt);
+        assertTrue("lock screen must handle a failed duress promotion", callerAt >= 0 && failureAt > callerAt);
+        String recovery = lockScreen.substring(failureAt, lockScreen.indexOf("                    return;", failureAt));
+        assertTrue("failed teardown must re-enable PIN input", recovery.contains("setInputEnabled(true)"));
+        assertTrue("failed teardown must end verification state", recovery.contains("isVerifying = false"));
+        assertTrue("failed teardown must clear the entered PIN buffer", recovery.contains("pinBuffer.setLength(0)"));
+    }
+
+    @Test
+    public void accountCreationFallsBackToPINSetupWhenDevicePromotionFails() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/SeedPhraseDisplayActivity.java");
+        int promotedAt = source.indexOf("PinManager.promoteDevicePinToCurrentUser(this)");
+        int successAt = source.indexOf("if (devicePinPromoted)", promotedAt);
+        int conversationAt = source.indexOf("new Intent(this, ConversationListActivity.class)", successAt);
+        int setupAt = source.indexOf("new Intent(this, SetupPinActivity.class)", conversationAt);
+        assertTrue("account creation must check device PIN promotion", promotedAt >= 0);
+        assertTrue("only confirmed promotion may route to the conversation list",
+                successAt > promotedAt && conversationAt > successAt);
+        assertTrue("failed promotion must fall back to explicit PIN setup",
+                setupAt > conversationAt);
     }
 
     @Test
