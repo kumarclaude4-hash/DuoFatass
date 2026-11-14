@@ -322,8 +322,8 @@ public class SecurityFindingWiringTest {
                         && failedReturnAt < unregisterAt);
         assertTrue("failed-attempt state must clear only after a confirmed device-gate write",
                 clearAttemptsAt > promotionAt && clearAttemptsAt < unregisterAt);
-        assertTrue("the secondary slot is disarmed only after successful promotion",
-                disarmAt > clearAttemptsAt && disarmAt < unregisterAt);
+        assertTrue("the secondary slot is disarmed only after successful promotion and before lock-intent recording",
+                disarmAt > clearAttemptsAt && disarmAt < lockIntentAt);
         assertTrue("the compatibility overload cannot bypass the recovery-PIN requirement",
                 duress.contains("public static boolean performLogout(Context context)"));
     }
