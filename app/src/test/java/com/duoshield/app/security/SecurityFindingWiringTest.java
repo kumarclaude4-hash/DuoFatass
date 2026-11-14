@@ -270,11 +270,15 @@ public class SecurityFindingWiringTest {
 
         String gate = readProjectFile(
                 "app/src/main/java/com/duoshield/app/ui/DevicePinGateActivity.java");
-        int saveAt = gate.indexOf("if (!PinManager.setDevicePin(this, pin))");
-        int proceedAt = gate.indexOf("proceedToWelcome();", saveAt);
+        int saveAt = gate.indexOf("boolean saved = PinManager.setDevicePin(getApplicationContext(), pin)");
+        int failureAt = gate.indexOf("if (!saved)", saveAt);
+        int proceedAt = gate.indexOf("proceedToWelcome();", failureAt);
+        assertTrue("device-gate setup must persist off the main thread",
+                saveAt >= 0 && gate.contains("bgExecutor.execute(() -> {"));
         assertTrue("device-gate setup must stop instead of advancing after persistence failure",
-                saveAt >= 0 && proceedAt > saveAt
-                        && gate.substring(saveAt, proceedAt).contains("Couldn't securely save"));
+                failureAt > saveAt && proceedAt > failureAt
+                        && gate.substring(failureAt, proceedAt).contains("Couldn't securely save")
+                        && gate.contains("btnContinue.setEnabled(false)"));
     }
 
     private static String readProjectFile(String relativePath) throws IOException {
