@@ -281,6 +281,24 @@ public class SecurityFindingWiringTest {
                         && gate.contains("btnContinue.setEnabled(false)"));
     }
 
+    @Test
+    public void duressTeardownDoesNotIgnoreDevicePinPromotionFailure() throws IOException {
+        String duress = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        int promotionAt = duress.indexOf("boolean deviceGatePromoted =");
+        int failureAt = duress.indexOf("if (!deviceGatePromoted)", promotionAt);
+        int clearAt = duress.indexOf("clearDuressPin(context);", failureAt);
+        assertTrue("duress teardown must capture the durable promotion result",
+                promotionAt >= 0 && duress.contains("PinManager.setDevicePin(context, enteredPin)"));
+        assertTrue("a failed promotion must be logged explicitly",
+                failureAt > promotionAt
+                        && duress.substring(failureAt, clearAt)
+                                .contains("continuing teardown with the existing device gate"));
+        assertTrue("a failed PIN promotion must not suppress the duress wipe path",
+                clearAt > failureAt
+                        && duress.indexOf("WipeHelper.eraseLocalData", clearAt) > clearAt);
+    }
+
     private static String readProjectFile(String relativePath) throws IOException {
         File dir = new File(".").getAbsoluteFile();
         for (int i = 0; i < 8 && dir != null; i++) {
