@@ -536,11 +536,11 @@ public class DuressManager {
 
         final Context appCtx = context.getApplicationContext();
 
-        // Promote the entered duress PIN before any teardown side effect. If this
-        // device-gate write is not durable, abort the wipe: clearing the account store
-        // without a confirmed replacement gate could leave the wiped device unprotected.
-        if (enteredPin != null && !enteredPin.isEmpty()
-                && !com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)) {
+        // A duress wipe must have the plaintext code needed to preserve the device
+        // gate. The deprecated no-PIN overload cannot safely perform this transition.
+        // Promote before any teardown side effect; otherwise abort the wipe.
+        if (enteredPin == null || enteredPin.isEmpty()
+                || !com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)) {
             android.util.Log.e("DuressManager",
                     "Duress teardown aborted because device-gate persistence was not confirmed.");
             DURESS_TRIGGER_IN_PROGRESS.set(false);
@@ -600,9 +600,9 @@ public class DuressManager {
 
         // 1. Instant navigation — removes chat screen from view immediately.
         //    To an observer, it looks like the app is simply processing the PIN.
-        Intent intent = new Intent(context, SignInActivity.class);
+        Intent intent = new Intent(appCtx, SignInActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        context.startActivity(intent);
+        appCtx.startActivity(intent);
 
         // Cancel the daily backup sync — the session is intentionally destroyed.
         try { BackupScheduler.cancel(context); } catch (Exception ignored) {}
