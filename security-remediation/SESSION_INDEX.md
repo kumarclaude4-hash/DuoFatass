@@ -164,3 +164,10 @@ and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/action
 were still running at the time of this entry. The latest application-source change remains
 PR #299; the S06-H5 durable-throttle mitigation remains Partial pending independent
 residual review and device acceptance. Do not promote production sign-off.
+
+
+## S06-H6 primary/device PIN durability — 2026-11-14
+
+`sessions/SESSION-S06-H6-PRIMARY-PIN-DURABILITY-2026-11-14.md` records a source-review finding: primary account PIN writes and account/device synchronization could be reported successful before durable persistence was confirmed. Open PR #303 on `pin-persistence-fix-2026-11-14` adds durable-tier + synchronous commit/read-back primitives, a two-store pending journal with restart roll-forward recovery, independent salts for account/device writes, verified migration/promotion, orphan-stage fail-closed behavior, durable cleanup confirmation before removing the device journal, and off-main-thread device-gate persistence. New persistence regressions include commit/read-back failure, malformed/non-durable data, interrupted/orphaned stage states, one-sided recovery, legacy metadata cleanup and a fault-injected failed journal-cleanup commit. Instrumented gate tests now wait for a new SignInActivity intent following asynchronous PIN save/unlock.
+
+Latest source/test head at this checkpoint is `e292362e0139c1a9291631985dc82ce2c82eb08f`. CI [43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173) was queued and Security [43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was in progress; documentation synchronization will trigger a new exact-head run. S06-H6 remains Partial until all required jobs pass. Real Android Keystore/EncryptedSharedPreferences and physical-device acceptance remain separate; S06-H4/S06-H5 are not reclassified and FINAL_SIGNOFF remains PENDING.

@@ -8,6 +8,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import java.security.SecureRandom;
 import java.security.spec.KeySpec;
+import java.util.Arrays;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
@@ -150,47 +151,52 @@ public class PinManager {
      *         now branch on this value before treating setup as complete.
      */
     public static boolean setPin(Context ctx, String pin) {
-        String key = pinKey();
-        if (key == null) return false;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
         try {
-            byte[] salt = new byte[16];
-            new SecureRandom().nextBytes(salt);
-            byte[] hash = pbkdf2(pin, salt);
-            String stored = bytesToHex(salt) + ":" + bytesToHex(hash);
-            FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-            SharedPreferences.Editor ed = SecurePrefs.get(ctx).edit()
-                    .putString(key, stored)
-                    .remove(KEY_PIN_LEGACY);
-            // S08-L3: do not persist the plaintext PIN length beside the hash.
-            // Scrub any value a pre-fix build left behind for this account instead.
-            if (user != null) {
-                ed.remove(KEY_LEN_PREFIX + user.getUid());
-            }
-            ed.apply();
+            SharedPreferences accountPreferences = SecurePrefs.get(ctx);
+            SecurePrefs.SecurityTier accountTier = SecurePrefs.getTier();
+            SharedPreferences devicePreferences = SecurePrefs.getDeviceGate(ctx);
+            SecurePrefs.SecurityTier deviceTier = SecurePrefs.getDeviceGateTier();
 
-            // Keep the device-level gate PIN in sync with the account PIN —
-            // but only if this device already has one. Devices exempted from
-            // the gate (looksLikePreExistingDevice()) must not gain a device
-            // PIN just because the account PIN changed via Settings. Without
-            // this sync, a later promotion (uninstall/reinstall, or a
-            // wipe-and-restore cycle) would resurrect whatever PIN the user
-            // set at first launch instead of the one they actually remember.
-            if (hasDevicePinSet(ctx)) {
-                setDevicePin(ctx, pin);
+            // Repair an interrupted two-store update before changing either credential.
+            if (!PinHashPersistence.recoverPair(accountPreferences, accountTier,
+                    devicePreferences, deviceTier, KEY_DEVICE_PIN_HASH)) {
+                return false;
             }
 
-            // S06-I3 / constant-work timing parity: every account must have a
-            // slot-B decoy of identical shape to a real secondary code the
-            // moment a primary PIN exists, so an account with a secondary code
-            // and one without perform the same single PBKDF2 derivation on
-            // every unlock attempt. This was previously dead code — nothing
-            // called it — so the two-derivation timing tell it exists to close
-            // was still observable. Fully qualified to avoid a hard compile-time
-            // dependency between the util and security packages.
+            boolean devicePinPresent = hasDevicePinSet(ctx);
+            if (devicePinPresent && (accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                    || accountPreferences.contains(KEY_DEVICE_PIN_LEN))) {
+                // The legacy device credential must be fully migrated and scrubbed
+                // before a cross-store primary-PIN rotation can begin.
+                return false;
+            }
+            String accountHash = createStoredPinHash(pin);
+            boolean saved;
+            if (devicePinPresent) {
+                // Keep independent salts across the account and device security domains.
+                String deviceHash = createStoredPinHash(pin);
+                saved = PinHashPersistence.persistPair(
+                        accountPreferences, accountTier,
+                        key, accountHash, KEY_PIN_LEGACY,
+                        KEY_LEN_PREFIX + user.getUid(),
+                        devicePreferences, deviceTier,
+                        KEY_DEVICE_PIN_HASH, deviceHash, KEY_DEVICE_PIN_LEN);
+            } else {
+                saved = PinHashPersistence.persistSingle(
+                        accountPreferences, accountTier, key, accountHash,
+                        KEY_PIN_LEGACY, KEY_LEN_PREFIX + user.getUid());
+            }
+            if (!saved) return false;
+
+            // Ensure every account's primary PIN has a slot-B decoy of identical shape.
             com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
             return true;
         } catch (Exception e) {
-            android.util.Log.e("PinManager", "Failed to store PIN hash" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            android.util.Log.e("PinManager", "Failed to store PIN hash"
+                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
@@ -437,38 +443,42 @@ public class PinManager {
     }
 
     public static boolean hasPinSet(Context ctx) {
-        String key = pinKey();
-        if (key == null) return false;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
         SharedPreferences sp = SecurePrefs.get(ctx);
+        if (!recoverPinSync(ctx)) {
+            // Preserve the lock-screen route if a credential exists but its
+            // synchronization journal cannot be repaired. Verification fails closed.
+            return sp.getString(key, null) != null
+                    || sp.getString(KEY_PIN_LEGACY, null) != null;
+        }
         if (sp.getString(key, null) != null) return true;
-        // Migration: move legacy global hash to UID-scoped key
+
+        // Migrate the legacy account hash synchronously; retain it if persistence fails.
         String legacy = sp.getString(KEY_PIN_LEGACY, null);
         if (legacy != null) {
-            sp.edit().putString(key, legacy).remove(KEY_PIN_LEGACY).apply();
-            return true;
+            PinHashPersistence.persistSingle(
+                    sp, SecurePrefs.getTier(), key, legacy,
+                    KEY_PIN_LEGACY, KEY_LEN_PREFIX + user.getUid());
+            return true; // verifyPin() keeps a read-only legacy fallback.
         }
         return false;
     }
 
     public static boolean verifyPin(Context ctx, String entered) {
-        String key = pinKey();
-        if (key == null) return false;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null || !recoverPinSync(ctx)) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
         SharedPreferences sp = SecurePrefs.get(ctx);
+        if (!SecurePrefs.getTier().isDurable()) return false;
         String stored = sp.getString(key, null);
         if (stored == null) {
             // Fallback to legacy key (handles the window between hasPinSet and
             // verifyPin being called before migration has run)
             stored = sp.getString(KEY_PIN_LEGACY, null);
         }
-        if (stored == null) return false;
-        int sep = stored.indexOf(':');
-        if (sep < 0) return false;
-        try {
-            byte[] salt     = hexToBytes(stored.substring(0, sep));
-            byte[] expected = hexToBytes(stored.substring(sep + 1));
-            byte[] actual   = pbkdf2(entered, salt);
-            return constantTimeEquals(expected, actual);
-        } catch (Exception e) { return false; }
+        return verifyStoredHash(entered, stored);
     }
 
     public static void clearPin(Context ctx) {
@@ -497,33 +507,70 @@ public class PinManager {
      * read after upgrading.
      */
     public static boolean hasDevicePinSet(Context ctx) {
-        SharedPreferences sp = SecurePrefs.getDeviceGate(ctx);
-        if (sp.getString(KEY_DEVICE_PIN_HASH, null) != null) return true;
-        SharedPreferences legacySp = SecurePrefs.get(ctx);
-        String legacy = legacySp.getString(KEY_DEVICE_PIN_HASH, null);
+        SharedPreferences devicePreferences = SecurePrefs.getDeviceGate(ctx);
+        if (!recoverPinSync(ctx)) {
+            // Do not expose setup mode when an existing device credential has
+            // an unresolved journal.
+            return devicePreferences.getString(KEY_DEVICE_PIN_HASH, null) != null
+                    || SecurePrefs.get(ctx).getString(KEY_DEVICE_PIN_HASH, null) != null;
+        }
+        SharedPreferences accountPreferences = SecurePrefs.get(ctx);
+        if (devicePreferences.getString(KEY_DEVICE_PIN_HASH, null) != null) {
+            // A previous migration may have committed the destination hash but
+            // failed to scrub the old account-scoped copy. Retry that cleanup
+            // before any operation treats the device/account stores as aligned.
+            if (accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                    || accountPreferences.contains(KEY_DEVICE_PIN_LEN)) {
+                try {
+                    boolean cleaned = accountPreferences.edit()
+                            .remove(KEY_DEVICE_PIN_HASH)
+                            .remove(KEY_DEVICE_PIN_LEN)
+                            .commit();
+                    if (!cleaned || accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                            || accountPreferences.contains(KEY_DEVICE_PIN_LEN)) {
+                        return true; // retain VERIFY mode; setPin() separately refuses split migration.
+                    }
+                } catch (RuntimeException ignored) {
+                    return true;
+                }
+            }
+            return true;
+        }
+
+
+        String legacy = accountPreferences.getString(KEY_DEVICE_PIN_HASH, null);
         if (legacy == null) return false;
-        // S08-L3: migrate only the hash — the plaintext length that used to travel
-        // alongside it is deliberately dropped here rather than carried forward.
-        sp.edit().putString(KEY_DEVICE_PIN_HASH, legacy).apply();
-        legacySp.edit().remove(KEY_DEVICE_PIN_HASH).remove(KEY_DEVICE_PIN_LEN).apply();
+
+        // Copy into the isolated device container before deleting the historical
+        // account-store copy. If the copy fails, keep VERIFY mode and the fallback.
+        if (!PinHashPersistence.persistSingle(
+                devicePreferences, SecurePrefs.getDeviceGateTier(),
+                KEY_DEVICE_PIN_HASH, legacy, KEY_DEVICE_PIN_LEN)) {
+            return true;
+        }
+        try {
+            accountPreferences.edit()
+                    .remove(KEY_DEVICE_PIN_HASH)
+                    .remove(KEY_DEVICE_PIN_LEN)
+                    .commit();
+        } catch (RuntimeException ignored) {
+            // A duplicate legacy copy is safe; the verified device copy is authoritative.
+        }
         android.util.Log.i("PinManager", "Migrated device-gate PIN hash to its isolated storage file.");
         return true;
     }
 
-    public static void setDevicePin(Context ctx, String pin) {
+    public static boolean setDevicePin(Context ctx, String pin) {
         try {
-            byte[] salt = new byte[16];
-            new SecureRandom().nextBytes(salt);
-            byte[] hash = pbkdf2(pin, salt);
-            String stored = bytesToHex(salt) + ":" + bytesToHex(hash);
-            // S08-L3: do not persist the plaintext PIN length beside the hash. Scrub
-            // any value a pre-fix build left behind for this device instead.
-            SecurePrefs.getDeviceGate(ctx).edit()
-                    .putString(KEY_DEVICE_PIN_HASH, stored)
-                    .remove(KEY_DEVICE_PIN_LEN)
-                    .apply();
+            if (!recoverPinSync(ctx)) return false;
+            String stored = createStoredPinHash(pin);
+            return PinHashPersistence.persistSingle(
+                    SecurePrefs.getDeviceGate(ctx), SecurePrefs.getDeviceGateTier(),
+                    KEY_DEVICE_PIN_HASH, stored, KEY_DEVICE_PIN_LEN);
         } catch (Exception e) {
-            android.util.Log.e("PinManager", "Failed to store device-level PIN hash" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            android.util.Log.e("PinManager", "Failed to store device-level PIN hash"
+                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            return false;
         }
     }
 
@@ -536,23 +583,19 @@ public class PinManager {
     }
 
     public static boolean verifyDevicePin(Context ctx, String entered) {
+        if (!recoverPinSync(ctx)) return false;
         SharedPreferences sp = SecurePrefs.getDeviceGate(ctx);
         String stored = sp.getString(KEY_DEVICE_PIN_HASH, null);
+        if (stored != null && !SecurePrefs.getDeviceGateTier().isDurable()) return false;
         if (stored == null) {
             // Fallback to the pre-split shared-file location (handles the window
             // between hasDevicePinSet() and verifyDevicePin() being called before
             // migration has run) — mirrors the legacy-key fallback in verifyPin().
-            stored = SecurePrefs.get(ctx).getString(KEY_DEVICE_PIN_HASH, null);
+            SharedPreferences legacyPreferences = SecurePrefs.get(ctx);
+            if (!SecurePrefs.getTier().isDurable()) return false;
+            stored = legacyPreferences.getString(KEY_DEVICE_PIN_HASH, null);
         }
-        if (stored == null) return false;
-        int sep = stored.indexOf(':');
-        if (sep < 0) return false;
-        try {
-            byte[] salt     = hexToBytes(stored.substring(0, sep));
-            byte[] expected = hexToBytes(stored.substring(sep + 1));
-            byte[] actual   = pbkdf2(entered, salt);
-            return constantTimeEquals(expected, actual);
-        } catch (Exception e) { return false; }
+        return verifyStoredHash(entered, stored);
     }
 
     /**
@@ -572,21 +615,31 @@ public class PinManager {
     public static boolean promoteDevicePinToCurrentUser(Context ctx) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) return false;
-        if (!hasDevicePinSet(ctx)) return false; // also runs the legacy-file migration above
+        if (!recoverPinSync(ctx) || !hasDevicePinSet(ctx)) return false;
+        SharedPreferences accountPreferences = SecurePrefs.get(ctx);
+        if (accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                || accountPreferences.contains(KEY_DEVICE_PIN_LEN)) {
+            return false; // legacy device material must be scrubbed before promotion.
+        }
         SharedPreferences sp = SecurePrefs.getDeviceGate(ctx);
+        if (!SecurePrefs.getDeviceGateTier().isDurable()) return false;
         String stored = sp.getString(KEY_DEVICE_PIN_HASH, null);
         if (stored == null) return false;
-        // S08-L3: this used to also read the device gate's plaintext KEY_DEVICE_PIN_LEN
-        // (or DEFAULT_PIN_LEN when absent) and copy it into the promoted account's
-        // KEY_LEN_PREFIX entry — reintroducing, for any account that went through
-        // account creation / restore, exactly the plaintext PIN-length disclosure
-        // setPin()/setDevicePin() were fixed to stop writing. Copy only the salt:hash
-        // string, and scrub any KEY_LEN_PREFIX value a pre-fix build left behind for
-        // this account, mirroring setPin()'s scrub.
-        SecurePrefs.get(ctx).edit()
-                .putString(KEY_PIN_PREFIX + user.getUid(), stored)
-                .remove(KEY_LEN_PREFIX + user.getUid())
-                .apply();
+        // Re-commit and read back the current device credential before trusting
+        // it as the source of an account promotion. This catches a prior
+        // failed migration whose in-memory map looked populated.
+        if (!PinHashPersistence.persistSingle(
+                sp, SecurePrefs.getDeviceGateTier(),
+                KEY_DEVICE_PIN_HASH, stored, KEY_DEVICE_PIN_LEN)) {
+            return false;
+        }
+        // Copy only the salt:hash string; never propagate historical plaintext length data.
+        if (!PinHashPersistence.persistSingle(
+                SecurePrefs.get(ctx), SecurePrefs.getTier(),
+                KEY_PIN_PREFIX + user.getUid(), stored,
+                KEY_PIN_LEGACY, KEY_LEN_PREFIX + user.getUid())) {
+            return false;
+        }
         // An account that arrives via this path (creation / wipe-and-restore) never
         // goes through setPin(), so it used to end up with a primary PIN but no
         // slot B at all — reintroducing, for exactly those accounts, the
@@ -617,10 +670,65 @@ public class PinManager {
         return false;
     }
 
+    /** Verifies a stored salted-PBKDF2 record and clears every mutable key buffer. */
+    private static boolean verifyStoredHash(String entered, String stored) {
+        if (entered == null || stored == null) return false;
+        int separator = stored.indexOf(':');
+        if (separator != 32 || stored.length() != 97) return false;
+
+        byte[] salt = null;
+        byte[] expected = null;
+        byte[] actual = null;
+        try {
+            salt = hexToBytes(stored.substring(0, separator));
+            expected = hexToBytes(stored.substring(separator + 1));
+            actual = pbkdf2(entered, salt);
+            return constantTimeEquals(expected, actual);
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (salt != null) Arrays.fill(salt, (byte) 0);
+            if (expected != null) Arrays.fill(expected, (byte) 0);
+            if (actual != null) Arrays.fill(actual, (byte) 0);
+        }
+    }
+
+    /** Repairs an interrupted account/device PIN synchronization before use. */
+    private static boolean recoverPinSync(Context ctx) {
+        try {
+            return PinHashPersistence.recoverPair(
+                    SecurePrefs.get(ctx), SecurePrefs.getTier(),
+                    SecurePrefs.getDeviceGate(ctx), SecurePrefs.getDeviceGateTier(),
+                    KEY_DEVICE_PIN_HASH);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    /** Derives an independently salted hash and clears mutable intermediates. */
+    private static String createStoredPinHash(String pin) throws Exception {
+        byte[] salt = new byte[16];
+        byte[] hash = null;
+        try {
+            new SecureRandom().nextBytes(salt);
+            hash = pbkdf2(pin, salt);
+            return bytesToHex(salt) + ":" + bytesToHex(hash);
+        } finally {
+            Arrays.fill(salt, (byte) 0);
+            if (hash != null) Arrays.fill(hash, (byte) 0);
+        }
+    }
+
     private static byte[] pbkdf2(String pin, byte[] salt) throws Exception {
-        KeySpec spec = new PBEKeySpec(pin.toCharArray(), salt, ITERATIONS, KEY_LEN);
-        SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        return skf.generateSecret(spec).getEncoded();
+        char[] password = pin.toCharArray();
+        PBEKeySpec spec = new PBEKeySpec(password, salt, ITERATIONS, KEY_LEN);
+        try {
+            SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            return skf.generateSecret(spec).getEncoded();
+        } finally {
+            spec.clearPassword();
+            Arrays.fill(password, (char) 0);
+        }
     }
 
     private static boolean constantTimeEquals(byte[] a, byte[] b) {

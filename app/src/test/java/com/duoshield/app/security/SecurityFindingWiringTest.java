@@ -71,10 +71,27 @@ public class SecurityFindingWiringTest {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/util/PinManager.java");
 
-        assertTrue("account PIN writer must scrub the historical plaintext length key",
-                source.contains("ed.remove(KEY_LEN_PREFIX + user.getUid())"));
-        assertTrue("the device PIN writer must retain its dedicated length-key cleanup",
-                source.contains("remove(KEY_DEVICE_PIN_LEN)"));
+        int accountSetAt = source.indexOf("public static boolean setPin(Context ctx, String pin)");
+        int accountSetEnd = source.indexOf("// ── Wrong-PIN lockout", accountSetAt);
+        String accountSetBody = source.substring(accountSetAt, accountSetEnd);
+        assertTrue("account PIN writes must pass the UID-scoped plaintext length key to durable cleanup",
+                accountSetBody.contains("KEY_LEN_PREFIX + user.getUid()")
+                        && accountSetBody.contains("PinHashPersistence.persistSingle(")
+                        && accountSetBody.contains("PinHashPersistence.persistPair("));
+
+        int deviceSetAt = source.indexOf("public static boolean setDevicePin(Context ctx, String pin)");
+        int deviceSetEnd = source.indexOf("public static int getDevicePinLength", deviceSetAt);
+        String deviceSetBody = source.substring(deviceSetAt, deviceSetEnd);
+        assertTrue("device PIN writes must pass their dedicated length key to durable cleanup",
+                deviceSetBody.contains("KEY_DEVICE_PIN_LEN")
+                        && deviceSetBody.contains("PinHashPersistence.persistSingle("));
+
+        String persistence = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinHashPersistence.java");
+        assertTrue("durable PIN writes must remove legacy keys in the same commit and verify cleanup",
+                persistence.contains("for (String key : removalKeys)")
+                        && persistence.contains("editor.remove(key)")
+                        && persistence.contains("if (!isBlank(key) && preferences.contains(key)) return false;"));
         assertTrue("account PIN length getter must be present",
                 source.contains("public static int getPinLength(Context ctx)"));
         assertTrue("device PIN length getter must be present",
@@ -225,6 +242,78 @@ public class SecurityFindingWiringTest {
                 !body.contains("if (clashWithSecondary)"));
         assertTrue("forced rotation must not expose a collision-specific message",
                 !body.contains("That PIN can't be used"));
+    }
+
+    @Test
+    public void primaryAndDevicePinWritesRequireDurableVerifiedPersistence() throws IOException {
+        String manager = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinManager.java");
+        int setAt = manager.indexOf("public static boolean setPin(Context ctx, String pin)");
+        int setEnd = manager.indexOf("// ── Wrong-PIN lockout", setAt);
+        String setBody = manager.substring(setAt, setEnd);
+        assertTrue("primary PIN setup must use a durable single-store or recoverable paired write",
+                setBody.contains("PinHashPersistence.persistSingle(")
+                        && setBody.contains("PinHashPersistence.persistPair("));
+        assertTrue("primary PIN setup must not use an asynchronous apply() write",
+                !setBody.contains(".apply()"));
+        assertTrue("primary PIN setup must recover a prior split-store transaction first",
+                setBody.contains("PinHashPersistence.recoverPair("));
+
+        int deviceSetAt = manager.indexOf("public static boolean setDevicePin(Context ctx, String pin)");
+        int deviceSetEnd = manager.indexOf("public static int getDevicePinLength", deviceSetAt);
+        String deviceSetBody = manager.substring(deviceSetAt, deviceSetEnd);
+        assertTrue("device PIN setup must use the durable read-back helper",
+                deviceSetBody.contains("PinHashPersistence.persistSingle("));
+        assertTrue("device PIN setup must not report success from apply()",
+                !deviceSetBody.contains(".apply()"));
+
+        int promoteAt = manager.indexOf("public static boolean promoteDevicePinToCurrentUser(Context ctx)");
+        int promoteEnd = manager.indexOf("public static boolean looksLikePreExistingDevice", promoteAt);
+        String promoteBody = manager.substring(promoteAt, promoteEnd);
+        assertTrue("device PIN promotion must require verified durable account persistence",
+                promoteBody.contains("PinHashPersistence.persistSingle("));
+
+        String persistence = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinHashPersistence.java");
+        assertTrue("paired writes must stage an account transaction record",
+                persistence.contains("ACCOUNT_PENDING_HASH_PREFIX"));
+        assertTrue("paired writes must retain a device-side recovery journal",
+                persistence.contains("DEVICE_PENDING_TX"));
+        assertTrue("paired writes must only activate after durable staging",
+                persistence.contains("if (!accountStaged") && persistence.contains("if (!deviceStaged"));
+        assertTrue("all reads must be able to recover an interrupted pair",
+                manager.contains("private static boolean recoverPinSync(Context ctx)")
+                        && manager.contains("PinHashPersistence.recoverPair("));
+
+        String gate = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/DevicePinGateActivity.java");
+        int saveAt = gate.indexOf("boolean saved = PinManager.setDevicePin(getApplicationContext(), pin)");
+        int failureAt = gate.indexOf("if (!saved)", saveAt);
+        int proceedAt = gate.indexOf("proceedToWelcome();", failureAt);
+        assertTrue("device-gate setup must persist off the main thread",
+                saveAt >= 0 && gate.contains("bgExecutor.execute(() -> {"));
+        assertTrue("device-gate setup must stop instead of advancing after persistence failure",
+                failureAt > saveAt && proceedAt > failureAt
+                        && gate.substring(failureAt, proceedAt).contains("Couldn't securely save")
+                        && gate.contains("btnContinue.setEnabled(false)"));
+    }
+
+    @Test
+    public void duressTeardownDoesNotIgnoreDevicePinPromotionFailure() throws IOException {
+        String duress = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        int promotionAt = duress.indexOf("boolean deviceGatePromoted =");
+        int failureAt = duress.indexOf("if (!deviceGatePromoted)", promotionAt);
+        int clearAt = duress.indexOf("clearDuressPin(context);", failureAt);
+        assertTrue("duress teardown must capture the durable promotion result",
+                promotionAt >= 0 && duress.contains("PinManager.setDevicePin(context, enteredPin)"));
+        assertTrue("a failed promotion must be logged explicitly",
+                failureAt > promotionAt
+                        && duress.substring(failureAt, clearAt)
+                                .contains("continuing teardown with the existing device gate"));
+        assertTrue("a failed PIN promotion must not suppress the duress wipe path",
+                clearAt > failureAt
+                        && duress.indexOf("WipeHelper.eraseLocalData", clearAt) > clearAt);
     }
 
     private static String readProjectFile(String relativePath) throws IOException {

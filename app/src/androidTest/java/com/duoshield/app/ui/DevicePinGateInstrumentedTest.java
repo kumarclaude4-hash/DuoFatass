@@ -5,7 +5,6 @@ import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.replaceText;
 import static androidx.test.espresso.action.ViewActions.closeSoftKeyboard;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
-import static androidx.test.espresso.intent.Intents.intended;
 import static androidx.test.espresso.intent.Intents.intending;
 import static androidx.test.espresso.intent.matcher.IntentMatchers.hasComponent;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
@@ -23,6 +22,8 @@ import android.graphics.drawable.ColorDrawable;
 import android.view.View;
 import android.view.ViewGroup;
 import android.content.Context;
+
+import java.util.List;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.espresso.intent.Intents;
@@ -121,12 +122,13 @@ public class DevicePinGateInstrumentedTest {
 
             onView(withId(R.id.etNewPin)).perform(replaceText("135790"), closeSoftKeyboard());
             onView(withId(R.id.etConfirmPin)).perform(replaceText("135790"), closeSoftKeyboard());
+            int intentCountBeforeSave = Intents.getIntents().size();
             onView(withId(R.id.btnContinue)).perform(click());
 
-            // The click handler runs entirely on the UI thread (no background
-            // thread involved in setup mode), so Espresso's own synchronization
-            // guarantees this has already happened by the time perform() returns.
-            intended(hasComponent(SignInActivity.class.getName()));
+            // PIN derivation and the durable commit run on DevicePinGateActivity's
+            // background executor. Espresso does not track that executor, so wait
+            // for a new hand-off instead of asserting synchronously.
+            waitForIntentTo(SignInActivity.class, intentCountBeforeSave, 10_000);
         }
 
         assertTrue("PIN must be persisted after setup completes",
@@ -145,8 +147,9 @@ public class DevicePinGateInstrumentedTest {
                      ActivityScenario.launch(DevicePinGateActivity.class)) {
             onView(withId(R.id.etNewPin)).perform(replaceText(originalPin), closeSoftKeyboard());
             onView(withId(R.id.etConfirmPin)).perform(replaceText(originalPin), closeSoftKeyboard());
+            int intentCountBeforeSave = Intents.getIntents().size();
             onView(withId(R.id.btnContinue)).perform(click());
-            intended(hasComponent(SignInActivity.class.getName()));
+            waitForIntentTo(SignInActivity.class, intentCountBeforeSave, 10_000);
         }
 
         assertTrue(PinManager.hasDevicePinSet(appContext));
@@ -170,11 +173,12 @@ public class DevicePinGateInstrumentedTest {
             // background thread and posts the result back via runOnUiThread(), which
             // Espresso's default synchronization does not track — so poll briefly
             // for the resulting SignInActivity intent instead of asserting immediately.
+            int intentCountBeforeUnlock = Intents.getIntents().size();
             for (char c : originalPin.toCharArray()) {
                 onView(withId(keyIdForDigit(c))).perform(click());
             }
 
-            waitForIntentTo(SignInActivity.class, 5_000);
+            waitForIntentTo(SignInActivity.class, intentCountBeforeUnlock, 5_000);
         }
 
         assertTrue("original device PIN must still verify after the wipe",
@@ -218,8 +222,9 @@ public class DevicePinGateInstrumentedTest {
                     PinManager.hasDevicePinSet(appContext));
 
             scenario.onActivity(LockScreenCover::hide);
+            int intentCountBeforeSave = Intents.getIntents().size();
             onView(withId(R.id.btnContinue)).perform(click());
-            intended(hasComponent(SignInActivity.class.getName()));
+            waitForIntentTo(SignInActivity.class, intentCountBeforeSave, 10_000);
             assertTrue("removing the cover must restore normal interaction",
                     PinManager.hasDevicePinSet(appContext));
         }
@@ -271,18 +276,26 @@ public class DevicePinGateInstrumentedTest {
      * via a background thread's runOnUiThread() post rather than a same-thread click
      * handler — see the class javadoc.
      */
-    private static void waitForIntentTo(Class<?> activityClass, long timeoutMs) {
+    private static void waitForIntentTo(
+            Class<?> activityClass, int intentCountBeforeAction, long timeoutMs) {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
+            List<android.content.Intent> captured = Intents.getIntents();
+            for (int i = intentCountBeforeAction; i < captured.size(); i++) {
+                if (hasComponent(activityClass.getName()).matches(captured.get(i))) {
+                    return;
+                }
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             try {
-                intended(hasComponent(activityClass.getName()));
-                return; // matched — done
-            } catch (Throwable notYet) {
-                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-                try { Thread.sleep(150); } catch (InterruptedException ignored) { }
+                Thread.sleep(150);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                fail("Interrupted while waiting for an intent targeting "
+                        + activityClass.getName());
             }
         }
-        fail("Timed out waiting for an intent targeting " + activityClass.getName()
-                + " — verify-mode PIN entry never completed.");
+        fail("Timed out waiting for a new intent targeting " + activityClass.getName()
+                + " — the PIN save/verification hand-off never completed.");
     }
 }

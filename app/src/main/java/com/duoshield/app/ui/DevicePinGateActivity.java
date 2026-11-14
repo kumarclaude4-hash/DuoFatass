@@ -21,6 +21,9 @@ import com.duoshield.app.util.HapticHelper;
 import com.duoshield.app.util.PinManager;
 import com.duoshield.app.util.BackPressGuard;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * Device-level PIN gate — the very first screen a fresh install must pass
  * before anything else is rendered (Welcome, Create account, Restore).
@@ -48,6 +51,7 @@ public class DevicePinGateActivity extends AppCompatActivity {
 
     private static final long AUTO_SUBMIT_DEBOUNCE_MS = 600L;
 
+    private final ExecutorService bgExecutor = Executors.newSingleThreadExecutor();
     private boolean setupMode;
 
     // ── Verify-mode views ──────────────────────────────────────────────────
@@ -109,8 +113,19 @@ public class DevicePinGateActivity extends AppCompatActivity {
             }
 
             tvError.setVisibility(View.GONE);
-            PinManager.setDevicePin(this, pin);
-            proceedToWelcome();
+            btnContinue.setEnabled(false);
+            bgExecutor.execute(() -> {
+                boolean saved = PinManager.setDevicePin(getApplicationContext(), pin);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    btnContinue.setEnabled(true);
+                    if (!saved) {
+                        showError("Couldn't securely save your device PIN. Try again.");
+                        return;
+                    }
+                    proceedToWelcome();
+                });
+            });
         });
     }
 
@@ -223,9 +238,10 @@ public class DevicePinGateActivity extends AppCompatActivity {
         tvError.setVisibility(View.VISIBLE);
         showScanAnim();
 
-        new Thread(() -> {
-            boolean correct = PinManager.verifyDevicePin(this, entered);
+        bgExecutor.execute(() -> {
+            boolean correct = PinManager.verifyDevicePin(getApplicationContext(), entered);
             runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
                 isVerifying = false;
                 setInputEnabled(true);
                 tvError.setVisibility(View.INVISIBLE);
@@ -238,7 +254,7 @@ public class DevicePinGateActivity extends AppCompatActivity {
                     handleWrongPin();
                 }
             });
-        }).start();
+        });
     }
 
     private void handleWrongPin() {
@@ -274,6 +290,13 @@ public class DevicePinGateActivity extends AppCompatActivity {
     private void showError(String message) {
         tvError.setText(message);
         tvError.setVisibility(View.VISIBLE);
+    }
+
+    @Override
+    protected void onDestroy() {
+        cancelPendingAutoSubmit();
+        if (!bgExecutor.isShutdown()) bgExecutor.shutdownNow();
+        super.onDestroy();
     }
 
     private void proceedToWelcome() {

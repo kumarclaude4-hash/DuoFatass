@@ -443,6 +443,12 @@ public class SecurePrefs {
         testMainOverride         = main;
         testDeviceGateOverride   = deviceGate;
         testSessionStateOverride = sessionState;
+        // Injected in-memory fakes represent a durable SOFTWARE/HARDWARE
+        // backing store unless a test directly exercises the persistence helper
+        // with an explicit NONE tier.
+        tier                    = main == null ? SecurityTier.NONE : SecurityTier.SOFTWARE;
+        initialized             = main != null;
+        deviceGateTier          = deviceGate == null ? SecurityTier.NONE : SecurityTier.SOFTWARE;
     }
 
     /** Test-only. Clears injected fakes and resets caches. */

@@ -23,9 +23,15 @@ class FakeSharedPreferences implements SharedPreferences {
     private final Map<String, Object> data = new HashMap<>();
 
     private boolean commitSucceeds = true;
+    private int commitsBeforeFailure = -1;
 
     void setCommitSucceeds(boolean succeeds) {
         commitSucceeds = succeeds;
+    }
+
+    /** Fail one commit after the given number of successful commits; -1 disables the fault. */
+    void setCommitFailureAfter(int successfulCommits) {
+        commitsBeforeFailure = successfulCommits;
     }
 
     @Override
@@ -110,7 +116,9 @@ class FakeSharedPreferences implements SharedPreferences {
             // synchronous disk write completes; a failed commit can therefore
             // return false while the current process already sees the new values.
             apply();
-            return commitSucceeds;
+            if (!commitSucceeds || commitsBeforeFailure == 0) return false;
+            if (commitsBeforeFailure > 0) commitsBeforeFailure--;
+            return true;
         }
 
         @Override
