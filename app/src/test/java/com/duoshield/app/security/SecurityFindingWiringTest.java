@@ -71,10 +71,27 @@ public class SecurityFindingWiringTest {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/util/PinManager.java");
 
-        assertTrue("account PIN writer must scrub the historical plaintext length key",
-                source.contains("ed.remove(KEY_LEN_PREFIX + user.getUid())"));
-        assertTrue("the device PIN writer must retain its dedicated length-key cleanup",
-                source.contains("remove(KEY_DEVICE_PIN_LEN)"));
+        int accountSetAt = source.indexOf("public static boolean setPin(Context ctx, String pin)");
+        int accountSetEnd = source.indexOf("// ── Wrong-PIN lockout", accountSetAt);
+        String accountSetBody = source.substring(accountSetAt, accountSetEnd);
+        assertTrue("account PIN writes must pass the UID-scoped plaintext length key to durable cleanup",
+                accountSetBody.contains("KEY_LEN_PREFIX + user.getUid()")
+                        && accountSetBody.contains("PinHashPersistence.persistSingle(")
+                        && accountSetBody.contains("PinHashPersistence.persistPair("));
+
+        int deviceSetAt = source.indexOf("public static boolean setDevicePin(Context ctx, String pin)");
+        int deviceSetEnd = source.indexOf("public static int getDevicePinLength", deviceSetAt);
+        String deviceSetBody = source.substring(deviceSetAt, deviceSetEnd);
+        assertTrue("device PIN writes must pass their dedicated length key to durable cleanup",
+                deviceSetBody.contains("KEY_DEVICE_PIN_LEN")
+                        && deviceSetBody.contains("PinHashPersistence.persistSingle("));
+
+        String persistence = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinHashPersistence.java");
+        assertTrue("durable PIN writes must remove legacy keys in the same commit and verify cleanup",
+                persistence.contains("for (String key : removalKeys)")
+                        && persistence.contains("editor.remove(key)")
+                        && persistence.contains("if (!isBlank(key) && preferences.contains(key)) return false;"));
         assertTrue("account PIN length getter must be present",
                 source.contains("public static int getPinLength(Context ctx)"));
         assertTrue("device PIN length getter must be present",
