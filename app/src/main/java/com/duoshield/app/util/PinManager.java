@@ -7,6 +7,9 @@ import android.provider.Settings;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import java.security.SecureRandom;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.security.spec.KeySpec;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
@@ -149,48 +152,176 @@ public class PinManager {
      *         "it keeps prompting me to set up a PIN again" report. Callers must
      *         now branch on this value before treating setup as complete.
      */
-    public static boolean setPin(Context ctx, String pin) {
-        String key = pinKey();
-        if (key == null) return false;
+    /**
+     * Builds a fresh salted PIN record. Callers must persist it with
+     * {@link #persistPinHash}; a successful derivation alone is not a save.
+     */
+    private static String createPinHash(String pin) throws Exception {
+        if (pin == null) throw new IllegalArgumentException("PIN must not be null");
+        byte[] salt = new byte[16];
+        new SecureRandom().nextBytes(salt);
+        byte[] hash = pbkdf2(pin, salt);
+        return bytesToHex(salt) + ":" + bytesToHex(hash);
+    }
+
+    /**
+     * Persists a PIN record only in a durable SecurePrefs tier. SharedPreferences
+     * commit() can update its in-memory map even when the disk write fails, so
+     * success requires both a true commit result and an exact read-back.
+     */
+    static boolean persistPinHash(SharedPreferences preferences,
+                                  SecurePrefs.SecurityTier tier,
+                                  String key,
+                                  String stored,
+                                  String... removedKeys) {
+        if (preferences == null || tier == null || !tier.isDurable()
+                || key == null || stored == null) {
+            return false;
+        }
         try {
-            byte[] salt = new byte[16];
-            new SecureRandom().nextBytes(salt);
-            byte[] hash = pbkdf2(pin, salt);
-            String stored = bytesToHex(salt) + ":" + bytesToHex(hash);
-            FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-            SharedPreferences.Editor ed = SecurePrefs.get(ctx).edit()
-                    .putString(key, stored)
-                    .remove(KEY_PIN_LEGACY);
-            // S08-L3: do not persist the plaintext PIN length beside the hash.
-            // Scrub any value a pre-fix build left behind for this account instead.
-            if (user != null) {
-                ed.remove(KEY_LEN_PREFIX + user.getUid());
+            SharedPreferences.Editor editor = preferences.edit().putString(key, stored);
+            if (removedKeys != null) {
+                for (String removedKey : removedKeys) {
+                    if (removedKey != null) editor.remove(removedKey);
+                }
             }
-            ed.apply();
+            if (!editor.commit() || !stored.equals(preferences.getString(key, null))) {
+                return false;
+            }
+            if (removedKeys != null) {
+                for (String removedKey : removedKeys) {
+                    if (removedKey != null && preferences.contains(removedKey)) return false;
+                }
+            }
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
 
-            // Keep the device-level gate PIN in sync with the account PIN —
-            // but only if this device already has one. Devices exempted from
-            // the gate (looksLikePreExistingDevice()) must not gain a device
-            // PIN just because the account PIN changed via Settings. Without
-            // this sync, a later promotion (uninstall/reinstall, or a
-            // wipe-and-restore cycle) would resurrect whatever PIN the user
-            // set at first launch instead of the one they actually remember.
-            if (hasDevicePinSet(ctx)) {
-                setDevicePin(ctx, pin);
+    private static Map<String, Object> snapshotPinPreferences(
+            SharedPreferences preferences, String... keys) {
+        Map<String, Object> snapshot = new HashMap<>();
+        Map<String, ?> all = preferences.getAll();
+        for (String key : keys) {
+            if (all.containsKey(key)) snapshot.put(key, all.get(key));
+        }
+        return snapshot;
+    }
+
+    /**
+     * Best-effort rollback for a failed multi-file PIN update. apply() restores
+     * this process' view immediately; commit() then attempts to make the rollback
+     * durable. A false return means the rollback itself could not be confirmed.
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean restorePinPreferences(
+            SharedPreferences preferences, Map<String, Object> snapshot, String... keys) {
+        try {
+            SharedPreferences.Editor editor = preferences.edit();
+            for (String key : keys) {
+                if (!snapshot.containsKey(key)) {
+                    editor.remove(key);
+                    continue;
+                }
+                Object value = snapshot.get(key);
+                if (value instanceof String) editor.putString(key, (String) value);
+                else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+                else if (value instanceof Long) editor.putLong(key, (Long) value);
+                else if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+                else if (value instanceof Float) editor.putFloat(key, (Float) value);
+                else if (value instanceof Set<?>) editor.putStringSet(key, (Set<String>) value);
+                else return false;
+            }
+            boolean committed = editor.commit();
+            Map<String, ?> current = preferences.getAll();
+            for (String key : keys) {
+                if (!snapshot.containsKey(key)) {
+                    if (current.containsKey(key)) return false;
+                } else if (!snapshot.get(key).equals(current.get(key))) {
+                    return false;
+                }
+            }
+            return committed;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Stores {@code pin} as this account's primary PIN.
+     *
+     * @return true only when every required record has been synchronously
+     *         committed to a durable SecurePrefs tier and read back exactly.
+     *         When a device gate already exists, it is updated first and rolled
+     *         back if the account write fails; the two physical preference files
+     *         cannot provide a single atomic transaction.
+     */
+    public static boolean setPin(Context ctx, String pin) {
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
+        String lengthKey = KEY_LEN_PREFIX + user.getUid();
+
+        SharedPreferences accountStore;
+        SharedPreferences deviceStore = null;
+        Map<String, Object> accountBefore;
+        Map<String, Object> deviceBefore = null;
+        boolean syncDevice;
+        try {
+            accountStore = SecurePrefs.get(ctx);
+            SecurePrefs.SecurityTier accountTier = SecurePrefs.getTier();
+            if (!accountTier.isDurable()) return false;
+
+            syncDevice = hasDevicePinSet(ctx);
+            SecurePrefs.SecurityTier deviceTier = null;
+            if (syncDevice) {
+                deviceStore = SecurePrefs.getDeviceGate(ctx);
+                deviceTier = SecurePrefs.getDeviceGateTier();
+                if (!deviceTier.isDurable()) return false;
             }
 
-            // S06-I3 / constant-work timing parity: every account must have a
-            // slot-B decoy of identical shape to a real secondary code the
-            // moment a primary PIN exists, so an account with a secondary code
-            // and one without perform the same single PBKDF2 derivation on
-            // every unlock attempt. This was previously dead code — nothing
-            // called it — so the two-derivation timing tell it exists to close
-            // was still observable. Fully qualified to avoid a hard compile-time
-            // dependency between the util and security packages.
+            // Derive both records before touching either store. Separate salts
+            // keep the account and device-gate verifiers unlinkable at rest.
+            String accountHash = createPinHash(pin);
+            String deviceHash = syncDevice ? createPinHash(pin) : null;
+
+            accountBefore = snapshotPinPreferences(
+                    accountStore, key, KEY_PIN_LEGACY, lengthKey);
+            if (syncDevice) {
+                deviceBefore = snapshotPinPreferences(
+                        deviceStore, KEY_DEVICE_PIN_HASH, KEY_DEVICE_PIN_LEN);
+                if (!persistPinHash(deviceStore, deviceTier,
+                        KEY_DEVICE_PIN_HASH, deviceHash, KEY_DEVICE_PIN_LEN)) {
+                    boolean restored = restorePinPreferences(deviceStore, deviceBefore,
+                            KEY_DEVICE_PIN_HASH, KEY_DEVICE_PIN_LEN);
+                    if (!restored) {
+                        android.util.Log.e("PinManager",
+                                "Device PIN save and rollback could not both be confirmed.");
+                    }
+                    return false;
+                }
+            }
+
+            if (!persistPinHash(accountStore, accountTier, key, accountHash,
+                    KEY_PIN_LEGACY, lengthKey)) {
+                boolean accountRestored = restorePinPreferences(accountStore, accountBefore,
+                        key, KEY_PIN_LEGACY, lengthKey);
+                boolean deviceRestored = !syncDevice || restorePinPreferences(deviceStore,
+                        deviceBefore, KEY_DEVICE_PIN_HASH, KEY_DEVICE_PIN_LEN);
+                if (!accountRestored || !deviceRestored) {
+                    android.util.Log.e("PinManager",
+                            "PIN update failed and at least one rollback could not be confirmed.");
+                }
+                return false;
+            }
+
+            // Every account with a primary PIN gets a same-shape slot-B decoy.
             com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
             return true;
         } catch (Exception e) {
-            android.util.Log.e("PinManager", "Failed to store PIN hash" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            android.util.Log.e("PinManager", "Failed to store PIN hash"
+                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
