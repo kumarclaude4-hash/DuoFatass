@@ -19,13 +19,28 @@ public class PinHashPersistenceTest {
 
         assertTrue(PinHashPersistence.persistSingle(
                 preferences, SecurePrefs.SecurityTier.SOFTWARE,
-                ACCOUNT_KEY, "account-salt:account-hash", "legacy", "pin_length"));
-        assertEquals("account-salt:account-hash", preferences.getString(ACCOUNT_KEY, null));
+                ACCOUNT_KEY, "0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "legacy", "pin_length"));
+        assertEquals("0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", preferences.getString(ACCOUNT_KEY, null));
         assertFalse(preferences.contains("legacy"));
         assertFalse(preferences.contains("pin_length"));
         assertFalse(PinHashPersistence.persistSingle(
                 preferences, SecurePrefs.SecurityTier.NONE,
                 ACCOUNT_KEY, "new-salt:new-hash"));
+    }
+
+    @Test
+    public void incompleteReadbackNeverReportsDurableSuccess() {
+        FakeSharedPreferences preferences = new FakeSharedPreferences() {
+            @Override
+            public String getString(String key, String defValue) {
+                if (ACCOUNT_KEY.equals(key)) return "ffffffffffffffffffffffffffffffff:"
+                        + "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+                return super.getString(key, defValue);
+            }
+        };
+        assertFalse(PinHashPersistence.persistSingle(
+                preferences, SecurePrefs.SecurityTier.SOFTWARE,
+                ACCOUNT_KEY, "0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
     }
 
     @Test
@@ -35,10 +50,10 @@ public class PinHashPersistenceTest {
 
         assertFalse(PinHashPersistence.persistSingle(
                 preferences, SecurePrefs.SecurityTier.SOFTWARE,
-                ACCOUNT_KEY, "salt:hash"));
+                ACCOUNT_KEY, "0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         // Android SharedPreferences can update its process map even when disk
         // persistence fails. The false result is the contract callers must obey.
-        assertEquals("salt:hash", preferences.getString(ACCOUNT_KEY, null));
+        assertEquals("0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", preferences.getString(ACCOUNT_KEY, null));
     }
 
     @Test
@@ -51,14 +66,14 @@ public class PinHashPersistenceTest {
 
         assertTrue(PinHashPersistence.persistPair(
                 account, SecurePrefs.SecurityTier.SOFTWARE,
-                ACCOUNT_KEY, "account-salt:account-hash",
+                ACCOUNT_KEY, "0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "app_pin_hash", "app_pin_length_uid-a",
                 device, SecurePrefs.SecurityTier.HARDWARE,
-                DEVICE_KEY, "device-salt:device-hash",
+                DEVICE_KEY, "fedcba9876543210fedcba9876543210:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 "device_gate_pin_length"));
 
-        assertEquals("account-salt:account-hash", account.getString(ACCOUNT_KEY, null));
-        assertEquals("device-salt:device-hash", device.getString(DEVICE_KEY, null));
+        assertEquals("0123456789abcdef0123456789abcdef:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", account.getString(ACCOUNT_KEY, null));
+        assertEquals("fedcba9876543210fedcba9876543210:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", device.getString(DEVICE_KEY, null));
         assertFalse(account.contains("app_pin_hash"));
         assertFalse(account.contains("app_pin_length_uid-a"));
         assertFalse(device.contains("device_gate_pin_length"));
@@ -74,8 +89,8 @@ public class PinHashPersistenceTest {
         FakeSharedPreferences account = new FakeSharedPreferences();
         FakeSharedPreferences device = new FakeSharedPreferences();
         String tx = "transaction-1";
-        String accountHash = "account-salt:new-account-hash";
-        String deviceHash = "device-salt:new-device-hash";
+        String accountHash = "00112233445566778899aabbccddeeff:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        String deviceHash = "ffeeddccbbaa99887766554433221100:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
         account.edit().putString(ACCOUNT_KEY, "old-account")
                 .putString(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY), tx)
                 .putString(PinHashPersistence.accountPendingHashKey(ACCOUNT_KEY), accountHash)
@@ -112,8 +127,8 @@ public class PinHashPersistenceTest {
         device.edit().putString(DEVICE_KEY, "old-device")
                 .putString(PinHashPersistence.DEVICE_PENDING_TX, "orphan")
                 .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_KEY, ACCOUNT_KEY)
-                .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_HASH, "new-account")
-                .putString(PinHashPersistence.DEVICE_PENDING_DEVICE_HASH, "new-device")
+                .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_HASH, "00112233445566778899aabbccddeeff:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+                .putString(PinHashPersistence.DEVICE_PENDING_DEVICE_HASH, "ffeeddccbbaa99887766554433221100:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
                 .commit();
 
         assertTrue(PinHashPersistence.recoverPair(
@@ -128,12 +143,12 @@ public class PinHashPersistenceTest {
     public void oneSidedActiveUpdateWithIncompleteJournalFailsClosed() {
         FakeSharedPreferences account = new FakeSharedPreferences();
         FakeSharedPreferences device = new FakeSharedPreferences();
-        account.edit().putString(ACCOUNT_KEY, "new-account").commit();
+        account.edit().putString(ACCOUNT_KEY, "00112233445566778899aabbccddeeff:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc").commit();
         device.edit().putString(DEVICE_KEY, "old-device")
                 .putString(PinHashPersistence.DEVICE_PENDING_TX, "orphan")
                 .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_KEY, ACCOUNT_KEY)
-                .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_HASH, "new-account")
-                .putString(PinHashPersistence.DEVICE_PENDING_DEVICE_HASH, "new-device")
+                .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_HASH, "00112233445566778899aabbccddeeff:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+                .putString(PinHashPersistence.DEVICE_PENDING_DEVICE_HASH, "ffeeddccbbaa99887766554433221100:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
                 .commit();
 
         assertFalse(PinHashPersistence.recoverPair(
