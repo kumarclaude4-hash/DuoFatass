@@ -2,14 +2,14 @@
 
 **Updated:** 2026-11-14 (PR #301 documentation reconciliation merged; S06-H6 PIN durability implementation in review)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Latest audited application-code merge on main:** `be7c0e7ee8eee1289da5fd4af9b84183998781b5` (PR #299 S06-H5 durable-throttle fix). Documentation-only PR #301 merged as `cf5b496e406c0d27bfd2408ec160661dbf7885cd`; its exact-head CI [43536863859](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536863859) passed 10/10 and Security [43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157) passed 3/3. At the time of this branch snapshot, no PR for S06-H6 has been opened yet.
+**Latest audited application-code merge on main:** `be7c0e7ee8eee1289da5fd4af9b84183998781b5` (PR #299 S06-H5 durable-throttle fix). Documentation-only PR #301 merged as `cf5b496e406c0d27bfd2408ec160661dbf7885cd`; its exact-head CI [43536863859](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536863859) passed 10/10 and Security [43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157) passed 3/3. PR #303 is now open at https://github.com/kumarclaude4-hash/DuoFatass/pull/303. Its first exact-head CI attempt exposed a Java compile error in the executor-converted DevicePinGateActivity verification path; that error was corrected in commit `371c1c2625a4a7d7df1185bab22aebf827d7a924`. CI [43546680267] and Security [43546680289] are running against that corrected head.
 
 
 ## Active implementation — S06-H6 primary and device PIN durability (2026-11-14)
 
 Source review found a primary-credential reliability gap separate from S06-H5 candidate throttling and S06-H4 duress-code arming: PinManager.setPin() used asynchronous apply() for the account hash, ignored the device-PIN setter result while synchronizing an existing device gate, and promoteDevicePinToCurrentUser() returned success after an asynchronous account write. DevicePinGateActivity advanced after calling the device setter without checking whether storage succeeded.
 
-**Working branch:** `pin-persistence-fix-2026-11-14` (PR not yet open at this report checkpoint).
+**Working branch / PR:** `pin-persistence-fix-2026-11-14`, [PR #303](https://github.com/kumarclaude4-hash/DuoFatass/pull/303).
 
 **Implementation authored:**
 - New `PinHashPersistence` requires a durable SecurePrefs tier, synchronous `commit()`, exact hash read-back, and verification that legacy keys/length metadata were removed.
@@ -17,9 +17,9 @@ Source review found a primary-credential reliability gap separate from S06-H5 ca
 - Account and device PIN hashes use separate salts when synchronizing a new PIN. Restore-time promotion re-verifies the source device hash and durably commits the account copy.
 - Legacy device-hash migration verifies the isolated destination before removing the old account-store copy; PIN-length metadata is scrubbed.
 - PBKDF2 mutable password/hash/salt buffers are cleared where locally controllable. Device-gate setup and verification are moved to a managed background executor; setup does not advance if persistence fails.
-- Added pure persistence regressions for NONE tier, commit failure, inaccurate read-back, malformed records, failed journal staging, restart recovery, cleanup metadata, incomplete stage discard and one-sided journal failure. Added source-wiring assertions for PIN-manager integration and UI failure handling.
+- Added pure persistence regressions for NONE tier, commit failure, inaccurate read-back, malformed records, failed journal staging, restart recovery, cleanup metadata, incomplete stage discard and one-sided journal failure. Added source-wiring assertions for PIN-manager integration, UI failure handling and duress device-PIN promotion result handling.
 
-**Verification state:** automated tests are authored but have not yet been executed by CI at this checkpoint. Do not count the implementation as verified or merge until exact-head CI and Security pass. Real Keystore/EncryptedSharedPreferences behavior, process-kill testing on an Android device and full device-gate/account-restore acceptance remain separate gates. S06-H6 is Partial; S06-H4 and S06-H5 retain their existing dispositions; FINAL_SIGNOFF remains PENDING.
+**Verification state:** first exact-head CI attempt failed at Java compilation because the executor verification path retained `.start()`; fixed on the branch in commit `371c1c2625a4a7d7df1185bab22aebf827d7a924`. The corrected-head CI [43546680267] and Security [43546680289] were running at the last check. Do not count the implementation as verified or merge until all exact-head jobs pass. Real Keystore/EncryptedSharedPreferences behavior, process-kill testing on an Android device and full device-gate/account-restore acceptance remain separate gates. S06-H6 is Partial; S06-H4 and S06-H5 retain their existing dispositions; FINAL_SIGNOFF remains PENDING.
 
 ## Verified implementation PR #288 — S02-I2 production fail-closed rate limiting
 
