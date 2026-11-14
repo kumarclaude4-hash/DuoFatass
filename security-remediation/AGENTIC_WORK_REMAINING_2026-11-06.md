@@ -1,8 +1,15 @@
-# Agentic Work Remaining — current handoff, 2026-11-09 (PRs #288/#289/#290 merged)
+# Agentic Work Remaining — current handoff, 2026-11-14 (PR #303 S06-H6 in review)
 
 Repository: `kumarclaude4-hash/DuoFatass`  
 Base branch: `main`  
-Current main HEAD: `9b1c1dd48fb584d728491e8bfeee5ef380e9b834` (PR #290 S06-H5 all primary-PIN collision paths). Exact-head CI [42613986140](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986140) passed 10/10 and Security [42613986331](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/42613986331) passed 3/3. Espresso executed 4 tests; API 35 predictive-back executed 1; debug APK and minified R8 passed. PR #288 S02-I2 and PR #289 S10-N2 are also merged and verified. GitHub inventory after PR #290: zero open PRs, zero open issues. See `security-remediation/INDEPENDENT_REVERIFICATION_2026-11-08.md` for current evidence.
+Current main HEAD: `cf5b496e406c0d27bfd2408ec160661dbf7885cd` (PR #301 documentation-only). Latest
+application-code merge on main remains PR #299 S06-H5. PR #303 is the active open PR for S06-H6
+primary/device PIN durability. Working branch: `pin-persistence-fix-2026-11-14`; latest source/test
+head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`. CI [43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173) was queued and Security
+[43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was running at this checkpoint. Do not count the remediation as verified
+or merge until the final documentation-synchronized head passes both workflows. Main remains
+unchanged by this open PR. See `BUG_TRACKER.md`, `NEXT_WORK_REPORT_2026-11-08.md` and
+`sessions/SESSION-S06-H6-PRIMARY-PIN-DURABILITY-2026-11-14.md` for the exact source/test changes.
 
 Recent merged work:
 - PR #261 — invite lifecycle invalid-state fail-closed checks (S05-H2).
@@ -22,11 +29,27 @@ Recent merged work:
 
 PR #290 is merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`, extending S06-H5's UID-scoped three-attempt/15-minute candidate throttle to restored setup and forced primary rotation. Its final-head CI [42613986140] passed 10/10 and Security [42613986331] passed 3/3; Espresso 4, API 35 1, debug APK and R8 passed. PR #288 S02-I2 and PR #289 S10-N2 are also merged and verified. GitHub inventory after merge: zero open PRs and zero open issues. Some historical PRs were intentionally closed unmerged because they were superseded or duplicate (#266 per owner instruction; #273 duplicate of #272; #262 implementation carried by #265). Operator/staging, owner-decision and feature-complete physical-device gates remain open. The old #253/#254/#258 table and their historical CI blockers are superseded: #253's invite lifecycle work was replaced by merged #261, #254's range allowance was superseded by merged #256, and #258 was closed; do not reopen those branches. PR #262 was closed unmerged; its S06-H5 implementation was carried by merged PR #265.
 
-The canonical tracker on `main` after PR #290 retains **116 findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. PR #288 S02-I2 code-side remediation is merged and verified; its Partial disposition is only for authorized live Render/Worker secret-pair read-back and production runtime confirmation. PR #289 S10-N2 method-reference code is merged and verified; whole-program/external callback and physical logcat residuals remain. PR #290 extends S06-H5's throttle to SetupPin and forced rotation; it is merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Final-head CI [42613986140] passed 10/10 and Security [42613986331] passed 3/3. Espresso 4, API 35 1, debug APK and minified R8 passed. Use `BUG_TRACKER.md`, [Next Work Report](NEXT_WORK_REPORT_2026-11-08.md) and [Independent Re-verification](INDEPENDENT_REVERIFICATION_2026-11-08.md) for the current state; conflicting 2026-11-06/07 narrative below is historical.
+The canonical tracker currently retains **117 findings: 86 Fixed, 18 Partial, 1 Open, 12 Accepted**; S06-H6 is Partial and PR #303 remains open. PR #288 S02-I2 code-side remediation is merged and verified; its Partial disposition is only for authorized live Render/Worker secret-pair read-back and production runtime confirmation. PR #289 S10-N2 method-reference code is merged and verified; whole-program/external callback and physical logcat residuals remain. PR #290 extends S06-H5's throttle to SetupPin and forced rotation; it is merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`. Final-head CI [42613986140] passed 10/10 and Security [42613986331] passed 3/3. Espresso 4, API 35 1, debug APK and minified R8 passed. Use `BUG_TRACKER.md`, [Next Work Report](NEXT_WORK_REPORT_2026-11-08.md) and [Independent Re-verification](INDEPENDENT_REVERIFICATION_2026-11-08.md) for the current state; conflicting 2026-11-06/07 narrative below is historical.
 
 **S10-N1 correction:** App Check is enforced at the Firebase service layer, before Firestore Rules evaluation. Firestore Rules cannot inspect App Check token metadata; `request.app` is unsupported and must not be added to Rules. PR #267 removed the invalid helper and false-positive emulator test arrangement. Console enforcement, monitoring review and isolated real-token staging acceptance remain operator work.
 
 PR #288 added production fail-closed S02-I2 handling with same-PR docs; exact-head CI 10/10, Security 3/3 and Firestore Rules/server transaction tests passed. PR #289 added same-owner method-reference callback taint for S10-N2 with same-PR docs; exact-head CI 10/10 and Security 3/3 passed. PR #290 added the missing shared throttle to restored SetupPin and forced primary rotation, standardized their failure outcome, and updated tracker, START_HERE, next-work report, sign-off, independent verification, agent handoff, session index and a session record in the same PR. It merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`; final-head CI [42613986140] 10/10 and Security [42613986331] 3/3 passed. Espresso/API 35/R8/debug APK gates passed. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. Physical-device acceptance remains deferred until the owner explicitly declares the application feature-complete.
+
+## Active implementation — S06-H6 primary/device PIN durability
+
+PR #303 adds durable SecurePrefs tier checks, synchronous commit/read-back, a journaled pair update
+across the account and device-gate stores, independent salts, legacy metadata cleanup, and
+idempotent recovery. The latest follow-up also treats orphaned account stages as ambiguous when
+their staged hash is already active, and retains the device journal until account-stage cleanup is
+confirmed durable. The device-gate UI persists off the main thread and does not advance on write
+failure. Instrumented tests now wait for a new SignInActivity intent after the asynchronous save or
+unlock action. Latest branch head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`; exact-head CI/Security remain
+pending as linked above.
+
+No physical-device testing is authorized before the owner declares the application feature-complete.
+Do not use real mnemonics, private keys, production credentials or production accounts. Keep
+`security-remediation/FINAL_SIGNOFF.md` PENDING. S06-H6 remains Partial until final-head CI/Security
+pass and separate Keystore/process-death/device acceptance is completed.
 
 ## 1. Binding instructions
 

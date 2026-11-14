@@ -3,7 +3,7 @@
 **Date:** 2026-11-14  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Working branch:** `pin-persistence-fix-2026-11-14`  
-**Status at session write:** Implementation and regression coverage authored; PR CI/Security pending. S06-H6 remains **Partial**.
+**Status at latest documentation checkpoint (2026-11-14):** Implementation and expanded regression coverage are on open PR #303; final exact-head CI/Security are pending. S06-H6 remains **Partial**.
 
 ## Finding
 
@@ -64,9 +64,28 @@ New `app/src/test/java/com/duoshield/app/util/PinHashPersistenceTest.java` cover
 
 `SecurityFindingWiringTest.primaryAndDevicePinWritesRequireDurableVerifiedPersistence()` guards PinManager persistence/recovery wiring and the DevicePinGate failure branch. Existing device-gate isolation tests use SecurePrefs test overrides that explicitly model a durable SOFTWARE tier, while direct helper tests exercise the NONE tier.
 
+### Follow-up hardening — 2026-11-14
+
+The source review and initial CI feedback led to additional changes on the same PR branch:
+
+- Orphan account-side stages are removed only when the transaction marker/hash pair is structurally
+  valid and the staged value is not already the active account hash. If the active hash matches
+  an orphaned staged hash without the device journal, recovery fails closed and preserves evidence.
+- Completion cleanup now removes the account stage first and deletes the device-side transaction
+  journal only after the account-stage commit succeeds and both keys read back as absent.
+- Fault-injection coverage models a failed account-stage cleanup commit after both active credential
+  writes; the test requires the device journal to remain and confirms a later recovery retry removes it.
+- The device-gate Espresso tests were corrected for the new background executor. They now snapshot
+  the captured-intent count and wait for a new SignInActivity hand-off after PIN save or unlock,
+  preventing an old intent from satisfying a later step.
+- Latest source/test head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`. Current-head CI
+  [43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173) was queued and Security [43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was in progress.
+  A documentation synchronization will trigger another exact-head run; no final green result
+  is claimed at this checkpoint.
+
 ## Verification and residuals
 
-At this session write, no local Gradle/Android toolchain execution is claimed. The code/test changes are awaiting exact-head GitHub CI and Security workflows. Do not merge until all required checks pass and the PR head SHA is re-verified.
+At this checkpoint, no local Gradle/Android toolchain execution is claimed. GitHub CI/Security are the verification path: the previous run passed the unit suite but surfaced stale Espresso intent timing assumptions, now corrected in the instrumented tests. The latest exact-head workflows are still running/queued and must be rechecked after documentation synchronization. Do not merge until all required checks pass and the PR head SHA is re-verified.
 
 Repository CI cannot replace the following acceptance:
 - real Android Keystore / EncryptedSharedPreferences durability behavior on supported API levels;
