@@ -253,7 +253,7 @@ public class SecurityFindingWiringTest {
                 "app/src/main/java/com/duoshield/app/ui/SeedPhraseDisplayActivity.java");
         int workerAt = source.indexOf("new Thread(() -> {", source.indexOf("onSuccess"));
         int promotedAt = source.indexOf("PinManager.promoteDevicePinToCurrentUser(appContext)", workerAt);
-        int successAt = source.indexOf("if (devicePinPromoted)", promotedAt);
+        int successAt = source.indexOf("if (pinPromotionConfirmed)", promotedAt);
         int conversationAt = source.indexOf("new Intent(this, ConversationListActivity.class)", successAt);
         int setupAt = source.indexOf("new Intent(this, SetupPinActivity.class)", conversationAt);
         assertTrue("account creation must check device PIN promotion off the UI thread",
