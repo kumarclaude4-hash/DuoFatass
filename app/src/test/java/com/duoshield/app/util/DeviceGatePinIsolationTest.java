@@ -61,7 +61,7 @@ public class DeviceGatePinIsolationTest {
     @Test
     public void devicePin_survivesAccountStoreWipe_andStillVerifies() {
         // 1. Fresh install sets a device-gate PIN (DevicePinGateActivity setup mode).
-        PinManager.setDevicePin(null, "482913");
+        assertTrue(PinManager.setDevicePin(null, "482913"));
         assertTrue("device PIN must be set right after setup", PinManager.hasDevicePinSet(null));
 
         // 2. Reproduce DuressManager.performLogout()'s wipe step verbatim: a full
@@ -85,7 +85,7 @@ public class DeviceGatePinIsolationTest {
 
     @Test
     public void devicePin_neverWrittenToAccountScopedStore() {
-        PinManager.setDevicePin(null, "112233");
+        assertTrue(PinManager.setDevicePin(null, "112233"));
 
         assertFalse("device-gate store must hold the hash", deviceGateStore.getAll().isEmpty());
         assertTrue("account-scoped store must never receive device-gate keys — an "
@@ -98,7 +98,7 @@ public class DeviceGatePinIsolationTest {
     public void legacyDevicePin_migratesFromAccountStore_onFirstRead() {
         // Simulate an install that set its device PIN before the storage split —
         // both keys used to live in the account-scoped file under the same names.
-        PinManager.setDevicePin(null, "999000"); // writes into deviceGateStore today
+        assertTrue(PinManager.setDevicePin(null, "999000")); // writes into deviceGateStore today
         // Move it back to simulate the pre-fix layout for this test.
         String hash = deviceGateStore.getString("device_gate_pin_hash", null);
         int len = deviceGateStore.getInt("device_gate_pin_length", 6);
