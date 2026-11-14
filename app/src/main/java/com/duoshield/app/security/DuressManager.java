@@ -523,10 +523,10 @@ public class DuressManager {
      *
      * <p><strong>Silent:</strong> no Toast, no dialog, no animation visible to an observer.
      */
-    public static void performLogout(Context context, String enteredPin) {
+    public static boolean performLogout(Context context, String enteredPin) {
         if (!DURESS_TRIGGER_IN_PROGRESS.compareAndSet(false, true)) {
             android.util.Log.w("DuressManager", "Duress teardown already in progress; ignoring duplicate trigger.");
-            return;
+            return false;
         }
         try {
         // Capture the UID before anything below signs out or wipes prefs — both would
@@ -544,7 +544,7 @@ public class DuressManager {
             android.util.Log.e("DuressManager",
                     "Duress teardown aborted because device-gate persistence was not confirmed.");
             DURESS_TRIGGER_IN_PROGRESS.set(false);
-            return;
+            return false;
         }
 
         // Enqueue FcmUnregisterWorker only after the local recovery gate is secured.
@@ -746,8 +746,11 @@ public class DuressManager {
         }
         } catch (RuntimeException setupError) {
             DURESS_TRIGGER_IN_PROGRESS.set(false);
-            throw setupError;
+            android.util.Log.e("DuressManager",
+                    "Could not start duress teardown" + " (" + com.duoshield.app.util.LogRedact.error(setupError) + ")");
+            return false;
         }
+        return true;
     }
 
     // ── Server-side eligibility gate ──────────────────────────────────────────
