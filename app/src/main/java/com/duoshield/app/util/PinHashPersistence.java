@@ -70,7 +70,7 @@ public final class PinHashPersistence {
      * and read back. If the process dies in between, {@link #recoverPair} rolls
      * both stores forward to the same transaction.
      */
-    public static boolean persistPair(
+    public static synchronized boolean persistPair(
             SharedPreferences accountPreferences,
             SecurePrefs.SecurityTier accountTier,
             String accountHashKey,
@@ -145,7 +145,7 @@ public final class PinHashPersistence {
      * when neither active key has advanced; a one-sided active update fails
      * closed and keeps the journal for a later recovery attempt.
      */
-    public static boolean recoverPair(
+    public static synchronized boolean recoverPair(
             SharedPreferences accountPreferences,
             SecurePrefs.SecurityTier accountTier,
             SharedPreferences devicePreferences,
@@ -213,15 +213,16 @@ public final class PinHashPersistence {
                 return false;
             }
 
-            boolean accountCommitted = accountPreferences.edit()
-                    .putString(accountHashKey, accountStoredHash)
-                    .remove(accountLegacyKey)
-                    .remove(accountLengthKey)
-                    .commit();
-            boolean deviceCommitted = devicePreferences.edit()
-                    .putString(deviceHashKey, deviceStoredHash)
-                    .remove(deviceLengthKey)
-                    .commit();
+            SharedPreferences.Editor accountEditor = accountPreferences.edit()
+                    .putString(accountHashKey, accountStoredHash);
+            if (!isBlank(accountLegacyKey)) accountEditor.remove(accountLegacyKey);
+            if (!isBlank(accountLengthKey)) accountEditor.remove(accountLengthKey);
+            boolean accountCommitted = accountEditor.commit();
+
+            SharedPreferences.Editor deviceEditor = devicePreferences.edit()
+                    .putString(deviceHashKey, deviceStoredHash);
+            if (!isBlank(deviceLengthKey)) deviceEditor.remove(deviceLengthKey);
+            boolean deviceCommitted = deviceEditor.commit();
 
             if (!accountCommitted || !deviceCommitted) return false;
             if (!accountStoredHash.equals(accountPreferences.getString(accountHashKey, null))
