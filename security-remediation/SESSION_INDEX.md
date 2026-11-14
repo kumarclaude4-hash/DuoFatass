@@ -164,3 +164,32 @@ and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/action
 were still running at the time of this entry. The latest application-source change remains
 PR #299; the S06-H5 durable-throttle mitigation remains Partial pending independent
 residual review and device acceptance. Do not promote production sign-off.
+
+## Current-main documentation reconciliation — PR #301 merged (2026-11-14)
+
+PR #301 merged as `cf5b496e406c0d27bfd2408ec160661dbf7885cd` (documentation-only). Its exact-head CI
+[43536863859](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536863859)
+passed 10/10 and Security [43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157)
+passed 3/3. Post-merge main CI [43538418308](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43538418308)
+and Security [43538418237](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43538418237)
+were running at this snapshot.
+
+## S06-H6 — primary PIN durable persistence — 2026-11-14
+
+See [`sessions/SESSION-S06-H6-DURABLE-PRIMARY-PIN-2026-11-14.md`](sessions/SESSION-S06-H6-DURABLE-PRIMARY-PIN-2026-11-14.md).
+The source review found that account PIN writes, device-gate PIN writes and device-to-account promotion could
+report success without a durable SecurePrefs tier and synchronous commit/read-back. Setup, account creation
+and duress callers also failed to consistently gate their next action on persistence success.
+
+The implementation branch adds a shared durable-tier/commit/read-back helper, best-effort snapshot rollback,
+copy-before-cleanup legacy migration, off-main-thread device-PIN setup, checked account promotion, and a duress
+teardown guard that prevents destructive work until the device gate is durably updated. It also restores the
+lock-screen input state after a failed promotion and routes account creation to explicit PIN setup when a
+stored device PIN cannot be promoted. Tests cover NONE-tier rejection, failed commits, current-process rollback
+semantics and the caller wiring.
+
+S06-H6 remains **Partial** pending exact-head CI/Security, independent review, real Android Keystore/
+EncryptedSharedPreferences behavior, and physical-device setup/restore/duress acceptance. Account and device
+preferences are separate physical stores; ordered writes plus rollback are compensating, not one atomic
+cross-file transaction. `FINAL_SIGNOFF.md` remains PENDING.
+
