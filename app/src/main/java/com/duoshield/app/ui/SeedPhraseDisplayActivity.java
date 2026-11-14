@@ -330,11 +330,18 @@ public class SeedPhraseDisplayActivity extends AppCompatActivity {
                             // commit; do not run the migration or write on the UI thread.
                             new Thread(() -> {
                                 android.content.Context appContext = getApplicationContext();
-                                boolean devicePinPromoted = PinManager.hasDevicePinSet(appContext)
-                                        && PinManager.promoteDevicePinToCurrentUser(appContext);
+                                boolean devicePinPromoted = false;
+                                try {
+                                    devicePinPromoted = PinManager.hasDevicePinSet(appContext)
+                                            && PinManager.promoteDevicePinToCurrentUser(appContext);
+                                } catch (RuntimeException e) {
+                                    Log.w(TAG, "Device PIN promotion did not complete"
+                                            + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                                }
+                                final boolean pinPromotionConfirmed = devicePinPromoted;
                                 runOnUiThread(() -> {
                                     if (isFinishing() || isDestroyed()) return;
-                                    if (devicePinPromoted) {
+                                    if (pinPromotionConfirmed) {
                                         Log.i(TAG, "[3/4] durable device PIN promoted to account");
                                         Intent intent = new Intent(this, ConversationListActivity.class);
                                         intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
