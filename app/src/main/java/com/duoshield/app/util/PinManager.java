@@ -137,22 +137,6 @@ public class PinManager {
     }
 
     /**
-     * Stores {@code pin} as this account's primary PIN.
-     *
-     * @return true only if a hash was actually written for the current account.
-     *         Returns false when no Firebase user is signed in (there is no
-     *         UID to scope the key to) or the write/derivation threw.
-     *
-     *         <p>This used to be {@code void}, which made both failure paths
-     *         completely silent: {@code SetupPinActivity} cleared its
-     *         {@code pending_pin_setup_<uid>} marker and routed on to the
-     *         conversation list regardless, so an account whose PIN never got
-     *         stored looked fully set up. The next launch then found no hash,
-     *         and the user was asked to set a PIN they had already set — the
-     *         "it keeps prompting me to set up a PIN again" report. Callers must
-     *         now branch on this value before treating setup as complete.
-     */
-    /**
      * Builds a fresh salted PIN record. Callers must persist it with
      * {@link #persistPinHash}; a successful derivation alone is not a save.
      */
@@ -256,6 +240,14 @@ public class PinManager {
      *         When a device gate already exists, it is updated first and rolled
      *         back if the account write fails; the two physical preference files
      *         cannot provide a single atomic transaction.
+     */
+    /**
+     * Stores the supplied account PIN only after the required account and device
+     * records have been committed to durable SecurePrefs stores and read back.
+     * When a device gate already exists, the update uses ordered commits with
+     * best-effort rollback because the two files do not share an atomic transaction.
+     *
+     * @return true only when the requested PIN records are confirmed persisted.
      */
     public static boolean setPin(Context ctx, String pin) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
@@ -743,6 +735,7 @@ public class PinManager {
      * device-level copy to keep in sync when the user changes their PIN.
      */
     public static boolean promoteDevicePinToCurrentUser(Context ctx) {
+        try {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) return false;
         if (!hasDevicePinSet(ctx)) return false;
@@ -773,8 +766,13 @@ public class PinManager {
         // though this path bypasses setPin().
         com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
         return true;
+    
+        } catch (RuntimeException e) {
+            android.util.Log.e("PinManager", "Device PIN promotion failed"
+                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            return false;
+        }
     }
-
     /**
      * True if this device shows signs of an account that existed before the
      * upfront device-PIN gate was introduced — a persisted {@code my_uid}, or
