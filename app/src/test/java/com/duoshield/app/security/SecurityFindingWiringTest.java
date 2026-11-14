@@ -270,7 +270,7 @@ public class SecurityFindingWiringTest {
     public void duressTeardownRequiresDurableGatePromotionBeforeSideEffects() throws IOException {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/security/DuressManager.java");
-        int methodAt = source.indexOf("public static void performLogout(Context context, String enteredPin)");
+        int methodAt = source.indexOf("public static boolean performLogout(Context context, String enteredPin)");
         int promoteAt = source.indexOf("!com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)",
                 methodAt);
         int enqueueAt = source.indexOf("FcmUnregisterWorker.enqueue(appCtx)", methodAt);
