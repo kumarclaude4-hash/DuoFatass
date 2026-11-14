@@ -20,6 +20,9 @@ public final class PinHashPersistence {
     static final String DEVICE_PENDING_ACCOUNT_KEY = "__pin_sync_pending_account_key";
     static final String DEVICE_PENDING_ACCOUNT_HASH = "__pin_sync_pending_account_hash";
     static final String DEVICE_PENDING_DEVICE_HASH = "__pin_sync_pending_device_hash";
+    private static final String DEVICE_PENDING_ACCOUNT_LEGACY_KEY = "__pin_sync_pending_account_legacy_key";
+    private static final String DEVICE_PENDING_ACCOUNT_LENGTH_KEY = "__pin_sync_pending_account_length_key";
+    private static final String DEVICE_PENDING_DEVICE_LENGTH_KEY = "__pin_sync_pending_device_length_key";
     private static final String ACCOUNT_PENDING_TX_PREFIX = "__pin_sync_pending_tx_";
     private static final String ACCOUNT_PENDING_HASH_PREFIX = "__pin_sync_pending_hash_";
 
@@ -29,7 +32,7 @@ public final class PinHashPersistence {
      * Writes one PIN hash synchronously and verifies the resulting state.
      * Removal keys are scrubbed in the same commit as the replacement.
      */
-    public static boolean persistSingle(
+    public static synchronized boolean persistSingle(
             SharedPreferences preferences,
             SecurePrefs.SecurityTier tier,
             String hashKey,
@@ -117,12 +120,18 @@ public final class PinHashPersistence {
                     .putString(DEVICE_PENDING_ACCOUNT_KEY, accountHashKey)
                     .putString(DEVICE_PENDING_ACCOUNT_HASH, accountStoredHash)
                     .putString(DEVICE_PENDING_DEVICE_HASH, deviceStoredHash)
+                    .putString(DEVICE_PENDING_ACCOUNT_LEGACY_KEY, accountLegacyKey)
+                    .putString(DEVICE_PENDING_ACCOUNT_LENGTH_KEY, accountLengthKey)
+                    .putString(DEVICE_PENDING_DEVICE_LENGTH_KEY, deviceLengthKey)
                     .commit();
             if (!deviceStaged
                     || !transactionId.equals(devicePreferences.getString(DEVICE_PENDING_TX, null))
                     || !accountHashKey.equals(devicePreferences.getString(DEVICE_PENDING_ACCOUNT_KEY, null))
                     || !accountStoredHash.equals(devicePreferences.getString(DEVICE_PENDING_ACCOUNT_HASH, null))
-                    || !deviceStoredHash.equals(devicePreferences.getString(DEVICE_PENDING_DEVICE_HASH, null))) {
+                    || !deviceStoredHash.equals(devicePreferences.getString(DEVICE_PENDING_DEVICE_HASH, null))
+                    || !sameNullable(accountLegacyKey, devicePreferences.getString(DEVICE_PENDING_ACCOUNT_LEGACY_KEY, null))
+                    || !sameNullable(accountLengthKey, devicePreferences.getString(DEVICE_PENDING_ACCOUNT_LENGTH_KEY, null))
+                    || !sameNullable(deviceLengthKey, devicePreferences.getString(DEVICE_PENDING_DEVICE_LENGTH_KEY, null))) {
                 // No active key has been changed yet. Clear the incomplete stage
                 // best-effort; a surviving device journal is safely discarded by recovery.
                 clearAccountStage(accountPreferences, accountHashKey);
@@ -180,6 +189,15 @@ public final class PinHashPersistence {
             String accountHashKey = devicePreferences.getString(DEVICE_PENDING_ACCOUNT_KEY, null);
             String accountStoredHash = devicePreferences.getString(DEVICE_PENDING_ACCOUNT_HASH, null);
             String deviceStoredHash = devicePreferences.getString(DEVICE_PENDING_DEVICE_HASH, null);
+            String journalAccountLegacyKey = devicePreferences.getString(DEVICE_PENDING_ACCOUNT_LEGACY_KEY, null);
+            String journalAccountLengthKey = devicePreferences.getString(DEVICE_PENDING_ACCOUNT_LENGTH_KEY, null);
+            String journalDeviceLengthKey = devicePreferences.getString(DEVICE_PENDING_DEVICE_LENGTH_KEY, null);
+            String effectiveAccountLegacyKey = accountLegacyKey != null
+                    ? accountLegacyKey : journalAccountLegacyKey;
+            String effectiveAccountLengthKey = accountLengthKey != null
+                    ? accountLengthKey : journalAccountLengthKey;
+            String effectiveDeviceLengthKey = deviceLengthKey != null
+                    ? deviceLengthKey : journalDeviceLengthKey;
             if (isBlank(accountHashKey) || accountStoredHash == null || accountStoredHash.isEmpty()
                     || deviceStoredHash == null || deviceStoredHash.isEmpty()) {
                 return false;
@@ -215,21 +233,21 @@ public final class PinHashPersistence {
 
             SharedPreferences.Editor accountEditor = accountPreferences.edit()
                     .putString(accountHashKey, accountStoredHash);
-            if (!isBlank(accountLegacyKey)) accountEditor.remove(accountLegacyKey);
-            if (!isBlank(accountLengthKey)) accountEditor.remove(accountLengthKey);
+            if (!isBlank(effectiveAccountLegacyKey)) accountEditor.remove(effectiveAccountLegacyKey);
+            if (!isBlank(effectiveAccountLengthKey)) accountEditor.remove(effectiveAccountLengthKey);
             boolean accountCommitted = accountEditor.commit();
 
             SharedPreferences.Editor deviceEditor = devicePreferences.edit()
                     .putString(deviceHashKey, deviceStoredHash);
-            if (!isBlank(deviceLengthKey)) deviceEditor.remove(deviceLengthKey);
+            if (!isBlank(effectiveDeviceLengthKey)) deviceEditor.remove(effectiveDeviceLengthKey);
             boolean deviceCommitted = deviceEditor.commit();
 
             if (!accountCommitted || !deviceCommitted) return false;
             if (!accountStoredHash.equals(accountPreferences.getString(accountHashKey, null))
                     || !deviceStoredHash.equals(devicePreferences.getString(deviceHashKey, null))
-                    || containsIfPresent(accountPreferences, accountLegacyKey)
-                    || containsIfPresent(accountPreferences, accountLengthKey)
-                    || containsIfPresent(devicePreferences, deviceLengthKey)) {
+                    || containsIfPresent(accountPreferences, effectiveAccountLegacyKey)
+                    || containsIfPresent(accountPreferences, effectiveAccountLengthKey)
+                    || containsIfPresent(devicePreferences, effectiveDeviceLengthKey)) {
                 return false;
             }
 
@@ -271,6 +289,9 @@ public final class PinHashPersistence {
                     .remove(DEVICE_PENDING_ACCOUNT_KEY)
                     .remove(DEVICE_PENDING_ACCOUNT_HASH)
                     .remove(DEVICE_PENDING_DEVICE_HASH)
+                    .remove(DEVICE_PENDING_ACCOUNT_LEGACY_KEY)
+                    .remove(DEVICE_PENDING_ACCOUNT_LENGTH_KEY)
+                    .remove(DEVICE_PENDING_DEVICE_LENGTH_KEY)
                     .commit();
         } catch (RuntimeException ignored) {
             // Keeping the journal is safe; the next PIN access retries recovery.
@@ -312,6 +333,10 @@ public final class PinHashPersistence {
         } catch (RuntimeException ignored) {
             return false;
         }
+    }
+
+    private static boolean sameNullable(String expected, String actual) {
+        return expected == null ? actual == null : expected.equals(actual);
     }
 
     private static boolean containsIfPresent(SharedPreferences preferences, String key) {
