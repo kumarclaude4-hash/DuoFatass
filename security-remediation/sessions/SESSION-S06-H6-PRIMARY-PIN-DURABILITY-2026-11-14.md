@@ -78,10 +78,10 @@ The source review and initial CI feedback led to additional changes on the same 
 - The device-gate Espresso tests were corrected for the new background executor. They now snapshot
   the captured-intent count and wait for a new SignInActivity hand-off after PIN save or unlock,
   preventing an old intent from satisfying a later step.
-- Latest source/test head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`. Current-head CI
-  [43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173) was queued and Security [43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was in progress.
-  A documentation synchronization will trigger another exact-head run; no final green result
-  is claimed at this checkpoint.
+- This was an intermediate PR #303 checkpoint. It was superseded by final head
+  `7974a197a03a929b336fbd2c0fb64c6a2a8f68fe`, merged as `eb1edcba2efc38481298a3a50e2b5eb789cc2b2a`.
+  Exact-head CI [43550121483](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121483) passed 10/10
+  and Security [43550121365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121365) passed 3/3.
 
 ## Follow-up call-site hardening — PR #304
 

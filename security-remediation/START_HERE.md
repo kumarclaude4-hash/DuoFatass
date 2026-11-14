@@ -134,9 +134,9 @@ build, Espresso (2 tests executed), Gradle wrapper validation, and libsignal int
 post-merge addendum in `../BUG_TRACKER.md` and the explicit unresolved items in `FINAL_SIGNOFF.md`.
 
 
-## Current repository closeout — 2026-11-14
+## Prior repository closeout checkpoint — superseded by PR #303/#304 (2026-11-14)
 
-Current main is `4c4a4a8d0055277eaf1f7b6ba601b507225f1428` after documentation-only PR #300; latest source-changing merge is PR #299. PR #300 exact-head CI [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473) and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660) passed 10/10 and 3/3. Post-PR #300 main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072) and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050) were running at this checkpoint. The stale SC-03 eradication plan is superseded: current dependency verification has 493 components, includes the Linux aapt2 checksum and is exercised by current Gradle CI. README release instructions now correctly state that signed releases trigger on immutable `v*` tags or manual dispatch, not every push to main.
+At the earlier PR #300 checkpoint, main was `4c4a4a8d0055277eaf1f7b6ba601b507225f1428` and the latest source-changing merge was PR #299. This historical snapshot is superseded by the current main baseline above. PR #300 exact-head CI [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473) and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660) passed 10/10 and 3/3. Post-PR #300 main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072) and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050) were running at this checkpoint. The stale SC-03 eradication plan is superseded: current dependency verification has 493 components, includes the Linux aapt2 checksum and is exercised by current Gradle CI. README release instructions now correctly state that signed releases trigger on immutable `v*` tags or manual dispatch, not every push to main.
 
 Remaining work is organized in `RELEASE_READINESS_2026-11-12.md`. Keep provider/secret rotation, Firebase/Firestore live configuration, Render/Worker pairing, staging acceptance, SC-12 governance, owner decisions and feature-complete physical-device acceptance separate from repository code changes. Do not mark `FINAL_SIGNOFF.md` complete until their evidence exists or a residual risk is formally approved.
 
@@ -155,7 +155,7 @@ See `sessions/SESSION-S06-H5-DURABLE-THROTTLE-2026-11-13.md`. This is a mitigati
 within an existing Partial finding, not a new finding or a production sign-off.
 
 
-## Post-PR #300 current-main checkpoint — 2026-11-14
+## Historical post-PR #300 checkpoint — superseded by PR #303/#304 (2026-11-14)
 
 PR #300 merged documentation-only handoff corrections as `4c4a4a8d0055277eaf1f7b6ba601b507225f1428`. Its exact-head
 CI and Security passed 10/10 and 3/3. Main workflows triggered by this documentation
