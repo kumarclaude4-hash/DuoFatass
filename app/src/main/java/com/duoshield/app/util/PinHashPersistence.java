@@ -316,21 +316,53 @@ public final class PinHashPersistence {
     private static boolean clearOrphanAccountStages(SharedPreferences preferences) {
         try {
             Map<String, ?> all = preferences.getAll();
-            SharedPreferences.Editor editor = preferences.edit();
-            boolean found = false;
+            java.util.Set<String> stagedAccounts = new java.util.HashSet<>();
+
+            // If the device-side journal is absent, an account-only stage is
+            // discardable only when it is provably pre-activation. If the active
+            // account hash already equals the staged value, the account side may
+            // have advanced before its device journal was lost; deleting that
+            // evidence would silently accept a split credential.
             for (String key : all.keySet()) {
-                if (key.startsWith(ACCOUNT_PENDING_TX_PREFIX)
-                        || key.startsWith(ACCOUNT_PENDING_HASH_PREFIX)) {
-                    editor.remove(key);
-                    found = true;
+                if (!key.startsWith(ACCOUNT_PENDING_TX_PREFIX)) continue;
+                String accountHashKey = key.substring(ACCOUNT_PENDING_TX_PREFIX.length());
+                if (!isValidAccountHashKey(accountHashKey)) return false;
+
+                Object transactionId = all.get(key);
+                Object stagedHash = all.get(accountPendingHashKey(accountHashKey));
+                if (!(transactionId instanceof String) || isBlank((String) transactionId)
+                        || !(stagedHash instanceof String)
+                        || !isValidHashRecord((String) stagedHash)) {
+                    return false;
                 }
+
+                Object activeHash = all.get(accountHashKey);
+                if (activeHash != null && (!(activeHash instanceof String)
+                        || !isValidHashRecord((String) activeHash))) {
+                    return false;
+                }
+                if (stagedHash.equals(activeHash)) return false;
+                stagedAccounts.add(accountHashKey);
             }
-            if (!found) return true;
+
+            // A hash stage without its transaction marker is also ambiguous.
+            for (String key : all.keySet()) {
+                if (!key.startsWith(ACCOUNT_PENDING_HASH_PREFIX)) continue;
+                String accountHashKey = key.substring(ACCOUNT_PENDING_HASH_PREFIX.length());
+                if (!stagedAccounts.contains(accountHashKey)) return false;
+            }
+
+            if (stagedAccounts.isEmpty()) return !hasAccountStages(preferences);
+            SharedPreferences.Editor editor = preferences.edit();
+            for (String accountHashKey : stagedAccounts) {
+                editor.remove(accountPendingTxKey(accountHashKey));
+                editor.remove(accountPendingHashKey(accountHashKey));
+            }
             if (!editor.commit()) return false;
             Map<String, ?> remaining = preferences.getAll();
-            for (String key : remaining.keySet()) {
-                if (key.startsWith(ACCOUNT_PENDING_TX_PREFIX)
-                        || key.startsWith(ACCOUNT_PENDING_HASH_PREFIX)) return false;
+            for (String accountHashKey : stagedAccounts) {
+                if (remaining.containsKey(accountPendingTxKey(accountHashKey))
+                        || remaining.containsKey(accountPendingHashKey(accountHashKey))) return false;
             }
             return true;
         } catch (RuntimeException ignored) {
