@@ -177,6 +177,65 @@ public class SecurityFindingWiringTest {
     }
 
     @Test
+    public void primaryPinAndPromotionRequireDurableCommitReadBack() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinManager.java");
+        int setPinAt = source.indexOf("public static boolean setPin(Context ctx, String pin)");
+        int lockoutAt = source.indexOf("// ── Wrong-PIN lockout", setPinAt);
+        assertTrue("setPin method must be present", setPinAt >= 0);
+        String setPinBody = source.substring(setPinAt, lockoutAt);
+        assertTrue("primary PIN writes must reject non-durable SecurePrefs tiers",
+                setPinBody.contains("SecurePrefs.getTier()")
+                        && setPinBody.contains("accountTier.isDurable()"));
+        assertTrue("the account hash must use the durable commit/read-back writer",
+                setPinBody.contains("persistPinHash(accountStore, accountTier"));
+        assertTrue("a failed two-store update must attempt rollback",
+                setPinBody.contains("restorePinPreferences"));
+
+        int promoteAt = source.indexOf(
+                "public static boolean promoteDevicePinToCurrentUser(Context ctx)");
+        int looksAt = source.indexOf("public static boolean looksLikePreExistingDevice", promoteAt);
+        String promoteBody = source.substring(promoteAt, looksAt);
+        assertTrue("device-to-account promotion must require a durable account store",
+                promoteBody.contains("accountTier.isDurable()"));
+        assertTrue("promotion must not report success before a verified commit",
+                promoteBody.contains("persistPinHash(accountStore, accountTier"));
+    }
+
+    @Test
+    public void devicePinSetupStopsWhenDurableSaveFails() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/DevicePinGateActivity.java");
+        int saveAt = source.indexOf("if (!PinManager.setDevicePin(this, pin))");
+        int proceedAt = source.indexOf("proceedToWelcome();", saveAt);
+        assertTrue("device gate setup must check the persistence result", saveAt >= 0);
+        assertTrue("device gate setup may proceed only after the successful-save branch",
+                proceedAt > saveAt);
+        String failureBody = source.substring(saveAt, proceedAt);
+        assertTrue("failed persistence must show a generic error",
+                failureBody.contains("Couldn't securely save your PIN"));
+        assertTrue("failed persistence must return without opening Welcome",
+                failureBody.contains("return;"));
+    }
+
+    @Test
+    public void duressTeardownRequiresDurableGatePromotionBeforeSideEffects() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        int methodAt = source.indexOf("public static void performLogout(Context context, String enteredPin)");
+        int promoteAt = source.indexOf("!com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)",
+                methodAt);
+        int enqueueAt = source.indexOf("FcmUnregisterWorker.enqueue(appCtx)", methodAt);
+        int resetAt = source.indexOf("PendingLockStore.markResetPending(appCtx)", methodAt);
+        assertTrue("duress teardown must check the device-gate persistence result", promoteAt > methodAt);
+        assertTrue("the device gate must be durably saved before any external teardown work",
+                enqueueAt > promoteAt && resetAt > promoteAt);
+        assertTrue("a failed promotion must abort teardown",
+                source.substring(promoteAt, enqueueAt).contains("DURESS_TRIGGER_IN_PROGRESS.set(false)")
+                        && source.substring(promoteAt, enqueueAt).contains("return;"));
+    }
+
+    @Test
     public void firstTimeSetupPinCandidateCheckUsesThrottleAndGenericFailure() throws IOException {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/ui/SetupPinActivity.java");
