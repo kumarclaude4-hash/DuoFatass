@@ -248,29 +248,52 @@ jobs:
             echo '```'
           } > release-verify.md
 
-          if [ -n "$APKSIGNER" ]; then
-            CERT_SHA=$("$APKSIGNER" verify --print-certs "${APKS[0]}" 2>/dev/null \
-              | grep -i 'certificate SHA-256 digest' | head -1 | awk -F': ' '{print $2}')
-          else
-            echo "::warning::apksigner not found under ANDROID_SDK_ROOT — cannot read the signing certificate digest."
-            CERT_SHA=""
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found under ANDROID_SDK_ROOT — refusing to publish APKs without a verifiable signing certificate."
+            exit 1
           fi
 
-          if [ -n "${CERT_SHA:-}" ]; then
-            echo "Signing certificate SHA-256: ${CERT_SHA}"
-            {
-              echo ""
-              echo "### Signing certificate"
-              echo "All APKs in this release are signed with the certificate:"
-              echo '```'
-              echo "SHA-256: ${CERT_SHA}"
-              echo '```'
-              echo "Verify a download with \`apksigner verify --print-certs <file>.apk\` and confirm this digest matches."
-            } >> release-verify.md
-          else
-            # Never claim a fingerprint that was not actually read from the APK.
-            echo "::warning::Could not extract the signing certificate digest; release body will omit it."
-          fi
+          # Verify every architecture APK and require the same actual
+          # certificate SHA-256 digest. apksigner prefixes this value with
+          # text that includes additional colons, so splitting on ': ' is
+          # unsafe: it can return the literal label instead of the digest.
+          CERT_SHA=""
+          for apk in "${APKS[@]}"; do
+            if ! VERIFY_OUTPUT=$("$APKSIGNER" verify --print-certs "$apk" 2>&1); then
+              echo "::error::apksigner verification failed for $apk."
+              exit 1
+            fi
+
+            APK_CERT_SHA=$(printf '%s\n' "$VERIFY_OUTPUT" \
+              | grep -i 'certificate SHA-256 digest' \
+              | grep -oE '([[:xdigit:]]{2}:){31}[[:xdigit:]]{2}|[[:xdigit:]]{64}' \
+              | head -1 \
+              | tr -d ':' \
+              | tr '[:upper:]' '[:lower:]' || true)
+
+            if [[ ! "$APK_CERT_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Could not extract a valid 64-character certificate SHA-256 digest from $apk."
+              exit 1
+            fi
+
+            if [ -z "$CERT_SHA" ]; then
+              CERT_SHA="$APK_CERT_SHA"
+            elif [ "$CERT_SHA" != "$APK_CERT_SHA" ]; then
+              echo "::error::Release APKs do not share the same signing certificate."
+              exit 1
+            fi
+          done
+
+          echo "Verified signing certificate SHA-256: ${CERT_SHA}"
+          {
+            echo ""
+            echo "### Signing certificate"
+            echo "All APKs in this release were verified with the same signing certificate:"
+            echo '```'
+            echo "SHA-256: ${CERT_SHA}"
+            echo '```'
+            echo "Verify a download with `apksigner verify --print-certs <file>.apk` and confirm this digest matches."
+          } >> release-verify.md
 
           echo "apk_dir=${APK_DIR}" >> $GITHUB_OUTPUT
 
