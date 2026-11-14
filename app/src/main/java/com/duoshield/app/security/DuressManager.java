@@ -536,30 +536,26 @@ public class DuressManager {
 
         final Context appCtx = context.getApplicationContext();
 
-        // Enqueue FcmUnregisterWorker immediately — no credential needed
-        // (FirebaseMessaging.deleteToken() handles its own auth, and no uid is needed
-        // either — see S06-H2, the job no longer carries one).
+        // Promote the entered duress PIN before any teardown side effect. If this
+        // device-gate write is not durable, abort the wipe: clearing the account store
+        // without a confirmed replacement gate could leave the wiped device unprotected.
+        if (enteredPin != null && !enteredPin.isEmpty()
+                && !com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)) {
+            android.util.Log.e("DuressManager",
+                    "Duress teardown aborted because device-gate persistence was not confirmed.");
+            DURESS_TRIGGER_IN_PROGRESS.set(false);
+            return;
+        }
+
+        // Enqueue FcmUnregisterWorker only after the local recovery gate is secured.
+        // FirebaseMessaging.deleteToken() handles its own auth; no uid is needed.
         com.duoshield.app.util.FcmUnregisterWorker.enqueue(appCtx);
 
-        // ── Promote-and-rotate (S06-C1) — local-only, before anything else runs ──
-        //
-        // Order matters: this must land before the wipe destroys the account-scoped
-        // PIN hash and before any network call that could be delayed or interrupted.
-        // If the process dies between this line and the wipe completing, resuming the
-        // wipe (resumeInterruptedResetIfNeeded) is safe to re-run this step — it is
-        // idempotent, and PinManager.setDevicePin/DuressManager.clearDuressPin are both
-        // plain overwrites.
+        // ── Promote-and-rotate (S06-C1) ──────────────────────────────────────
+        // The device-gate PIN was durably committed and read back above, before
+        // any teardown side effect. Now disarm slot B so re-entering this same code
+        // after restore cannot trigger the sequence a second time.
         if (enteredPin != null && !enteredPin.isEmpty()) {
-            try {
-                com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin);
-            } catch (Exception e) {
-                android.util.Log.e("DuressManager", "Device-gate promotion failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
-            }
-            // Disarm slot B so re-entering this same code later (after the account is
-            // restored and this code becomes the primary again) cannot re-trigger the
-            // whole duress sequence a second time. Overwrites with a fresh decoy rather
-            // than removing — see clearDuressPin's javadoc on why that matters for
-            // timing parity.
             clearDuressPin(context);
         }
 
