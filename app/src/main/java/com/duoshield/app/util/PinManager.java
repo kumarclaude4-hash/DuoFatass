@@ -568,8 +568,9 @@ public class PinManager {
     }
 
     public static boolean hasPinSet(Context ctx) {
-        String key = pinKey();
-        if (key == null) return false;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
         SharedPreferences sp = SecurePrefs.get(ctx);
         if (sp.getString(key, null) != null) return true;
 
@@ -578,8 +579,7 @@ public class PinManager {
         // recognize it so callers do not incorrectly conclude no PIN exists.
         String legacy = sp.getString(KEY_PIN_LEGACY, null);
         if (legacy != null) {
-            String lengthKey = KEY_LEN_PREFIX
-                    + FirebaseAuth.getInstance().getCurrentUser().getUid();
+            String lengthKey = KEY_LEN_PREFIX + user.getUid();
             Map<String, Object> before = snapshotPinPreferences(sp, key, KEY_PIN_LEGACY);
             if (!persistPinHash(sp, SecurePrefs.getTier(), key, legacy, KEY_PIN_LEGACY)) {
                 restorePinPreferences(sp, before, key, KEY_PIN_LEGACY);
