@@ -263,17 +263,39 @@ public class LockScreenActivity extends AppCompatActivity {
             // no way to recover the account. Failing toward "unlock" is strictly safer
             // than failing toward an irreversible wipe.
             boolean wipe = duress && !real;
+            boolean duressTeardownStarted = false;
+            if (wipe) {
+                // PIN derivation, durable device-gate commit and the duress
+                // teardown preamble must remain off the main thread.
+                try {
+                    duressTeardownStarted = DuressManager.performLogout(this, entered);
+                } catch (RuntimeException e) {
+                    android.util.Log.e("LockScreen",
+                            "Duress teardown could not be started"
+                                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                }
+            }
+            final boolean teardownAccepted = duressTeardownStarted;
 
             runOnUiThread(() -> {
                 if (wipe) {
-                    PinManager.clearFailedAttempts(this);
-                    // The entered PIN is captured here — the plaintext never leaves this
-                    // call stack — so DuressManager can promote it to the primary/device
-                    // gate PIN before anything is wiped (S06-C1's promote-and-rotate).
-                    DuressManager.performLogout(this, entered);
+                    if (!teardownAccepted && !isFinishing() && !isDestroyed()) {
+                        // A durable gate promotion failure aborts the wipe. Keep
+                        // the account intact and let the user retry without exposing
+                        // a promotion-specific reason to a nearby observer.
+                        isVerifying = false;
+                        setInputEnabled(true);
+                        hideScanAnim();
+                        pinBuffer.setLength(0);
+                        pinDotsView.setFilledCount(0);
+                        tvError.setText("Unable to continue. Try again.");
+                        tvError.setVisibility(View.VISIBLE);
+                        updateConfirmKeyState();
+                    }
                     return;
                 }
 
+                if (isFinishing() || isDestroyed()) return;
                 isVerifying = false;
                 setInputEnabled(true);
                 tvError.setVisibility(View.INVISIBLE);
