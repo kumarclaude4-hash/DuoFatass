@@ -453,7 +453,9 @@ public class PinManager {
         String legacy = sp.getString(KEY_PIN_LEGACY, null);
         if (legacy != null) {
             PinHashPersistence.persistSingle(
-                    sp, SecurePrefs.getTier(), key, legacy, KEY_PIN_LEGACY);
+                    sp, SecurePrefs.getTier(), key, legacy,
+                    KEY_PIN_LEGACY, KEY_LEN_PREFIX + FirebaseAuth.getInstance()
+                            .getCurrentUser().getUid());
             return true; // verifyPin() keeps a read-only legacy fallback.
         }
         return false;
@@ -607,6 +609,14 @@ public class PinManager {
         if (!SecurePrefs.getDeviceGateTier().isDurable()) return false;
         String stored = sp.getString(KEY_DEVICE_PIN_HASH, null);
         if (stored == null) return false;
+        // Re-commit and read back the current device credential before trusting
+        // it as the source of an account promotion. This catches a prior
+        // failed migration whose in-memory map looked populated.
+        if (!PinHashPersistence.persistSingle(
+                sp, SecurePrefs.getDeviceGateTier(),
+                KEY_DEVICE_PIN_HASH, stored, KEY_DEVICE_PIN_LEN)) {
+            return false;
+        }
         // Copy only the salt:hash string; never propagate historical plaintext length data.
         if (!PinHashPersistence.persistSingle(
                 SecurePrefs.get(ctx), SecurePrefs.getTier(),
@@ -678,7 +688,7 @@ public class PinManager {
             return skf.generateSecret(spec).getEncoded();
         } finally {
             spec.clearPassword();
-            Arrays.fill(password, '\\0');
+            Arrays.fill(password, (char) 0);
         }
     }
 
