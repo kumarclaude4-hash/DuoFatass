@@ -277,4 +277,34 @@ public class PinHashPersistenceTest {
                 device, SecurePrefs.SecurityTier.SOFTWARE, DEVICE_KEY));
         assertTrue(account.contains(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY)));
     }
+
+    @Test
+    public void failedAccountStageCleanupRetainsDeviceJournalUntilRetry() {
+        FakeSharedPreferences account = new FakeSharedPreferences();
+        FakeSharedPreferences device = new FakeSharedPreferences();
+        String accountHash = "0123456789abcdef0123456789abcdef:"
+                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String deviceHash = "fedcba9876543210fedcba9876543210:"
+                + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        account.setCommitFailureAfter(2); // staging + activation succeed; cleanup commit fails.
+
+        assertTrue("both active hashes were committed and read back",
+                PinHashPersistence.persistPair(
+                        account, SecurePrefs.SecurityTier.SOFTWARE,
+                        ACCOUNT_KEY, accountHash, "app_pin_hash", "app_pin_length_uid-a",
+                        device, SecurePrefs.SecurityTier.SOFTWARE,
+                        DEVICE_KEY, deviceHash, "device_gate_pin_length"));
+        assertEquals(accountHash, account.getString(ACCOUNT_KEY, null));
+        assertEquals(deviceHash, device.getString(DEVICE_KEY, null));
+        assertTrue("device journal must survive an unconfirmed account-stage cleanup",
+                device.contains(PinHashPersistence.DEVICE_PENDING_TX));
+
+        // Simulate the next process/session after storage becomes healthy.
+        account.setCommitFailureAfter(-1);
+        assertTrue(PinHashPersistence.recoverPair(
+                account, SecurePrefs.SecurityTier.SOFTWARE,
+                device, SecurePrefs.SecurityTier.SOFTWARE, DEVICE_KEY));
+        assertFalse("a retried cleanup must eventually remove the device journal",
+                device.contains(PinHashPersistence.DEVICE_PENDING_TX));
+    }
 }
