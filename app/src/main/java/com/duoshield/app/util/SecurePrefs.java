@@ -150,9 +150,15 @@ public class SecurePrefs {
     private static volatile SharedPreferences testMainOverride;
     private static volatile SharedPreferences testDeviceGateOverride;
     private static volatile SharedPreferences testSessionStateOverride;
+    private static volatile SecurityTier testMainTierOverride;
+    private static volatile SecurityTier testDeviceGateTierOverride;
 
     public static SharedPreferences get(Context context) {
-        if (testMainOverride != null) return testMainOverride;
+        if (testMainOverride != null) {
+            tier = testMainTierOverride != null ? testMainTierOverride : SecurityTier.NONE;
+            initialized = true;
+            return testMainOverride;
+        }
         if (cached != null) return cached;
         synchronized (SecurePrefs.class) {
             if (cached != null) return cached;
@@ -170,7 +176,11 @@ public class SecurePrefs {
      * for why this must never share a file with {@link #get}.
      */
     public static SharedPreferences getDeviceGate(Context context) {
-        if (testDeviceGateOverride != null) return testDeviceGateOverride;
+        if (testDeviceGateOverride != null) {
+            deviceGateTier = testDeviceGateTierOverride != null
+                    ? testDeviceGateTierOverride : SecurityTier.NONE;
+            return testDeviceGateOverride;
+        }
         if (deviceGateCached != null) return deviceGateCached;
         synchronized (SecurePrefs.class) {
             if (deviceGateCached != null) return deviceGateCached;
@@ -440,16 +450,39 @@ public class SecurePrefs {
     static void setTestOverridesForUnitTests(SharedPreferences main,
                                              SharedPreferences deviceGate,
                                              SharedPreferences sessionState) {
-        testMainOverride         = main;
-        testDeviceGateOverride   = deviceGate;
+        // In-memory fakes model a durable store by default; tests that exercise
+        // the fail-closed path can explicitly inject SecurityTier.NONE below.
+        setTestOverridesForUnitTests(main, deviceGate, sessionState,
+                SecurityTier.SOFTWARE, SecurityTier.SOFTWARE);
+    }
+
+    /** Test-only overload for asserting behavior across durable and NONE tiers. */
+    static void setTestOverridesForUnitTests(SharedPreferences main,
+                                             SharedPreferences deviceGate,
+                                             SharedPreferences sessionState,
+                                             SecurityTier mainTier,
+                                             SecurityTier deviceGateTier) {
+        testMainOverride = main;
+        testDeviceGateOverride = deviceGate;
         testSessionStateOverride = sessionState;
+        testMainTierOverride = mainTier;
+        testDeviceGateTierOverride = deviceGateTier;
+        if (main != null) {
+            tier = mainTier != null ? mainTier : SecurityTier.NONE;
+            initialized = true;
+        }
+        if (deviceGate != null) {
+            deviceGateTier = deviceGateTier != null ? deviceGateTier : SecurityTier.NONE;
+        }
     }
 
     /** Test-only. Clears injected fakes and resets caches. */
     static void clearTestOverridesForUnitTests() {
-        testMainOverride         = null;
-        testDeviceGateOverride   = null;
+        testMainOverride = null;
+        testDeviceGateOverride = null;
         testSessionStateOverride = null;
+        testMainTierOverride = null;
+        testDeviceGateTierOverride = null;
         reset();
     }
 }
