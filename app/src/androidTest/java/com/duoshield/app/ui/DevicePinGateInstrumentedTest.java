@@ -5,7 +5,6 @@ import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.action.ViewActions.replaceText;
 import static androidx.test.espresso.action.ViewActions.closeSoftKeyboard;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
-import static androidx.test.espresso.intent.Intents.intended;
 import static androidx.test.espresso.intent.Intents.intending;
 import static androidx.test.espresso.intent.matcher.IntentMatchers.hasComponent;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
@@ -223,8 +222,9 @@ public class DevicePinGateInstrumentedTest {
                     PinManager.hasDevicePinSet(appContext));
 
             scenario.onActivity(LockScreenCover::hide);
+            int intentCountBeforeSave = Intents.getIntents().size();
             onView(withId(R.id.btnContinue)).perform(click());
-            waitForIntentTo(SignInActivity.class, 10_000);
+            waitForIntentTo(SignInActivity.class, intentCountBeforeSave, 10_000);
             assertTrue("removing the cover must restore normal interaction",
                     PinManager.hasDevicePinSet(appContext));
         }
