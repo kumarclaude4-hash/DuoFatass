@@ -305,8 +305,10 @@ public class SeedPhraseDisplayActivity extends AppCompatActivity {
                         () -> {
                             // onSuccess — back on main thread
                             Log.i(TAG, "[3/4] Signal keys generated and uploaded — navigating to ConversationList");
-                            progress.setVisibility(View.GONE);
-                            tvStep.setVisibility(View.GONE);
+                            // Keep progress visible while the device PIN is checked and
+                            // promoted. EncryptedSharedPreferences commit/read-back must
+                            // never block the main thread.
+                            setStep(tvStep, "Step 3/4 — Securing account PIN…");
                             // Save display name to Firebase after keys are uploaded
                             if (displayName != null && !displayName.isEmpty()) {
                                 saveDisplayNameToFirebase(displayName);
@@ -320,25 +322,46 @@ public class SeedPhraseDisplayActivity extends AppCompatActivity {
                             // BUG-F-12 fix: Register FCM token immediately so notifications work on first install.
                             FcmTokenHelper.register(this);
                             // Every new account must have a PIN before it can use the
-                            // app. Devices that came through the new upfront device-PIN
-                            // gate (DevicePinGateActivity, shown before Welcome) already
-                            // collected one — promote it to this account instead of
-                            // asking again. Devices that predate that gate (no device
-                            // PIN on file) fall back to the original SetupPinActivity
-                            // hand-off.
-                            if (PinManager.hasDevicePinSet(this)) {
-                                Log.i(TAG, "[3/4] device PIN already set — promoting to account, skipping SetupPinActivity");
-                                PinManager.promoteDevicePinToCurrentUser(this);
-                                Intent intent = new Intent(this, ConversationListActivity.class);
-                                intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                startActivity(intent);
-                            } else {
-                                Intent intent = new Intent(this, SetupPinActivity.class);
-                                intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
-                                startActivity(intent);
+                            // app. Device-gate migration/promotion uses synchronous durable
+                            // commits, so it runs off the main thread. Only a confirmed
+                            // promotion skips SetupPinActivity; a failed promotion follows
+                            // the normal setup path, which itself reports write failure.
+                            try {
+                                new Thread(() -> {
+                                    boolean devicePinPromoted = false;
+                                    try {
+                                        android.content.Context appContext = getApplicationContext();
+                                        devicePinPromoted = PinManager.hasDevicePinSet(appContext)
+                                                && PinManager.promoteDevicePinToCurrentUser(appContext);
+                                    } catch (RuntimeException e) {
+                                        Log.w(TAG, "Device PIN promotion did not complete"
+                                                + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                                    }
+                                    final boolean pinPromotionConfirmed = devicePinPromoted;
+                                    runOnUiThread(() -> {
+                                        if (isFinishing() || isDestroyed()) return;
+                                        progress.setVisibility(View.GONE);
+                                        tvStep.setVisibility(View.GONE);
+                                        if (pinPromotionConfirmed) {
+                                            Log.i(TAG, "[3/4] durable device PIN promoted to account");
+                                            Intent intent = new Intent(this, ConversationListActivity.class);
+                                            intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                            startActivity(intent);
+                                        } else {
+                                            Intent intent = new Intent(this, SetupPinActivity.class);
+                                            intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
+                                            startActivity(intent);
+                                        }
+                                        finish();
+                                    });
+                                }, "account-pin-promote").start();
+                            } catch (RuntimeException startError) {
+                                Log.e(TAG, "Could not start account PIN persistence"
+                                        + " (" + com.duoshield.app.util.LogRedact.error(startError) + ")");
+                                showSetupError(btnContinue, progress, tvStep,
+                                        "Could not securely set up your PIN. Please try again.");
                             }
-                            finish();
                         },
                         () -> {
                             // onFailure
