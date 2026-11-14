@@ -21,6 +21,9 @@ import com.duoshield.app.util.HapticHelper;
 import com.duoshield.app.util.PinManager;
 import com.duoshield.app.util.BackPressGuard;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * Device-level PIN gate — the very first screen a fresh install must pass
  * before anything else is rendered (Welcome, Create account, Restore).
@@ -49,6 +52,7 @@ public class DevicePinGateActivity extends AppCompatActivity {
     private static final long AUTO_SUBMIT_DEBOUNCE_MS = 600L;
 
     private boolean setupMode;
+    private final ExecutorService pinPersistenceExecutor = Executors.newSingleThreadExecutor();
 
     // ── Verify-mode views ──────────────────────────────────────────────────
     private PinDotsView pinDotsView;
@@ -109,8 +113,20 @@ public class DevicePinGateActivity extends AppCompatActivity {
             }
 
             tvError.setVisibility(View.GONE);
-            PinManager.setDevicePin(this, pin);
-            proceedToWelcome();
+            btnContinue.setEnabled(false);
+            pinPersistenceExecutor.execute(() -> {
+                boolean saved = PinManager.setDevicePin(getApplicationContext(), pin);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    btnContinue.setEnabled(true);
+                    if (!saved) {
+                        showError("Couldn't securely save your PIN. Check device security settings and try again.");
+                        etConfirmPin.setText("");
+                        return;
+                    }
+                    proceedToWelcome();
+                });
+            });
         });
     }
 
@@ -282,5 +298,11 @@ public class DevicePinGateActivity extends AppCompatActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
         finish();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        pinPersistenceExecutor.shutdownNow();
     }
 }
