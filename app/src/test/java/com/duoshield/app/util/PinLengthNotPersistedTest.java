@@ -49,14 +49,14 @@ public class PinLengthNotPersistedTest {
 
     @Test
     public void setDevicePin_neverWritesLengthKey_forShortPin() {
-        PinManager.setDevicePin(null, "4821"); // 4-digit — MIN_PIN_LEN
+        assertTrue(PinManager.setDevicePin(null, "4821")); // 4-digit — MIN_PIN_LEN
         assertNull("a 4-digit device PIN must not leave a plaintext length key behind",
                 deviceGateStore.getAll().get("device_gate_pin_length"));
     }
 
     @Test
     public void setDevicePin_neverWritesLengthKey_forLongPin() {
-        PinManager.setDevicePin(null, "482913"); // 6-digit — MAX_PIN_LEN
+        assertTrue(PinManager.setDevicePin(null, "482913")); // 6-digit — MAX_PIN_LEN
         assertNull("a 6-digit device PIN must not leave a plaintext length key behind",
                 deviceGateStore.getAll().get("device_gate_pin_length"));
     }
@@ -65,7 +65,7 @@ public class PinLengthNotPersistedTest {
     public void getDevicePinLength_returnsFixedUpperBound_regardlessOfActualPinLength() {
         // A 4-digit real PIN must not make getDevicePinLength() reveal "4" — it must
         // always return the fixed MAX_PIN_LEN upper bound shared by every device.
-        PinManager.setDevicePin(null, "4821");
+        assertTrue(PinManager.setDevicePin(null, "4821"));
         assertEquals("getDevicePinLength() must return the fixed upper bound, not the "
                         + "actual (shorter) PIN length — that discrepancy is the whole point "
                         + "of not persisting the real length",
@@ -73,7 +73,7 @@ public class PinLengthNotPersistedTest {
 
         // Setting a different (6-digit) PIN afterwards must not change the answer either
         // — it is a constant, never derived from stored state.
-        PinManager.setDevicePin(null, "112233");
+        assertTrue(PinManager.setDevicePin(null, "112233"));
         assertEquals(PinManager.MAX_PIN_LEN, PinManager.getDevicePinLength(null));
     }
 
