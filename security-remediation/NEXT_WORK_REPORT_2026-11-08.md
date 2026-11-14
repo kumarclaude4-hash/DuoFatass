@@ -1,54 +1,35 @@
 # DuoShield — Next Work Report
 
-**Updated:** 2026-11-14 (PR #303 S06-H6 implementation and regression hardening in review)  
+**Updated:** 2026-11-14 (S06-H6 PIN durability implementation merged; automated verification green)  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Latest verified main:** `cf5b496e406c0d27bfd2408ec160661dbf7885cd` (PR #301 documentation-only). Latest application-code merge on main remains PR #299 (`be7c0e7ee8eee1289da5fd4af9b84183998781b5`). PR #303 is open at https://github.com/kumarclaude4-hash/DuoFatass/pull/303 for S06-H6. Latest source/test head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`. Recent branch commits corrected the executor-converted DevicePinGateActivity path, replaced immediate instrumentation intent assertions with waits for a new hand-off intent, hardened orphaned account-stage recovery, retained the device journal until account-stage cleanup is durably confirmed, and added commit-failure injection coverage. Current-head CI [43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173) was queued and Security [43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was in progress at the last check; both must be rechecked against the final PR head after this documentation sync. The current main baseline is not changed by the open PR.
+**Latest verified main:** `11bc01c863951152c559a72def3b0faa2a454b63`. PR #303 merged as `eb1edcba2efc38481298a3a50e2b5eb789cc2b2a` from final head `7974a197a03a929b336fbd2c0fb64c6a2a8f68fe`; CI [43550121483](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121483) passed 10/10 and Security [43550121365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121365) passed 3/3. PR #304 merged as `11bc01c863951152c559a72def3b0faa2a454b63` from final head `6f9bf2f14cb48cf045577ca7b351c2ac241b4509`; CI [43555992320](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992320) passed 10/10 and Security [43555992247](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992247) passed 3/3. Post-merge main CI [43556537823](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537823) passed 10/10 and Security [43556537826](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537826) passed 3/3; Vercel status successful. Open PRs: 0. Open issues: 0.
+
+## Completed implementation — S06-H6 primary and device PIN durability (2026-11-14)
+
+Source review found that primary account PIN writes could return success without durable storage confirmation, paired account/device PIN changes could diverge, restore promotion could report success without a verified account write, and the device-gate setup screen could advance after a failed save. PR #303 closed those storage-layer gaps; PR #304 closed the remaining off-main-thread and destructive-teardown call-site gaps.
+
+**Merged PRs:** [PR #303](https://github.com/kumarclaude4-hash/DuoFatass/pull/303) (`eb1edcba2efc38481298a3a50e2b5eb789cc2b2a`) and [PR #304](https://github.com/kumarclaude4-hash/DuoFatass/pull/304) (`11bc01c863951152c559a72def3b0faa2a454b63`).
+
+**Implementation delivered:**
+- Durable SecurePrefs tier gating, synchronous commit, exact hash read-back and legacy metadata removal verification.
+- Paired account/device PIN update journal with independently salted hash records, staged activation and idempotent recovery.
+- Fail-closed handling for malformed, orphaned and ambiguous one-sided recovery states; retain the device journal until account-stage cleanup is durably confirmed.
+- Verified legacy migration and restore promotion, plus clearing of mutable PBKDF2 buffers where controllable.
+- Device PIN setup, restore-time promotion and duress recovery run off the main thread.
+- Duress teardown refuses to begin wipe, lock-marker, navigation or worker side effects unless recovery-PIN promotion to the wipe-surviving device gate is durably confirmed. Failed promotion leaves the account intact for retry; the deprecated no-PIN overload cannot bypass this guard.
+- Regression coverage for write/read-back faults, staged/partial recovery, failed cleanup, asynchronous hand-off and off-main-thread/wipe-order wiring.
+
+**Verification:** PR #303 exact-head CI [43550121483](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121483) passed 10/10 and Security [43550121365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121365) passed 3/3. PR #304 exact-head CI [43555992320](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992320) passed 10/10 and Security [43555992247](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992247) passed 3/3. Post-merge main CI [43556537823](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537823) passed 10/10 and Security [43556537826](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537826) passed 3/3. These runs include Android unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server + Worker, AST, integrity, CodeQL, Gitleaks and SBOM.
+
+**Remaining S06-H6 acceptance:** real Android Keystore/EncryptedSharedPreferences behavior on supported API/OEM combinations; process-kill/relaunch between each journal phase; device setup/change/restore/promotion/unlock/duress acceptance on physical devices after feature completion. S06-H6 remains Partial pending those gates. `FINAL_SIGNOFF.md` remains PENDING. Do not perform manual device testing before the owner declares the app feature-complete.
+
+## Current work order
+
+1. Continue the remaining owner/operator/staging/governance tasks in this report and `BUG_TRACKER.md`; S06-H6 repository code work is complete.
+2. Keep `FINAL_SIGNOFF.md` PENDING until production configuration, governance and feature-complete device acceptance are recorded.
+3. Do not reopen PR #303/#304 or recreate the S06-H6 implementation branch unless a new reproducible defect appears.
 
 
-## Active implementation — S06-H6 primary and device PIN durability (2026-11-14)
-
-Source review found a primary-credential reliability gap separate from S06-H5 candidate throttling
-and S06-H4 duress-code arming: `PinManager.setPin()` used asynchronous persistence for the account
-hash, ignored device-PIN synchronization failure, and `promoteDevicePinToCurrentUser()` could report
-success without durable account-store confirmation. `DevicePinGateActivity` also advanced without
-checking whether the device-PIN save had succeeded.
-
-**Working branch / PR:** `pin-persistence-fix-2026-11-14`, [PR #303](https://github.com/kumarclaude4-hash/DuoFatass/pull/303).  
-**Latest source/test head at this checkpoint:** `e292362e0139c1a9291631985dc82ce2c82eb08f`.
-
-**Implementation and hardening authored:**
-- `PinHashPersistence` requires a durable SecurePrefs tier, synchronous `commit()`, exact hash
-  read-back, hash-record format validation and proof that legacy keys/length metadata were removed.
-- Paired account/device PIN changes stage both stores and a transaction journal before activating
-  either new hash. Recovery is idempotent and rolls both stores forward after interruption; each
-  store uses an independently salted hash.
-- Orphaned account-only stages are discarded only when the active account hash is provably
-  pre-activation. A staged hash that matches the active value without its device journal fails
-  closed as an ambiguous one-sided update.
-- The device journal is retained until account-stage cleanup is confirmed by a successful commit
-  and exact removal read-back. Fault-injection coverage simulates a failed cleanup commit and
-  verifies the journal survives for a later retry.
-- Legacy device-hash migration verifies the isolated destination before removing the old
-  account-store copy; PIN-length metadata is scrubbed. Restore-time promotion re-verifies the
-  device hash and durably writes the UID-scoped account copy.
-- PBKDF2 mutable password/hash/salt buffers are cleared where locally controllable.
-  Device-gate setup and verification use a managed background executor; setup remains on the
-  gate with a generic error if persistence fails.
-- The instrumentation tests now wait for a *new* SignInActivity intent after asynchronous
-  PIN-save/unlock actions; they snapshot the captured-intent count first so an earlier intent
-  cannot satisfy a later assertion.
-
-**Verification state:** the previous source head passed the JVM unit suite but failed
-instrumented tests because assertions expected the SignInActivity intent synchronously after
-setup moved to a background executor. The tests were updated to wait for a new hand-off intent.
-Additional fault-injection coverage was added after that run. Current-head CI [43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173)
-was queued and Security [43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was in progress at this checkpoint. This
-documentation-sync commit triggers another exact-head run; do not count S06-H6 as verified or
-merge until the final head's full CI and Security workflows complete successfully.
-
-Real Keystore/EncryptedSharedPreferences behavior, process-kill/relaunch between journal phases
-and physical-device acceptance remain separate gates. S06-H6 is Partial; S06-H4 and S06-H5 retain
-their existing dispositions; FINAL_SIGNOFF remains PENDING.
 ## Verified implementation PR #288 — S02-I2 production fail-closed rate limiting
 
 PR #288 branch `security/s02-i2-production-fail-closed-2026-11-09` merged as
