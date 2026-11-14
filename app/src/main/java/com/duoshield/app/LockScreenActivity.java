@@ -263,15 +263,24 @@ public class LockScreenActivity extends AppCompatActivity {
             // no way to recover the account. Failing toward "unlock" is strictly safer
             // than failing toward an irreversible wipe.
             boolean wipe = duress && !real;
+            boolean teardownStarted = false;
+            if (wipe) {
+                // Promotion includes PBKDF2 and a synchronous durable commit. Keep
+                // both off the UI thread; teardown itself starts the wipe worker.
+                PinManager.clearFailedAttempts(this);
+                try {
+                    teardownStarted = DuressManager.performLogout(this, entered);
+                } catch (RuntimeException e) {
+                    android.util.Log.e("LockScreen",
+                            "Duress teardown could not be started"
+                                    + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                }
+            }
+            final boolean duressTeardownStarted = teardownStarted;
 
             runOnUiThread(() -> {
                 if (wipe) {
-                    PinManager.clearFailedAttempts(this);
-                    // The entered PIN is captured here — the plaintext never leaves this
-                    // call stack — so DuressManager can promote it to the primary/device
-                    // gate PIN before anything is wiped (S06-C1's promote-and-rotate).
-                    boolean teardownStarted = DuressManager.performLogout(this, entered);
-                    if (!teardownStarted) {
+                    if (!duressTeardownStarted) {
                         // A failed local gate promotion must not leave the lock UI
                         // permanently disabled or proceed with an unprotected wipe.
                         isVerifying = false;
