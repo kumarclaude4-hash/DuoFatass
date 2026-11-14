@@ -288,9 +288,9 @@ jobs:
         if: always()
         run: rm -f app/duoshield-release.keystore
 
-      # A release is created only from an explicit version tag. Never synthesize
-      # or move a rolling version tag from main. For tag pushes, github.ref_name
-      # is the tag; manual dispatch must supply the same explicit tag.
+      # Stable releases require an existing immutable v* tag that exactly
+      # matches app/build.gradle. Testing branches instead receive a unique
+      # test-v* prerelease tag after the signed build has completed.
       - name: Resolve and validate immutable release tag
         id: tag
         env:
