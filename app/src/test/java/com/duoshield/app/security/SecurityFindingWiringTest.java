@@ -72,9 +72,14 @@ public class SecurityFindingWiringTest {
                 "app/src/main/java/com/duoshield/app/util/PinManager.java");
 
         assertTrue("account PIN writer must scrub the historical plaintext length key",
-                source.contains("ed.remove(KEY_LEN_PREFIX + user.getUid())"));
+                source.contains("persistPinHash(accountStore, accountTier, key, accountHash,")
+                        && source.contains("String lengthKey = KEY_LEN_PREFIX + user.getUid()"));
         assertTrue("the device PIN writer must retain its dedicated length-key cleanup",
-                source.contains("remove(KEY_DEVICE_PIN_LEN)"));
+                source.contains("persistPinHash(store, tier, KEY_DEVICE_PIN_HASH,")
+                        && source.contains("stored, KEY_DEVICE_PIN_LEN"));
+        assertTrue("the shared PIN writer must remove every legacy metadata key before success",
+                source.contains("editor.remove(removedKey)")
+                        && source.contains("preferences.contains(removedKey)"));
         assertTrue("account PIN length getter must be present",
                 source.contains("public static int getPinLength(Context ctx)"));
         assertTrue("device PIN length getter must be present",
@@ -174,6 +179,104 @@ public class SecurityFindingWiringTest {
                 pinChangeAttemptAt > pinChangeBootAt
                         && source.substring(pinChangeAttemptAt).contains("pinChangeBootId(ctx)"));
 
+    }
+
+    @Test
+    public void primaryPinAndPromotionRequireDurableCommitReadBack() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/util/PinManager.java");
+        int setPinAt = source.indexOf("public static boolean setPin(Context ctx, String pin)");
+        int lockoutAt = source.indexOf("// ── Wrong-PIN lockout", setPinAt);
+        assertTrue("setPin method must be present", setPinAt >= 0);
+        String setPinBody = source.substring(setPinAt, lockoutAt);
+        assertTrue("primary PIN writes must reject non-durable SecurePrefs tiers",
+                setPinBody.contains("SecurePrefs.getTier()")
+                        && setPinBody.contains("accountTier.isDurable()"));
+        assertTrue("the account hash must use the durable commit/read-back writer",
+                setPinBody.contains("persistPinHash(accountStore, accountTier"));
+        assertTrue("a failed two-store update must attempt rollback",
+                setPinBody.contains("restorePinPreferences"));
+
+        int promoteAt = source.indexOf(
+                "public static boolean promoteDevicePinToCurrentUser(Context ctx)");
+        int looksAt = source.indexOf("public static boolean looksLikePreExistingDevice", promoteAt);
+        String promoteBody = source.substring(promoteAt, looksAt);
+        assertTrue("device-to-account promotion must require a durable account store",
+                promoteBody.contains("accountTier.isDurable()"));
+        assertTrue("promotion must not report success before a verified commit",
+                promoteBody.contains("persistPinHash(accountStore, accountTier"));
+    }
+
+    @Test
+    public void devicePinSetupStopsWhenDurableSaveFails() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/DevicePinGateActivity.java");
+        int workerAt = source.indexOf("pinPersistenceExecutor.execute(() -> {");
+        int saveAt = source.indexOf("boolean saved = PinManager.setDevicePin(getApplicationContext(), pin)", workerAt);
+        int uiAt = source.indexOf("runOnUiThread(() -> {", saveAt);
+        int failureAt = source.indexOf("if (!saved)", uiAt);
+        int proceedAt = source.indexOf("proceedToWelcome();", failureAt);
+        assertTrue("device gate PIN persistence must run off the main thread", workerAt >= 0);
+        assertTrue("device gate setup must check the persistence result", saveAt > workerAt);
+        assertTrue("the persistence result must be handled on the UI thread",
+                uiAt > saveAt && failureAt > uiAt);
+        assertTrue("device gate setup may proceed only after the successful-save branch",
+                proceedAt > failureAt);
+        String failureBody = source.substring(failureAt, proceedAt);
+        assertTrue("failed persistence must show a generic error",
+                failureBody.contains("Couldn't securely save your PIN"));
+        assertTrue("failed persistence must return without opening Welcome",
+                failureBody.contains("return;"));
+    }
+
+    @Test
+    public void failedDuressTeardownRestoresUsableLockScreen() throws IOException {
+        String manager = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        String lockScreen = readProjectFile(
+                "app/src/main/java/com/duoshield/app/LockScreenActivity.java");
+        assertTrue("duress teardown must report whether it started",
+                manager.contains("public static boolean performLogout(Context context, String enteredPin)"));
+        int callerAt = lockScreen.indexOf("boolean teardownStarted = DuressManager.performLogout(this, entered)");
+        int failureAt = lockScreen.indexOf("if (!duressTeardownStarted)", callerAt);
+        int nextBranchAt = lockScreen.indexOf("                }", failureAt);
+        assertTrue("lock screen must handle a failed duress promotion", callerAt >= 0 && failureAt > callerAt);
+        String recovery = lockScreen.substring(failureAt, lockScreen.indexOf("                    return;", failureAt));
+        assertTrue("failed teardown must re-enable PIN input", recovery.contains("setInputEnabled(true)"));
+        assertTrue("failed teardown must end verification state", recovery.contains("isVerifying = false"));
+        assertTrue("failed teardown must clear the entered PIN buffer", recovery.contains("pinBuffer.setLength(0)"));
+    }
+
+    @Test
+    public void accountCreationFallsBackToPINSetupWhenDevicePromotionFails() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/ui/SeedPhraseDisplayActivity.java");
+        int promotedAt = source.indexOf("PinManager.promoteDevicePinToCurrentUser(this)");
+        int successAt = source.indexOf("if (devicePinPromoted)", promotedAt);
+        int conversationAt = source.indexOf("new Intent(this, ConversationListActivity.class)", successAt);
+        int setupAt = source.indexOf("new Intent(this, SetupPinActivity.class)", conversationAt);
+        assertTrue("account creation must check device PIN promotion", promotedAt >= 0);
+        assertTrue("only confirmed promotion may route to the conversation list",
+                successAt > promotedAt && conversationAt > successAt);
+        assertTrue("failed promotion must fall back to explicit PIN setup",
+                setupAt > conversationAt);
+    }
+
+    @Test
+    public void duressTeardownRequiresDurableGatePromotionBeforeSideEffects() throws IOException {
+        String source = readProjectFile(
+                "app/src/main/java/com/duoshield/app/security/DuressManager.java");
+        int methodAt = source.indexOf("public static void performLogout(Context context, String enteredPin)");
+        int promoteAt = source.indexOf("!com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)",
+                methodAt);
+        int enqueueAt = source.indexOf("FcmUnregisterWorker.enqueue(appCtx)", methodAt);
+        int resetAt = source.indexOf("PendingLockStore.markResetPending(appCtx)", methodAt);
+        assertTrue("duress teardown must check the device-gate persistence result", promoteAt > methodAt);
+        assertTrue("the device gate must be durably saved before any external teardown work",
+                enqueueAt > promoteAt && resetAt > promoteAt);
+        assertTrue("a failed promotion must abort teardown",
+                source.substring(promoteAt, enqueueAt).contains("DURESS_TRIGGER_IN_PROGRESS.set(false)")
+                        && source.substring(promoteAt, enqueueAt).contains("return;"));
     }
 
     @Test
