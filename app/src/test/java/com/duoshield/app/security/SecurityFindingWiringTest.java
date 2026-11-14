@@ -280,7 +280,7 @@ public class SecurityFindingWiringTest {
                 enqueueAt > promoteAt && resetAt > promoteAt);
         assertTrue("a failed promotion must abort teardown",
                 source.substring(promoteAt, enqueueAt).contains("DURESS_TRIGGER_IN_PROGRESS.set(false)")
-                        && source.substring(promoteAt, enqueueAt).contains("return;"));
+                        && source.substring(promoteAt, enqueueAt).contains("return false;"));
     }
 
     @Test
