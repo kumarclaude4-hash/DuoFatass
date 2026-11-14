@@ -217,4 +217,64 @@ public class PinHashPersistenceTest {
         assertTrue("ambiguous state must retain its journal",
                 device.contains(PinHashPersistence.DEVICE_PENDING_TX));
     }
+
+    @Test
+    public void orphanAccountStageWithAdvancedActiveHashFailsClosed() {
+        FakeSharedPreferences account = new FakeSharedPreferences();
+        FakeSharedPreferences device = new FakeSharedPreferences();
+        String advancedHash = "0123456789abcdef0123456789abcdef:"
+                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        account.edit()
+                .putString(ACCOUNT_KEY, advancedHash)
+                .putString(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY), "transaction-lost-device-journal")
+                .putString(PinHashPersistence.accountPendingHashKey(ACCOUNT_KEY), advancedHash)
+                .commit();
+
+        assertFalse("an active hash matching an orphan stage may be a one-sided update",
+                PinHashPersistence.recoverPair(
+                        account, SecurePrefs.SecurityTier.SOFTWARE,
+                        device, SecurePrefs.SecurityTier.SOFTWARE, DEVICE_KEY));
+        assertEquals(advancedHash, account.getString(ACCOUNT_KEY, null));
+        assertTrue("the account stage must remain available for diagnosis/recovery",
+                account.contains(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY)));
+        assertTrue("the staged hash must remain available for diagnosis/recovery",
+                account.contains(PinHashPersistence.accountPendingHashKey(ACCOUNT_KEY)));
+    }
+
+    @Test
+    public void orphanAccountStageBeforeActivationCanBeSafelyDiscarded() {
+        FakeSharedPreferences account = new FakeSharedPreferences();
+        FakeSharedPreferences device = new FakeSharedPreferences();
+        String oldHash = "00112233445566778899aabbccddeeff:"
+                + "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        String stagedHash = "0123456789abcdef0123456789abcdef:"
+                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        account.edit()
+                .putString(ACCOUNT_KEY, oldHash)
+                .putString(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY), "transaction-before-device-stage")
+                .putString(PinHashPersistence.accountPendingHashKey(ACCOUNT_KEY), stagedHash)
+                .commit();
+
+        assertTrue(PinHashPersistence.recoverPair(
+                account, SecurePrefs.SecurityTier.SOFTWARE,
+                device, SecurePrefs.SecurityTier.SOFTWARE, DEVICE_KEY));
+        assertEquals("pre-transaction account PIN must remain active",
+                oldHash, account.getString(ACCOUNT_KEY, null));
+        assertFalse(account.contains(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY)));
+        assertFalse(account.contains(PinHashPersistence.accountPendingHashKey(ACCOUNT_KEY)));
+    }
+
+    @Test
+    public void malformedOrphanAccountStageFailsClosed() {
+        FakeSharedPreferences account = new FakeSharedPreferences();
+        FakeSharedPreferences device = new FakeSharedPreferences();
+        account.edit()
+                .putString(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY), "incomplete")
+                .commit();
+
+        assertFalse(PinHashPersistence.recoverPair(
+                account, SecurePrefs.SecurityTier.SOFTWARE,
+                device, SecurePrefs.SecurityTier.SOFTWARE, DEVICE_KEY));
+        assertTrue(account.contains(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY)));
+    }
 }
