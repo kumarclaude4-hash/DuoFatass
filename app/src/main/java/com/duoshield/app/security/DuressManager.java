@@ -551,9 +551,19 @@ public class DuressManager {
         // plain overwrites.
         if (enteredPin != null && !enteredPin.isEmpty()) {
             try {
-                com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin);
+                boolean deviceGatePromoted =
+                        com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin);
+                if (!deviceGatePromoted) {
+                    // Never claim the duress PIN was promoted when its device-store
+                    // commit/read-back failed. Continue the wipe so a storage outage
+                    // cannot suppress the requested duress action; the existing
+                    // device-gate credential remains the only accepted gate credential.
+                    android.util.Log.e("DuressManager",
+                            "Device-gate promotion was not durably confirmed; continuing teardown with the existing device gate.");
+                }
             } catch (Exception e) {
-                android.util.Log.e("DuressManager", "Device-gate promotion failed" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+                android.util.Log.e("DuressManager", "Device-gate promotion failed"
+                        + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
             // Disarm slot B so re-entering this same code later (after the account is
             // restored and this code becomes the primary again) cannot re-trigger the
