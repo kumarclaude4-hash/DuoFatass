@@ -233,15 +233,6 @@ public class PinManager {
     }
 
     /**
-     * Stores {@code pin} as this account's primary PIN.
-     *
-     * @return true only when every required record has been synchronously
-     *         committed to a durable SecurePrefs tier and read back exactly.
-     *         When a device gate already exists, it is updated first and rolled
-     *         back if the account write fails; the two physical preference files
-     *         cannot provide a single atomic transaction.
-     */
-    /**
      * Stores the supplied account PIN only after the required account and device
      * records have been committed to durable SecurePrefs stores and read back.
      * When a device gate already exists, the update uses ordered commits with
@@ -309,7 +300,15 @@ public class PinManager {
             }
 
             // Every account with a primary PIN gets a same-shape slot-B decoy.
-            com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
+            // This helper is separate from the primary credential durability
+            // contract and handles its own failure; do not report a committed
+            // primary hash as unsaved if decoy initialization throws.
+            try {
+                com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
+            } catch (RuntimeException e) {
+                android.util.Log.e("PinManager", "Secondary slot initialization failed"
+                        + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            }
             return true;
         } catch (Exception e) {
             android.util.Log.e("PinManager", "Failed to store PIN hash"
@@ -572,14 +571,11 @@ public class PinManager {
         String legacy = sp.getString(KEY_PIN_LEGACY, null);
         if (legacy != null) {
             String lengthKey = KEY_LEN_PREFIX + user.getUid();
-            Map<String, Object> before = snapshotPinPreferences(sp, key, KEY_PIN_LEGACY);
-            if (!persistPinHash(sp, SecurePrefs.getTier(), key, legacy, KEY_PIN_LEGACY)) {
-                restorePinPreferences(sp, before, key, KEY_PIN_LEGACY);
-            }
-            // Legacy length metadata is never migrated; scrub it only after the
-            // hash migration was confirmed, or retain the old record untouched.
-            if (sp.getString(key, null) != null && !sp.contains(KEY_PIN_LEGACY)) {
-                sp.edit().remove(lengthKey).commit();
+            Map<String, Object> before = snapshotPinPreferences(
+                    sp, key, KEY_PIN_LEGACY, lengthKey);
+            if (!persistPinHash(sp, SecurePrefs.getTier(), key, legacy,
+                    KEY_PIN_LEGACY, lengthKey)) {
+                restorePinPreferences(sp, before, key, KEY_PIN_LEGACY, lengthKey);
             }
             return true;
         }
@@ -736,43 +732,51 @@ public class PinManager {
      */
     public static boolean promoteDevicePinToCurrentUser(Context ctx) {
         try {
-        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-        if (user == null) return false;
-        if (!hasDevicePinSet(ctx)) return false;
+            FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+            if (user == null) return false;
+            if (!hasDevicePinSet(ctx)) return false;
 
-        SharedPreferences deviceStore = SecurePrefs.getDeviceGate(ctx);
-        if (!SecurePrefs.getDeviceGateTier().isDurable()) return false;
-        String stored = deviceStore.getString(KEY_DEVICE_PIN_HASH, null);
-        if (stored == null) return false;
+            SharedPreferences deviceStore = SecurePrefs.getDeviceGate(ctx);
+            if (!SecurePrefs.getDeviceGateTier().isDurable()) return false;
+            String stored = deviceStore.getString(KEY_DEVICE_PIN_HASH, null);
+            if (stored == null) return false;
 
-        SharedPreferences accountStore = SecurePrefs.get(ctx);
-        SecurePrefs.SecurityTier accountTier = SecurePrefs.getTier();
-        if (!accountTier.isDurable()) return false;
+            SharedPreferences accountStore = SecurePrefs.get(ctx);
+            SecurePrefs.SecurityTier accountTier = SecurePrefs.getTier();
+            if (!accountTier.isDurable()) return false;
 
-        String key = KEY_PIN_PREFIX + user.getUid();
-        String lengthKey = KEY_LEN_PREFIX + user.getUid();
-        Map<String, Object> before = snapshotPinPreferences(
-                accountStore, key, lengthKey);
-        if (!persistPinHash(accountStore, accountTier, key, stored, lengthKey)) {
-            boolean restored = restorePinPreferences(accountStore, before, key, lengthKey);
-            if (!restored) {
-                android.util.Log.e("PinManager",
-                        "Device PIN promotion failed and rollback could not be confirmed.");
+            String key = KEY_PIN_PREFIX + user.getUid();
+            String lengthKey = KEY_LEN_PREFIX + user.getUid();
+            Map<String, Object> before = snapshotPinPreferences(
+                    accountStore, key, KEY_PIN_LEGACY, lengthKey);
+            if (!persistPinHash(accountStore, accountTier, key, stored,
+                    KEY_PIN_LEGACY, lengthKey)) {
+                boolean restored = restorePinPreferences(
+                        accountStore, before, key, KEY_PIN_LEGACY, lengthKey);
+                if (!restored) {
+                    android.util.Log.e("PinManager",
+                            "Device PIN promotion failed and rollback could not be confirmed.");
+                }
+                return false;
             }
-            return false;
-        }
 
-        // The promoted account must receive the same-shape slot-B decoy even
-        // though this path bypasses setPin().
-        com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
-        return true;
-    
+            // The promoted account must receive the same-shape slot-B decoy even
+            // though this path bypasses setPin(). This is not part of the PIN hash
+            // commit result; do not claim that the primary record was not saved.
+            try {
+                com.duoshield.app.security.DuressManager.ensureSecondarySlotInitialized(ctx);
+            } catch (RuntimeException e) {
+                android.util.Log.e("PinManager", "Secondary slot initialization failed"
+                        + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
+            }
+            return true;
         } catch (RuntimeException e) {
             android.util.Log.e("PinManager", "Device PIN promotion failed"
                     + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             return false;
         }
     }
+
     /**
      * True if this device shows signs of an account that existed before the
      * upfront device-PIN gate was introduced — a persisted {@code my_uid}, or
