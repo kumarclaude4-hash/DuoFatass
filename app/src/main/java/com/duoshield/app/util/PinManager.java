@@ -616,6 +616,11 @@ public class PinManager {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) return false;
         if (!recoverPinSync(ctx) || !hasDevicePinSet(ctx)) return false;
+        SharedPreferences accountPreferences = SecurePrefs.get(ctx);
+        if (accountPreferences.contains(KEY_DEVICE_PIN_HASH)
+                || accountPreferences.contains(KEY_DEVICE_PIN_LEN)) {
+            return false; // legacy device material must be scrubbed before promotion.
+        }
         SharedPreferences sp = SecurePrefs.getDeviceGate(ctx);
         if (!SecurePrefs.getDeviceGateTier().isDurable()) return false;
         String stored = sp.getString(KEY_DEVICE_PIN_HASH, null);
