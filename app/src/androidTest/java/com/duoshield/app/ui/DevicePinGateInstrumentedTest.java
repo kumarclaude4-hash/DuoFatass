@@ -123,10 +123,10 @@ public class DevicePinGateInstrumentedTest {
             onView(withId(R.id.etConfirmPin)).perform(replaceText("135790"), closeSoftKeyboard());
             onView(withId(R.id.btnContinue)).perform(click());
 
-            // The click handler runs entirely on the UI thread (no background
-            // thread involved in setup mode), so Espresso's own synchronization
-            // guarantees this has already happened by the time perform() returns.
-            intended(hasComponent(SignInActivity.class.getName()));
+            // PIN derivation and the durable commit run on DevicePinGateActivity's
+            // background executor. Espresso does not track that executor, so wait
+            // for the resulting hand-off instead of asserting synchronously.
+            waitForIntentTo(SignInActivity.class, 10_000);
         }
 
         assertTrue("PIN must be persisted after setup completes",
@@ -146,7 +146,7 @@ public class DevicePinGateInstrumentedTest {
             onView(withId(R.id.etNewPin)).perform(replaceText(originalPin), closeSoftKeyboard());
             onView(withId(R.id.etConfirmPin)).perform(replaceText(originalPin), closeSoftKeyboard());
             onView(withId(R.id.btnContinue)).perform(click());
-            intended(hasComponent(SignInActivity.class.getName()));
+            waitForIntentTo(SignInActivity.class, 10_000);
         }
 
         assertTrue(PinManager.hasDevicePinSet(appContext));
@@ -219,7 +219,7 @@ public class DevicePinGateInstrumentedTest {
 
             scenario.onActivity(LockScreenCover::hide);
             onView(withId(R.id.btnContinue)).perform(click());
-            intended(hasComponent(SignInActivity.class.getName()));
+            waitForIntentTo(SignInActivity.class, 10_000);
             assertTrue("removing the cover must restore normal interaction",
                     PinManager.hasDevicePinSet(appContext));
         }
