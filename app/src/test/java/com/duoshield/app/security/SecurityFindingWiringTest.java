@@ -251,11 +251,15 @@ public class SecurityFindingWiringTest {
     public void accountCreationFallsBackToPINSetupWhenDevicePromotionFails() throws IOException {
         String source = readProjectFile(
                 "app/src/main/java/com/duoshield/app/ui/SeedPhraseDisplayActivity.java");
-        int promotedAt = source.indexOf("PinManager.promoteDevicePinToCurrentUser(this)");
+        int workerAt = source.indexOf("new Thread(() -> {", source.indexOf("onSuccess"));
+        int promotedAt = source.indexOf("PinManager.promoteDevicePinToCurrentUser(appContext)", workerAt);
         int successAt = source.indexOf("if (devicePinPromoted)", promotedAt);
         int conversationAt = source.indexOf("new Intent(this, ConversationListActivity.class)", successAt);
         int setupAt = source.indexOf("new Intent(this, SetupPinActivity.class)", conversationAt);
-        assertTrue("account creation must check device PIN promotion", promotedAt >= 0);
+        assertTrue("account creation must check device PIN promotion off the UI thread",
+                workerAt >= 0 && promotedAt > workerAt);
+        assertTrue("account creation must handle promotion routing on the UI thread",
+                source.indexOf("runOnUiThread(() -> {", promotedAt) > promotedAt);
         assertTrue("only confirmed promotion may route to the conversation list",
                 successAt > promotedAt && conversationAt > successAt);
         assertTrue("failed promotion must fall back to explicit PIN setup",
