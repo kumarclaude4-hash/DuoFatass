@@ -20,9 +20,9 @@ public final class PinHashPersistence {
     static final String DEVICE_PENDING_ACCOUNT_KEY = "__pin_sync_pending_account_key";
     static final String DEVICE_PENDING_ACCOUNT_HASH = "__pin_sync_pending_account_hash";
     static final String DEVICE_PENDING_DEVICE_HASH = "__pin_sync_pending_device_hash";
-    private static final String DEVICE_PENDING_ACCOUNT_LEGACY_KEY = "__pin_sync_pending_account_legacy_key";
-    private static final String DEVICE_PENDING_ACCOUNT_LENGTH_KEY = "__pin_sync_pending_account_length_key";
-    private static final String DEVICE_PENDING_DEVICE_LENGTH_KEY = "__pin_sync_pending_device_length_key";
+    static final String DEVICE_PENDING_ACCOUNT_LEGACY_KEY = "__pin_sync_pending_account_legacy_key";
+    static final String DEVICE_PENDING_ACCOUNT_LENGTH_KEY = "__pin_sync_pending_account_length_key";
+    static final String DEVICE_PENDING_DEVICE_LENGTH_KEY = "__pin_sync_pending_device_length_key";
     private static final String ACCOUNT_HASH_KEY_PREFIX = "app_pin_hash_";
     private static final String ACCOUNT_PENDING_TX_PREFIX = "__pin_sync_pending_tx_";
     private static final String ACCOUNT_PENDING_HASH_PREFIX = "__pin_sync_pending_hash_";
