@@ -1,15 +1,12 @@
-# Agentic Work Remaining — current handoff, 2026-11-14 (PR #303 S06-H6 in review)
+# Agentic Work Remaining — current handoff, 2026-11-14 (S06-H6 implementation merged)
 
 Repository: `kumarclaude4-hash/DuoFatass`  
 Base branch: `main`  
-Current main HEAD: `cf5b496e406c0d27bfd2408ec160661dbf7885cd` (PR #301 documentation-only). Latest
-application-code merge on main remains PR #299 S06-H5. PR #303 is the active open PR for S06-H6
-primary/device PIN durability. Working branch: `pin-persistence-fix-2026-11-14`; latest source/test
-head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`. CI [43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173) was queued and Security
-[43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was running at this checkpoint. Do not count the remediation as verified
-or merge until the final documentation-synchronized head passes both workflows. Main remains
-unchanged by this open PR. See `BUG_TRACKER.md`, `NEXT_WORK_REPORT_2026-11-08.md` and
-`sessions/SESSION-S06-H6-PRIMARY-PIN-DURABILITY-2026-11-14.md` for the exact source/test changes.
+Current main HEAD: `11bc01c863951152c559a72def3b0faa2a454b63`. PR #303 merged as `eb1edcba2efc38481298a3a50e2b5eb789cc2b2a` and PR #304 merged as `11bc01c863951152c559a72def3b0faa2a454b63`; S06-H6 primary/device PIN durability repository code work is complete. PR #303 exact-head CI [43550121483](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121483) passed 10/10 and Security [43550121365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121365) passed 3/3. PR #304 exact-head CI [43555992320](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992320) passed 10/10 and Security [43555992247](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992247) passed 3/3. Post-merge main CI [43556537823](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537823) passed 10/10 and Security [43556537826](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537826) passed 3/3; Vercel status successful. GitHub inventory: zero open PRs and zero open issues.
+
+PR #303 delivered durable-tier/commit/read-back checks, independent salts, two-store journaled writes and recovery, fail-closed orphan handling, verified migration/promotion and off-main-thread device-gate setup. PR #304 moves restore promotion and duress recovery off the UI thread and fails closed before wipe/lock/navigation/worker side effects when device-gate promotion cannot be confirmed. See `BUG_TRACKER.md`, `NEXT_WORK_REPORT_2026-11-08.md`, `FINAL_SIGNOFF.md` and `sessions/SESSION-S06-H6-PRIMARY-PIN-DURABILITY-2026-11-14.md`.
+
+**S06-H6 status:** Partial only for real Android Keystore/EncryptedSharedPreferences, process-kill/relaunch and feature-complete physical-device acceptance. Do not reopen the implementation branches without a new reproducible defect. Manual device testing remains deferred until the owner declares the app feature-complete. Overall production sign-off stays PENDING because unrelated operator, staging, governance and device gates remain.
 
 Recent merged work:
 - PR #261 — invite lifecycle invalid-state fail-closed checks (S05-H2).
@@ -35,21 +32,11 @@ The canonical tracker currently retains **117 findings: 86 Fixed, 18 Partial, 1 
 
 PR #288 added production fail-closed S02-I2 handling with same-PR docs; exact-head CI 10/10, Security 3/3 and Firestore Rules/server transaction tests passed. PR #289 added same-owner method-reference callback taint for S10-N2 with same-PR docs; exact-head CI 10/10 and Security 3/3 passed. PR #290 added the missing shared throttle to restored SetupPin and forced primary rotation, standardized their failure outcome, and updated tracker, START_HERE, next-work report, sign-off, independent verification, agent handoff, session index and a session record in the same PR. It merged as `9b1c1dd48fb584d728491e8bfeee5ef380e9b834`; final-head CI [42613986140] 10/10 and Security [42613986331] 3/3 passed. Espresso/API 35/R8/debug APK gates passed. `security-remediation/FINAL_SIGNOFF.md` remains **PENDING**. Physical-device acceptance remains deferred until the owner explicitly declares the application feature-complete.
 
-## Active implementation — S06-H6 primary/device PIN durability
+## Completed implementation — S06-H6 primary/device PIN durability
 
-PR #303 adds durable SecurePrefs tier checks, synchronous commit/read-back, a journaled pair update
-across the account and device-gate stores, independent salts, legacy metadata cleanup, and
-idempotent recovery. The latest follow-up also treats orphaned account stages as ambiguous when
-their staged hash is already active, and retains the device journal until account-stage cleanup is
-confirmed durable. The device-gate UI persists off the main thread and does not advance on write
-failure. Instrumented tests now wait for a new SignInActivity intent after the asynchronous save or
-unlock action. Latest branch head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`; exact-head CI/Security remain
-pending as linked above.
+PR #303 and follow-up PR #304 are merged and exact-head CI/Security passed on both; post-merge main CI/Security also passed. The persistence layer enforces durable SecurePrefs, synchronous commit/read-back, independent salts, staged two-store recovery, fail-closed orphan/one-sided state, verified migration/promotion, buffer clearing and durable cleanup ordering. PR #304 ensures restore-time promotion and duress recovery persistence run off the UI thread; duress teardown does not start destructive side effects unless recovery-PIN promotion is confirmed durable. Failed promotion leaves the account intact for retry.
 
-No physical-device testing is authorized before the owner declares the application feature-complete.
-Do not use real mnemonics, private keys, production credentials or production accounts. Keep
-`security-remediation/FINAL_SIGNOFF.md` PENDING. S06-H6 remains Partial until final-head CI/Security
-pass and separate Keystore/process-death/device acceptance is completed.
+**Next work is not another S06-H6 implementation pass.** Keep S06-H6 Partial until the real Keystore, process-death and feature-complete physical-device acceptance gates are completed. Continue the independent owner/operator/staging/governance tasks in the current release-readiness report. Do not start manual device testing before the owner declares the app feature-complete. `FINAL_SIGNOFF.md` remains PENDING.
 
 ## 1. Binding instructions
 

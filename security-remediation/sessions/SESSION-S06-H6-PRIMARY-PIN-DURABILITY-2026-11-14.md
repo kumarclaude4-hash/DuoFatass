@@ -3,7 +3,7 @@
 **Date:** 2026-11-14  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
 **Working branch:** `pin-persistence-fix-2026-11-14`  
-**Status at latest documentation checkpoint (2026-11-14):** Implementation and expanded regression coverage are on open PR #303; final exact-head CI/Security are pending. S06-H6 remains **Partial**.
+**Status (2026-11-14 closeout):** Implementation merged in PR #303 and follow-up PR #304. Exact-head CI/Security and post-merge main CI/Security passed. S06-H6 remains **Partial** only for real Keystore/process-death/physical-device acceptance.
 
 ## Finding
 
@@ -83,14 +83,27 @@ The source review and initial CI feedback led to additional changes on the same 
   A documentation synchronization will trigger another exact-head run; no final green result
   is claimed at this checkpoint.
 
+## Follow-up call-site hardening — PR #304
+
+Source review after PR #303 identified two remaining callers of the new synchronous durable persistence helpers on the UI thread:
+
+- `LockScreenActivity` invoked duress recovery teardown from a UI-thread callback.
+- `SeedPhraseDisplayActivity` performed restore-time device-PIN state checks and promotion in its main-thread success callback, and did not gate navigation on promotion success.
+
+PR #304 (`fix/security: move durable PIN call sites off main thread`) moved those paths to background execution. It also makes duress teardown fail closed: the recovery PIN must first be durably persisted to the wipe-surviving device gate; if that fails, no wipe, lock marker, navigation or worker side effect starts, and the existing account remains intact for retry. The deprecated no-PIN overload cannot bypass this guard. New source-wiring regressions prove the off-main-thread call ordering and success-only restore navigation.
+
+PR #304 merged as `11bc01c863951152c559a72def3b0faa2a454b63` from head `6f9bf2f14cb48cf045577ca7b351c2ac241b4509`. Exact-head CI [43555992320](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992320) passed 10/10, including unit tests, lint, debug APK, Espresso, API 35 predictive-back, minified R8, Server + Worker, AST and integrity checks. Security [43555992247](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992247) passed 3/3 (CodeQL, Gitleaks, SBOM).
+
 ## Verification and residuals
 
-At this checkpoint, no local Gradle/Android toolchain execution is claimed. GitHub CI/Security are the verification path: the previous run passed the unit suite but surfaced stale Espresso intent timing assumptions, now corrected in the instrumented tests. The latest exact-head workflows are still running/queued and must be rechecked after documentation synchronization. Do not merge until all required checks pass and the PR head SHA is re-verified.
+PR #303 merged as `eb1edcba2efc38481298a3a50e2b5eb789cc2b2a` from final source/test head `7974a197a03a929b336fbd2c0fb64c6a2a8f68fe`. Exact-head CI [43550121483](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121483) passed 10/10 and Security [43550121365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121365) passed 3/3. PR #304 then closed the remaining main-thread persistence and pre-wipe side-effect gaps above; its CI/Security also passed. Post-merge main is `11bc01c863951152c559a72def3b0faa2a454b63`: CI [43556537823](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537823) passed 10/10 and Security [43556537826](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537826) passed 3/3; the Vercel status is successful. No local Gradle/Android toolchain execution is claimed; successful verification was performed by repository CI.
 
-Repository CI cannot replace the following acceptance:
-- real Android Keystore / EncryptedSharedPreferences durability behavior on supported API levels;
-- process-kill/relaunch testing between each account/device journal phase;
-- device-gate setup, PIN change, account restore/promotion and unlock flows on physical devices;
+Automated verification covers durable-tier checks, commit/read-back failures, malformed records, paired staging/recovery, interrupted/orphaned states, failed cleanup commits, legacy metadata cleanup, async UI hand-off and call-site ordering. CI does not prove the behavior of every vendor's Keystore implementation or process death at every physical storage boundary.
+
+Remaining acceptance:
+- real Android Keystore / EncryptedSharedPreferences durability behavior on supported API levels and target OEMs;
+- process-kill/relaunch at each account/device journal stage and cleanup boundary;
+- device-gate setup, PIN change, account restore/promotion, unlock and duress recovery flows on physical devices;
 - OEM-specific behavior and device acceptance after the app is feature-complete.
 
-S06-H6 remains **Partial** until exact-head CI/Security pass. Device/Keystore acceptance remains separate. `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. No production secrets, provider configuration, staging resources, deployments or devices were changed.
+S06-H6 remains **Partial** until those real-device/Keystore acceptance gates are completed. `FINAL_SIGNOFF.md` remains **PENDING — NOT APPROVED FOR PRODUCTION SIGN-OFF**. No production secrets, provider configuration, staging resources, deployments or devices were changed.

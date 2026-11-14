@@ -2,57 +2,44 @@
 
 **Updated:** 2026-11-14  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `cf5b496e406c0d27bfd2408ec160661dbf7885cd`  
+**Current main:** `11bc01c863951152c559a72def3b0faa2a454b63`  
 **Decision:** NOT SIGNED OFF — `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
 
 ## 1. Verified current baseline
 
-PR #299 exact-head workflows:
-- [CI 43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730): 10/10 jobs passed.
-- [Security 43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858): 3/3 jobs passed.
+PR #303 S06-H6 durable PIN persistence:
+- Merged as `eb1edcba2efc38481298a3a50e2b5eb789cc2b2a` from final head `7974a197a03a929b336fbd2c0fb64c6a2a8f68fe`.
+- [CI 43550121483](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121483): 10/10 jobs passed.
+- [Security 43550121365](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43550121365): 3/3 jobs passed.
 
-PR #300 documentation-only exact-head workflows:
-- [CI 43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473): 10/10 jobs passed.
-- [Security 43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660): 3/3 jobs passed.
+PR #304 S06-H6 PIN call-site / duress teardown follow-up:
+- Merged as `11bc01c863951152c559a72def3b0faa2a454b63` from final head `6f9bf2f14cb48cf045577ca7b351c2ac241b4509`.
+- [CI 43555992320](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992320): 10/10 jobs passed.
+- [Security 43555992247](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43555992247): 3/3 jobs passed.
 
-PR #301 documentation-only mainline correction:
-- [CI 43536863859](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536863859): 10/10 jobs passed.
-- [Security 43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157): 3/3 jobs passed.
-- Merged as `cf5b496e406c0d27bfd2408ec160661dbf7885cd`.
-
-Post-PR #301 distinct main workflows are not claimed here.
+Post-merge main verification:
+- [CI 43556537823](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537823): 10/10 jobs passed.
+- [Security 43556537826](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43556537826): 3/3 jobs passed.
+- Vercel status on `11bc01c863951152c559a72def3b0faa2a454b63`: successful.
+- Open PRs: 0. Open issues: 0.
 
 Recent merged work:
 - PR #292: durable secondary/duress PIN persistence and runtime AccountLockWorker tests; CI 10/10, Security 3/3, Firestore Rules/server transactions passed.
 - PR #295: corrected SharedPreferences failed-commit test semantics; CI 10/10, Security 3/3.
 - PR #296: screenshots allowed globally until app finalization; exact-head CI 10/10, Security 3/3.
 - PR #297: AppLockManager foreground lifecycle runtime tests and CallActivity/InCallChatActivity ordering regressions; exact-head CI 10/10, Security 3/3.
+- PR #303/#304: S06-H6 primary/device PIN durability code and call-site hardening; both exact-head CI/Security runs and post-merge main CI/Security passed.
 
-The canonical tracker records **117 unique findings: 86 Fixed, 18 Partial, 1 Open, 12 Accepted**. S06-H6 is Partial for primary/device PIN durability; PR #303 remains open pending final-head CI/Security. Governance classification aliases in the severity display are not additional unique findings. No open GitHub issues. Stale PR #293 was closed unmerged and superseded by merged PR #298. PR #299 merged the S06-H5 durable-storage throttle guard; no open PRs remained after PR #301; PR #303 is now open for the S06-H6 primary/device PIN durability remediation.
+The canonical tracker records **117 unique findings: 86 Fixed, 18 Partial, 1 Open, 12 Accepted**. S06-H6 remains Partial only for real Keystore/process-death/physical-device acceptance; its repository code and automated verification are complete. Governance classification aliases in the severity display are not additional unique findings. Stale PR #293 was closed unmerged and superseded by merged PR #298. PR #299 merged the S06-H5 durable-storage throttle guard. No open PRs or issues at this check.
 
+## S06-H6 — primary/device PIN durability: code complete, device acceptance pending
 
-## New P1 repository remediation — S06-H6 primary/device PIN durability (2026-11-14)
+PR #303 and PR #304 close the source-level persistence and call-site issues. The implementation uses durable-tier checks, synchronous commit/read-back, independent salts, staged two-store recovery, fail-closed handling for ambiguous/orphaned state and verified metadata cleanup. Migration and restore promotion are verified. Device-gate save, restore-time promotion and duress recovery run off the UI thread. A failed duress-PIN promotion aborts before wipe, lock-marker, navigation or worker side effects and leaves the existing account intact for retry.
 
-Open [PR #303](https://github.com/kumarclaude4-hash/DuoFatass/pull/303), branch
-`pin-persistence-fix-2026-11-14`, contains source-reviewed hardening for the primary/device PIN
-persistence gap. Latest source/test head at this checkpoint: `e292362e0139c1a9291631985dc82ce2c82eb08f`.
+Regression coverage includes commit/read-back failures, malformed and non-durable data, interrupted and orphaned stages, failed cleanup commits, async device-gate hand-off and call-site wiring/order. PR #303 CI/Security passed 10/10 and 3/3; PR #304 CI/Security passed 10/10 and 3/3; post-merge main CI/Security passed 10/10 and 3/3.
 
-The patch requires durable SecurePrefs tiers and exact synchronous commit/read-back, journals
-paired account/device PIN changes before either active hash changes, uses separate salts, repairs
-interrupted transactions idempotently, rejects ambiguous orphan stages and retains the device
-journal until account-stage cleanup is durably confirmed. Migration, promotion and legacy
-PIN-length cleanup are verified; PBKDF2 mutable buffers are cleared where controllable; the
-device-gate UI does not proceed after a failed write. Tests cover read-back/commit faults,
-recovery and orphan states, plus asynchronous UI hand-off.
+**Remaining acceptance:** real Android Keystore/EncryptedSharedPreferences behavior, process-kill/relaunch at each paired-journal phase and physical-device flows for setup, change, restore/promotion, unlock and duress recovery after the owner declares the application feature-complete. Keep S06-H6 Partial and `FINAL_SIGNOFF.md` PENDING until that acceptance is recorded.
 
-The earlier CI run passed the JVM unit tests but exposed three stale Espresso assertions that
-expected an intent synchronously after PIN setup moved to a background executor. Instrumented
-tests now wait for a new matching intent after the current action. Current-head CI
-[43549525173](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525173) was queued and Security [43549525218](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43549525218) was in progress at this
-checkpoint. The documentation-sync commit requires a new final-head run. Keep S06-H6 Partial
-until all exact-head jobs pass. Real Android Keystore/EncryptedSharedPreferences, process-death
-between journal phases and physical-device acceptance remain separate gates. This PR is not a
-production sign-off.
 ## 2. Remaining repository work
 
 | Priority | Task | Owner | Acceptance evidence |
