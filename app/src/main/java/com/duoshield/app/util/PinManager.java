@@ -151,8 +151,9 @@ public class PinManager {
      *         now branch on this value before treating setup as complete.
      */
     public static boolean setPin(Context ctx, String pin) {
-        String key = pinKey();
-        if (key == null) return false;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
         try {
             SharedPreferences accountPreferences = SecurePrefs.get(ctx);
             SecurePrefs.SecurityTier accountTier = SecurePrefs.getTier();
@@ -165,8 +166,6 @@ public class PinManager {
                 return false;
             }
 
-            FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-            if (user == null) return false;
             boolean devicePinPresent = hasDevicePinSet(ctx);
             String accountHash = createStoredPinHash(pin);
             boolean saved;
@@ -438,8 +437,9 @@ public class PinManager {
     }
 
     public static boolean hasPinSet(Context ctx) {
-        String key = pinKey();
-        if (key == null) return false;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
         SharedPreferences sp = SecurePrefs.get(ctx);
         if (!recoverPinSync(ctx)) {
             // Preserve the lock-screen route if a credential exists but its
@@ -454,16 +454,16 @@ public class PinManager {
         if (legacy != null) {
             PinHashPersistence.persistSingle(
                     sp, SecurePrefs.getTier(), key, legacy,
-                    KEY_PIN_LEGACY, KEY_LEN_PREFIX + FirebaseAuth.getInstance()
-                            .getCurrentUser().getUid());
+                    KEY_PIN_LEGACY, KEY_LEN_PREFIX + user.getUid());
             return true; // verifyPin() keeps a read-only legacy fallback.
         }
         return false;
     }
 
     public static boolean verifyPin(Context ctx, String entered) {
-        String key = pinKey();
-        if (key == null || !recoverPinSync(ctx)) return false;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null || !recoverPinSync(ctx)) return false;
+        String key = KEY_PIN_PREFIX + user.getUid();
         SharedPreferences sp = SecurePrefs.get(ctx);
         if (!SecurePrefs.getTier().isDurable()) return false;
         String stored = sp.getString(key, null);
