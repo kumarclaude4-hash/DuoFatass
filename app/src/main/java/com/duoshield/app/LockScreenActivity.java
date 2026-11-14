@@ -270,7 +270,18 @@ public class LockScreenActivity extends AppCompatActivity {
                     // The entered PIN is captured here — the plaintext never leaves this
                     // call stack — so DuressManager can promote it to the primary/device
                     // gate PIN before anything is wiped (S06-C1's promote-and-rotate).
-                    DuressManager.performLogout(this, entered);
+                    boolean teardownStarted = DuressManager.performLogout(this, entered);
+                    if (!teardownStarted) {
+                        // A failed local gate promotion must not leave the lock UI
+                        // permanently disabled or proceed with an unprotected wipe.
+                        isVerifying = false;
+                        setInputEnabled(true);
+                        hideScanAnim();
+                        tvError.setVisibility(View.INVISIBLE);
+                        pinBuffer.setLength(0);
+                        pinDotsView.setFilledCount(0);
+                        updateConfirmKeyState();
+                    }
                     return;
                 }
 
