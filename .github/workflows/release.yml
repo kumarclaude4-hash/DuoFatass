@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'testing-release/**'
   workflow_dispatch:
     inputs:
       version_tag:
@@ -299,49 +301,76 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          VERSION_NAME=$(grep -m1 'versionName' app/build.gradle | grep -oP '"\K[^"]+')
+
           if [ "$REF_TYPE" = "tag" ]; then
             TAG="$REF_NAME"
+            PRERELEASE=false
           elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             TAG="$INPUT_TAG"
+            PRERELEASE=false
+          elif [ "$REF_TYPE" = "branch" ] && [[ "$REF_NAME" == testing-release/* ]]; then
+            # Test releases use a namespace outside v* so they cannot invoke the
+            # stable release trigger. The short commit SHA makes every test tag
+            # unique and ties the public prerelease to this exact build.
+            TAG="test-v${VERSION_NAME}-${WORKFLOW_SHA:0:7}"
+            PRERELEASE=true
           else
-            echo "::error::Release workflow must run from a version tag."
+            echo "::error::Release workflow must run from a version tag, manual dispatch, or testing-release/* branch."
             exit 1
           fi
 
-          # The application currently uses a two-component versionName (for example
-          # 1.4). Accept two or three numeric components so the tag validator matches
-          # the project's actual version scheme while still rejecting rolling/loose tags.
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Invalid release tag: $TAG"
-            exit 1
-          fi
+          if [[ "$PRERELEASE" = "false" ]]; then
+            # The application uses numeric version components (for example 1.4).
+            # Keep stable releases pinned to the exact app version and an existing tag.
+            if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Invalid stable release tag: $TAG"
+              exit 1
+            fi
 
-          TAG_COMMIT=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$TAG" --jq '.object.sha')
-          TAG_TYPE=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$TAG" --jq '.object.type')
-          if [ "$TAG_TYPE" = "tag" ]; then
-            TAG_COMMIT=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$TAG_COMMIT" --jq '.object.sha')
-          fi
+            TAG_COMMIT=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$TAG" --jq '.object.sha')
+            TAG_TYPE=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$TAG" --jq '.object.type')
+            if [ "$TAG_TYPE" = "tag" ]; then
+              TAG_COMMIT=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$TAG_COMMIT" --jq '.object.sha')
+            fi
 
-          if [ "$TAG_COMMIT" != "$WORKFLOW_SHA" ]; then
-            echo "::error::Tag $TAG points to $TAG_COMMIT but workflow checked out $WORKFLOW_SHA."
-            exit 1
-          fi
+            if [ "$TAG_COMMIT" != "$WORKFLOW_SHA" ]; then
+              echo "::error::Tag $TAG points to $TAG_COMMIT but workflow checked out $WORKFLOW_SHA."
+              exit 1
+            fi
 
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$TAG" >/dev/null 2>&1; then
-            echo "::error::Release $TAG already exists. Version releases are immutable; bump versionName and create a new tag."
-            exit 1
-          fi
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::Release $TAG already exists. Version releases are immutable; bump versionName and create a new tag."
+              exit 1
+            fi
 
-          VERSION_NAME=$(grep -m1 'versionName' app/build.gradle | grep -oP '"\K[^"]+')
-          EXPECTED_TAG="v${VERSION_NAME}"
-          if [ "$TAG" != "$EXPECTED_TAG" ]; then
-            echo "::error::Tag $TAG does not match app versionName $VERSION_NAME."
-            exit 1
+            EXPECTED_TAG="v${VERSION_NAME}"
+            if [ "$TAG" != "$EXPECTED_TAG" ]; then
+              echo "::error::Tag $TAG does not match app versionName $VERSION_NAME."
+              exit 1
+            fi
+          else
+            if [[ ! "$TAG" =~ ^test-v[0-9]+\.[0-9]+(\.[0-9]+)?-[0-9a-f]{7}$ ]]; then
+              echo "::error::Invalid testing prerelease tag: $TAG"
+              exit 1
+            fi
+
+            # Test tags are created by the release action only after a successful
+            # build. Refuse collisions rather than reusing or moving a prior tag.
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::Testing tag $TAG already exists. Create a new testing commit instead of reusing it."
+              exit 1
+            fi
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::Testing prerelease $TAG already exists."
+              exit 1
+            fi
           fi
 
           echo "name=$TAG" >> "$GITHUB_OUTPUT"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "Validated immutable release tag $TAG at $TAG_COMMIT."
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Validated immutable ${PRERELEASE} release tag $TAG at $WORKFLOW_SHA."
 
       # ── Compose the release body (install + SC-04 verification data) ─────────
       # Built as a file rather than an inline `body:` string so the checksums and
@@ -394,12 +423,31 @@ jobs:
           echo "----- release body -----"
           cat release-verify-body.md
 
+      # Keep a downloadable testing artifact separate from the public
+      # prerelease. It is available from this workflow run for 30 days.
+      - name: Upload signed testing APK artifact
+        if: steps.tag.outputs.prerelease == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: DuoShield-testing-${{ steps.tag.outputs.name }}
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/*.zip
+            app/build/outputs/apk/release/SHA256SUMS
+            release-verify.md
+            release-verify-body.md
+          if-no-files-found: error
+          retention-days: 30
+
       # ── Publish the new release ──────────────────────────────────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name:             ${{ steps.tag.outputs.name }}
+          target_commitish:     ${{ github.sha }}
           name:                 "DuoShield ${{ steps.tag.outputs.name }}"
+          prerelease:           ${{ steps.tag.outputs.prerelease == 'true' }}
+          make_latest:          ${{ steps.tag.outputs.prerelease == 'true' && 'false' || 'true' }}
           generate_release_notes: true
           # SC-04: `body_path` carries the generated checksums + certificate
           # digest, so the verification data is published on the release page
