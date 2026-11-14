@@ -326,23 +326,31 @@ public class SeedPhraseDisplayActivity extends AppCompatActivity {
                             // asking again. Devices that predate that gate (no device
                             // PIN on file) fall back to the original SetupPinActivity
                             // hand-off.
-                            boolean devicePinPromoted = PinManager.hasDevicePinSet(this)
-                                    && PinManager.promoteDevicePinToCurrentUser(this);
-                            if (devicePinPromoted) {
-                                Log.i(TAG, "[3/4] durable device PIN promoted to account");
-                                Intent intent = new Intent(this, ConversationListActivity.class);
-                                intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                                startActivity(intent);
-                            } else {
-                                // A failed promotion is not a configured account PIN.
-                                // Keep the account out of the conversation list and use
-                                // the normal PIN setup flow, which reports persistence failure.
-                                Intent intent = new Intent(this, SetupPinActivity.class);
-                                intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
-                                startActivity(intent);
-                            }
-                            finish();
+                            // Device-to-account promotion performs a synchronous durable
+                            // commit; do not run the migration or write on the UI thread.
+                            new Thread(() -> {
+                                android.content.Context appContext = getApplicationContext();
+                                boolean devicePinPromoted = PinManager.hasDevicePinSet(appContext)
+                                        && PinManager.promoteDevicePinToCurrentUser(appContext);
+                                runOnUiThread(() -> {
+                                    if (isFinishing() || isDestroyed()) return;
+                                    if (devicePinPromoted) {
+                                        Log.i(TAG, "[3/4] durable device PIN promoted to account");
+                                        Intent intent = new Intent(this, ConversationListActivity.class);
+                                        intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
+                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                                        startActivity(intent);
+                                    } else {
+                                        // A failed promotion is not a configured account PIN.
+                                        // Keep the account out of the conversation list and use
+                                        // the normal PIN setup flow, which reports persistence failure.
+                                        Intent intent = new Intent(this, SetupPinActivity.class);
+                                        intent.putExtra(SetupPinActivity.EXTRA_ACCOUNT_CREATED, true);
+                                        startActivity(intent);
+                                    }
+                                    finish();
+                                });
+                            }, "account-pin-promote").start();
                         },
                         () -> {
                             // onFailure
