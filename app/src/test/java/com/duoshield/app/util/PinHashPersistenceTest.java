@@ -92,14 +92,20 @@ public class PinHashPersistenceTest {
         String accountHash = "00112233445566778899aabbccddeeff:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
         String deviceHash = "ffeeddccbbaa99887766554433221100:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
         account.edit().putString(ACCOUNT_KEY, "old-account")
+                .putString("app_pin_hash", "old-legacy-account")
+                .putInt("app_pin_length_uid-a", 6)
                 .putString(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY), tx)
                 .putString(PinHashPersistence.accountPendingHashKey(ACCOUNT_KEY), accountHash)
                 .commit();
         device.edit().putString(DEVICE_KEY, "old-device")
+                .putInt("device_gate_pin_length", 6)
                 .putString(PinHashPersistence.DEVICE_PENDING_TX, tx)
                 .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_KEY, ACCOUNT_KEY)
                 .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_HASH, accountHash)
                 .putString(PinHashPersistence.DEVICE_PENDING_DEVICE_HASH, deviceHash)
+                .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_LEGACY_KEY, "app_pin_hash")
+                .putString(PinHashPersistence.DEVICE_PENDING_ACCOUNT_LENGTH_KEY, "app_pin_length_uid-a")
+                .putString(PinHashPersistence.DEVICE_PENDING_DEVICE_LENGTH_KEY, "device_gate_pin_length")
                 .commit();
 
         device.setCommitSucceeds(false);
@@ -115,8 +121,62 @@ public class PinHashPersistenceTest {
                 device, SecurePrefs.SecurityTier.SOFTWARE, DEVICE_KEY));
         assertEquals(accountHash, account.getString(ACCOUNT_KEY, null));
         assertEquals(deviceHash, device.getString(DEVICE_KEY, null));
+        assertFalse("legacy account hash must be scrubbed during crash recovery",
+                account.contains("app_pin_hash"));
+        assertFalse("plaintext account PIN length must be scrubbed during crash recovery",
+                account.contains("app_pin_length_uid-a"));
+        assertFalse("plaintext device PIN length must be scrubbed during crash recovery",
+                device.contains("device_gate_pin_length"));
         assertFalse(device.contains(PinHashPersistence.DEVICE_PENDING_TX));
         assertFalse(account.contains(PinHashPersistence.accountPendingTxKey(ACCOUNT_KEY)));
+    }
+
+    @Test
+    public void pairedWriteRejectsEphemeralOrMalformedCredentialRecords() {
+        FakeSharedPreferences account = new FakeSharedPreferences();
+        FakeSharedPreferences device = new FakeSharedPreferences();
+        String validAccount = "0123456789abcdef0123456789abcdef:"
+                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String validDevice = "fedcba9876543210fedcba9876543210:"
+                + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+        assertFalse(PinHashPersistence.persistPair(
+                account, SecurePrefs.SecurityTier.NONE,
+                ACCOUNT_KEY, validAccount, "app_pin_hash", "pin_length",
+                device, SecurePrefs.SecurityTier.HARDWARE,
+                DEVICE_KEY, validDevice, "device_gate_pin_length"));
+        assertFalse(PinHashPersistence.persistPair(
+                account, SecurePrefs.SecurityTier.SOFTWARE,
+                ACCOUNT_KEY, "malformed", "app_pin_hash", "pin_length",
+                device, SecurePrefs.SecurityTier.HARDWARE,
+                DEVICE_KEY, validDevice, "device_gate_pin_length"));
+        assertTrue("rejected writes must not stage or mutate either active PIN",
+                account.getAll().isEmpty() && device.getAll().isEmpty());
+    }
+
+    @Test
+    public void failedDeviceJournalCommitDoesNotActivateEitherNewCredential() {
+        FakeSharedPreferences account = new FakeSharedPreferences();
+        FakeSharedPreferences device = new FakeSharedPreferences();
+        String oldAccount = "00112233445566778899aabbccddeeff:"
+                + "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        String oldDevice = "ffeeddccbbaa99887766554433221100:"
+                + "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        String newAccount = "0123456789abcdef0123456789abcdef:"
+                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String newDevice = "fedcba9876543210fedcba9876543210:"
+                + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        account.edit().putString(ACCOUNT_KEY, oldAccount).commit();
+        device.edit().putString(DEVICE_KEY, oldDevice).commit();
+        device.setCommitSucceeds(false);
+
+        assertFalse(PinHashPersistence.persistPair(
+                account, SecurePrefs.SecurityTier.SOFTWARE,
+                ACCOUNT_KEY, newAccount, "app_pin_hash", "pin_length",
+                device, SecurePrefs.SecurityTier.SOFTWARE,
+                DEVICE_KEY, newDevice, "device_gate_pin_length"));
+        assertEquals(oldAccount, account.getString(ACCOUNT_KEY, null));
+        assertEquals(oldDevice, device.getString(DEVICE_KEY, null));
     }
 
     @Test
