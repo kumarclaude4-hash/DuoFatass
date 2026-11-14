@@ -637,7 +637,7 @@ public class PinManager {
         if (!PinHashPersistence.persistSingle(
                 SecurePrefs.get(ctx), SecurePrefs.getTier(),
                 KEY_PIN_PREFIX + user.getUid(), stored,
-                KEY_LEN_PREFIX + user.getUid())) {
+                KEY_PIN_LEGACY, KEY_LEN_PREFIX + user.getUid())) {
             return false;
         }
         // An account that arrives via this path (creation / wipe-and-restore) never
