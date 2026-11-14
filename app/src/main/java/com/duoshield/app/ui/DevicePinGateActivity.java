@@ -109,7 +109,10 @@ public class DevicePinGateActivity extends AppCompatActivity {
             }
 
             tvError.setVisibility(View.GONE);
-            PinManager.setDevicePin(this, pin);
+            if (!PinManager.setDevicePin(this, pin)) {
+                showError("Couldn't securely save your device PIN. Try again.");
+                return;
+            }
             proceedToWelcome();
         });
     }
