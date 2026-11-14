@@ -299,21 +299,33 @@ public class SecurityFindingWiringTest {
     }
 
     @Test
-    public void duressTeardownDoesNotIgnoreDevicePinPromotionFailure() throws IOException {
+    public void duressTeardownAbortsBeforeSideEffectsWhenDeviceGatePromotionFails()
+            throws IOException {
         String duress = readProjectFile(
                 "app/src/main/java/com/duoshield/app/security/DuressManager.java");
-        int promotionAt = duress.indexOf("boolean deviceGatePromoted =");
-        int failureAt = duress.indexOf("if (!deviceGatePromoted)", promotionAt);
-        int clearAt = duress.indexOf("clearDuressPin(context);", failureAt);
-        assertTrue("duress teardown must capture the durable promotion result",
-                promotionAt >= 0 && duress.contains("PinManager.setDevicePin(context, enteredPin)"));
-        assertTrue("a failed promotion must be logged explicitly",
-                failureAt > promotionAt
-                        && duress.substring(failureAt, clearAt)
-                                .contains("continuing teardown with the existing device gate"));
-        assertTrue("a failed PIN promotion must not suppress the duress wipe path",
-                clearAt > failureAt
-                        && duress.indexOf("WipeHelper.eraseLocalData", clearAt) > clearAt);
+        int methodAt = duress.indexOf(
+                "public static boolean performLogout(Context context, String enteredPin)");
+        int promotionGuardAt = duress.indexOf(
+                "if (enteredPin == null || enteredPin.isEmpty()", methodAt);
+        int promotionAt = duress.indexOf(
+                "PinManager.setDevicePin(context, enteredPin)", promotionGuardAt);
+        int failedReturnAt = duress.indexOf("return false;", promotionGuardAt);
+        int clearAttemptsAt = duress.indexOf(
+                "PinManager.clearFailedAttempts(context)", promotionAt);
+        int unregisterAt = duress.indexOf("FcmUnregisterWorker.enqueue(appCtx)", methodAt);
+        int disarmAt = duress.indexOf("clearDuressPin(context);", clearAttemptsAt);
+
+        assertTrue("the boolean teardown operation must reject a missing recovery PIN",
+                methodAt >= 0 && promotionGuardAt > methodAt);
+        assertTrue("the device gate must be durably written before teardown side effects",
+                promotionAt > promotionGuardAt && failedReturnAt > promotionAt
+                        && failedReturnAt < unregisterAt);
+        assertTrue("failed-attempt state must clear only after a confirmed device-gate write",
+                clearAttemptsAt > promotionAt && clearAttemptsAt < unregisterAt);
+        assertTrue("the secondary slot is disarmed only after successful promotion",
+                disarmAt > clearAttemptsAt && disarmAt < unregisterAt);
+        assertTrue("the compatibility overload cannot bypass the recovery-PIN requirement",
+                duress.contains("public static boolean performLogout(Context context)"));
     }
 
     private static String readProjectFile(String relativePath) throws IOException {
@@ -344,7 +356,7 @@ public class SecurityFindingWiringTest {
         assertTrue("duress teardown must run before returning to the UI thread",
                 logoutAt > wipeAt && uiAt > logoutAt);
         assertTrue("a failed durable promotion must leave the lock screen usable",
-                lockScreen.contains("if (!teardownAccepted)")
+                lockScreen.contains("if (!teardownAccepted &&")
                         && lockScreen.contains("setInputEnabled(true)")
                         && lockScreen.contains("Unable to continue. Try again."));
 
