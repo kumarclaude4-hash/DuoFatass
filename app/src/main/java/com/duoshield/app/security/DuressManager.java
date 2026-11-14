@@ -478,8 +478,9 @@ public class DuressManager {
      *             the entered PIN's plaintext.
      */
     @Deprecated
-    public static void performLogout(Context context) {
-        performLogout(context, null);
+    public static boolean performLogout(Context context) {
+        // A duress wipe without the plaintext code cannot preserve the recovery gate.
+        return performLogout(context, null);
     }
 
     /**
@@ -523,10 +524,10 @@ public class DuressManager {
      *
      * <p><strong>Silent:</strong> no Toast, no dialog, no animation visible to an observer.
      */
-    public static void performLogout(Context context, String enteredPin) {
+    public static boolean performLogout(Context context, String enteredPin) {
         if (!DURESS_TRIGGER_IN_PROGRESS.compareAndSet(false, true)) {
             android.util.Log.w("DuressManager", "Duress teardown already in progress; ignoring duplicate trigger.");
-            return;
+            return false;
         }
         try {
         // Capture the UID before anything below signs out or wipes prefs — both would
@@ -536,42 +537,29 @@ public class DuressManager {
 
         final Context appCtx = context.getApplicationContext();
 
-        // Enqueue FcmUnregisterWorker immediately — no credential needed
-        // (FirebaseMessaging.deleteToken() handles its own auth, and no uid is needed
-        // either — see S06-H2, the job no longer carries one).
+        // The device PIN is the only recovery gate that survives the account wipe.
+        // A duress teardown must not begin if replacing it with the entered code
+        // cannot be confirmed by durable commit/read-back. Abort before scheduling
+        // workers, writing lock markers, navigating or erasing anything.
+        if (enteredPin == null || enteredPin.isEmpty()
+                || !com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin)) {
+            android.util.Log.e("DuressManager",
+                    "Duress teardown aborted because device-gate persistence was not confirmed.");
+            DURESS_TRIGGER_IN_PROGRESS.set(false);
+            return false;
+        }
+
+        // A successful promotion is the point at which the duress credential has
+        // been durably secured as the wipe-surviving gate. Reset failed-attempt
+        // state only after that succeeds.
+        com.duoshield.app.util.PinManager.clearFailedAttempts(context);
+
+        // Only now may teardown side effects begin.
         com.duoshield.app.util.FcmUnregisterWorker.enqueue(appCtx);
 
-        // ── Promote-and-rotate (S06-C1) — local-only, before anything else runs ──
-        //
-        // Order matters: this must land before the wipe destroys the account-scoped
-        // PIN hash and before any network call that could be delayed or interrupted.
-        // If the process dies between this line and the wipe completing, resuming the
-        // wipe (resumeInterruptedResetIfNeeded) is safe to re-run this step — it is
-        // idempotent, and PinManager.setDevicePin/DuressManager.clearDuressPin are both
-        // plain overwrites.
-        if (enteredPin != null && !enteredPin.isEmpty()) {
-            try {
-                boolean deviceGatePromoted =
-                        com.duoshield.app.util.PinManager.setDevicePin(context, enteredPin);
-                if (!deviceGatePromoted) {
-                    // Never claim the duress PIN was promoted when its device-store
-                    // commit/read-back failed. Continue the wipe so a storage outage
-                    // cannot suppress the requested duress action; the existing
-                    // device-gate credential remains the only accepted gate credential.
-                    android.util.Log.e("DuressManager",
-                            "Device-gate promotion was not durably confirmed; continuing teardown with the existing device gate.");
-                }
-            } catch (Exception e) {
-                android.util.Log.e("DuressManager", "Device-gate promotion failed"
-                        + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
-            }
-            // Disarm slot B so re-entering this same code later (after the account is
-            // restored and this code becomes the primary again) cannot re-trigger the
-            // whole duress sequence a second time. Overwrites with a fresh decoy rather
-            // than removing — see clearDuressPin's javadoc on why that matters for
-            // timing parity.
-            clearDuressPin(context);
-        }
+        // Disarm slot B so re-entering this same code after a restore cannot
+        // trigger another teardown. Keep a fresh decoy rather than removing the slot.
+        clearDuressPin(context);
 
         // ── Durable lock intent (S06-H3) — recorded before any erasure, in a
         // container the wipe never touches. A warm (pre-fetched) nonce from
@@ -614,12 +602,12 @@ public class DuressManager {
 
         // 1. Instant navigation — removes chat screen from view immediately.
         //    To an observer, it looks like the app is simply processing the PIN.
-        Intent intent = new Intent(context, SignInActivity.class);
+        Intent intent = new Intent(appCtx, SignInActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        context.startActivity(intent);
+        appCtx.startActivity(intent);
 
         // Cancel the daily backup sync — the session is intentionally destroyed.
-        try { BackupScheduler.cancel(context); } catch (Exception ignored) {}
+        try { BackupScheduler.cancel(appCtx); } catch (Exception ignored) {}
 
         // Full "sync then wipe" on a background thread
         try {
@@ -739,7 +727,7 @@ public class DuressManager {
             //     "Restore Contacts" path cannot rebuild the social graph afterwards.
             try {
                 com.duoshield.app.util.WipeHelper.eraseLocalData(
-                        context, com.duoshield.app.util.WipeHelper.WipeMode.DURESS);
+                        appCtx, com.duoshield.app.util.WipeHelper.WipeMode.DURESS);
             } catch (Exception e) {
                 android.util.Log.e("DuressManager", "eraseLocalData failed during duress wipe" + " (" + com.duoshield.app.util.LogRedact.error(e) + ")");
             }
@@ -749,18 +737,25 @@ public class DuressManager {
             // eraseLocalData threw, the marker deliberately stays set so the next
             // launch's resumeInterruptedResetIfNeeded() retries the wipe to completion
             // instead of the app silently starting up half-wiped.
-            clearResetMarkers(context);
+            clearResetMarkers(appCtx);
           } finally {
             DURESS_TRIGGER_IN_PROGRESS.set(false);
           }
         }, "duress-logout").start();
         } catch (RuntimeException startError) {
             DURESS_TRIGGER_IN_PROGRESS.set(false);
-            throw startError;
+            android.util.Log.e("DuressManager",
+                    "Could not start duress teardown"
+                            + " (" + com.duoshield.app.util.LogRedact.error(startError) + ")");
+            return false;
         }
+        return true;
         } catch (RuntimeException setupError) {
             DURESS_TRIGGER_IN_PROGRESS.set(false);
-            throw setupError;
+            android.util.Log.e("DuressManager",
+                    "Duress teardown setup failed"
+                            + " (" + com.duoshield.app.util.LogRedact.error(setupError) + ")");
+            return false;
         }
     }
 
