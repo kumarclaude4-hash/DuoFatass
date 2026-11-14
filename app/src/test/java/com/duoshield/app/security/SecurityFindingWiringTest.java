@@ -313,6 +313,7 @@ public class SecurityFindingWiringTest {
         int clearAttemptsAt = duress.indexOf(
                 "PinManager.clearFailedAttempts(context)", promotionAt);
         int unregisterAt = duress.indexOf("FcmUnregisterWorker.enqueue(appCtx)", methodAt);
+        int lockIntentAt = duress.indexOf("PendingLockStore.recordLockIntent", unregisterAt);
         int disarmAt = duress.indexOf("clearDuressPin(context);", clearAttemptsAt);
 
         assertTrue("the boolean teardown operation must reject a missing recovery PIN",
