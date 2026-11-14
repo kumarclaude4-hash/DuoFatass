@@ -152,3 +152,15 @@ also passed 10/10 and 3/3. The helper now rejects non-durable SecurePrefs tiers
 before candidate inspection; the NONE-tier regression guards against an ephemeral
 budget reset. S06-H5 remains Partial pending independent residual review and
 feature-complete device acceptance. `FINAL_SIGNOFF.md` remains PENDING.
+
+
+## Current-main documentation reconciliation — PR #300 merged (2026-11-14)
+
+PR #300 merged as `4c4a4a8d0055277eaf1f7b6ba601b507225f1428` (documentation-only). Its exact-head CI
+[43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473)
+passed 10/10 and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660)
+passed 3/3. Main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072)
+and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050)
+were still running at the time of this entry. The latest application-source change remains
+PR #299; the S06-H5 durable-throttle mitigation remains Partial pending independent
+residual review and device acceptance. Do not promote production sign-off.
