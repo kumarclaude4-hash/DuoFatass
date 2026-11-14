@@ -171,6 +171,10 @@ The release workflow also accepts optional non-secret routing/build values throu
 
 The release workflow publishes ABI-specific signed APKs (`arm64-v8a` and `armeabi-v7a`), matching ZIP archives, and a `SHA256SUMS` manifest through GitHub Releases. The in-app updater selects the compatible APK and verifies it before installation.
 
+#### Signed testing build (non-production)
+
+After the workflow change is merged, push a commit to a branch named `testing-release/<name>` to run the same signed, minified release build against that exact branch commit. The workflow uploads a **30-day Actions artifact** containing both ABI APKs, compact ZIPs, and checksums, and creates a public GitHub **prerelease** named `test-v<app-version>-<commit>`. Testing prereleases are explicitly marked as prereleases and are not designated as the latest stable release. The existing `v*` stable-release path remains separate. The build still uses the `production-release` environment and the same GitHub signing/Firebase secrets.
+
 ### In-app updates
 
 From **Settings → Check for updates**, DuoShield checks the latest GitHub release over HTTPS. It downloads only the APK matching the device ABI, verifies the downloaded bytes against the release’s `SHA256SUMS` entry, confirms the archive package name, and then hands the file to Android’s package installer. Updates use the existing app data directory, so the local encrypted database, preferences, and login session are preserved when Android accepts the upgrade signed with the same release key.
