@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-14  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `4c4a4a8d0055277eaf1f7b6ba601b507225f1428`  
+**Current main:** `cf5b496e406c0d27bfd2408ec160661dbf7885cd` (PR #301 documentation-only)  
 **Decision:** NOT SIGNED OFF — `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
 
 ## 1. Verified current baseline
@@ -15,9 +15,13 @@ PR #300 documentation-only exact-head workflows:
 - [CI 43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473): 10/10 jobs passed.
 - [Security 43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660): 3/3 jobs passed.
 
-Post-PR #300 main workflows:
-- [CI 43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072): running at the time of this update.
-- [Security 43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050): running at the time of this update.
+PR #301 documentation-only exact-head workflows:
+- [CI 43536863859](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536863859): 10/10 jobs passed.
+- [Security 43536864157](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536864157): 3/3 jobs passed.
+
+Post-PR #301 main workflows:
+- [CI 43538418308](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43538418308): running at the time of this update.
+- [Security 43538418237](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43538418237): running at the time of this update.
 
 Recent merged work:
 - PR #292: durable secondary/duress PIN persistence and runtime AccountLockWorker tests; CI 10/10, Security 3/3, Firestore Rules/server transactions passed.
@@ -25,13 +29,20 @@ Recent merged work:
 - PR #296: screenshots allowed globally until app finalization; exact-head CI 10/10, Security 3/3.
 - PR #297: AppLockManager foreground lifecycle runtime tests and CallActivity/InCallChatActivity ordering regressions; exact-head CI 10/10, Security 3/3.
 
-The canonical tracker retains **116 unique findings: 86 Fixed, 17 Partial, 1 Open, 12 Accepted**. Governance classification aliases in the severity display are not additional unique findings. No open GitHub issues. Stale PR #293 was closed unmerged and superseded by merged PR #298. PR #299 merged the S06-H5 durable-storage throttle guard; no open PRs remain.
+The canonical tracker now retains **117 unique findings: 86 Fixed, 18 Partial, 1 Open, 12 Accepted**. Governance classification aliases in the severity display are not additional unique findings. No open GitHub issues. Stale PR #293 was closed unmerged and superseded by merged PR #298. PR #299 merged the S06-H5 durable-storage throttle guard. PR #301 merged the current-main documentation correction. The S06-H6 primary-PIN durability implementation is being prepared on a separate review branch; no claim of merge or CI completion is made here.
+
+## 1A. Latest code review — S06-H6 (2026-11-14)
+
+A new targeted review identified S06-H6: account primary PIN, device-gate PIN and device-to-account promotion could report success without durable SecurePrefs storage and exact commit/read-back. Affected callers could continue onboarding or destructive duress cleanup after an unconfirmed write. The implementation branch `security/primary-pin-durable-storage-2026-11-14-v2` adds the durable writer/rollback guard, caller checks and focused regression tests. See [`sessions/SESSION-S06-H6-DURABLE-PRIMARY-PIN-2026-11-14.md`](sessions/SESSION-S06-H6-DURABLE-PRIMARY-PIN-2026-11-14.md).
+
+S06-H6 remains Partial until exact-head CI/Security, independent review, and real Keystore/EncryptedSharedPreferences plus physical-device setup/restore/duress acceptance. Separate account/device preference files cannot be committed atomically; the code provides ordered writes and best-effort compensation only. Do not interpret a successful JVM/CI suite as proof of physical-device storage behavior or production readiness.
 
 ## 2. Remaining repository work
 
 | Priority | Task | Owner | Acceptance evidence |
 |---|---|---|---|
 | P0 | Tracker/handoff closeout | Repository automation | PR #298 merged; current-main SHA and post-merge CI/Security evidence recorded |
+| P1 | S06-H6 primary/device PIN durable persistence | Security engineering | Exact-head CI/Security; independent review; physical-device Keystore, setup, restore, PIN rotation and duress acceptance; document cross-store rollback residual |
 | P1 | Focused residual review of S06-H5 PIN collision observability | Security engineering | Reproducible channel fixed with regression, or residual formally accepted |
 | P1 | Review S10-N2 analyzer residual surface without weakening fail-closed behavior | Security engineering | Source review, regression for any proven false negative, full AST self-test and CI |
 | P1 | Review S07-L2 upstream libsignal explicit destruction API | Crypto engineering/upstream | Supported API and safe upgrade proof, or owner-approved residual-risk acceptance |
