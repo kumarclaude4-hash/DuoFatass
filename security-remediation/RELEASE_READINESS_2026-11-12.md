@@ -1,8 +1,8 @@
 # DuoShield — Release Readiness and Remaining Work
 
-**Updated:** 2026-11-13  
+**Updated:** 2026-11-14  
 **Repository:** `kumarclaude4-hash/DuoFatass`  
-**Current main:** `${sha}`  
+**Current main:** `4c4a4a8d0055277eaf1f7b6ba601b507225f1428`  
 **Decision:** NOT SIGNED OFF — `security-remediation/FINAL_SIGNOFF.md` remains PENDING.
 
 ## 1. Verified current baseline
@@ -11,9 +11,13 @@ PR #299 exact-head workflows:
 - [CI 43466389730](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389730): 10/10 jobs passed.
 - [Security 43466389858](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43466389858): 3/3 jobs passed.
 
-Post-merge main workflows:
-- [CI 43467484719](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484719): 10/10 jobs passed.
-- [Security 43467484761](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43467484761): 3/3 jobs passed.
+PR #300 documentation-only exact-head workflows:
+- [CI 43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473): 10/10 jobs passed.
+- [Security 43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660): 3/3 jobs passed.
+
+Post-PR #300 main workflows:
+- [CI 43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072): running at the time of this update.
+- [Security 43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050): running at the time of this update.
 
 Recent merged work:
 - PR #292: durable secondary/duress PIN persistence and runtime AccountLockWorker tests; CI 10/10, Security 3/3, Firestore Rules/server transactions passed.
@@ -163,3 +167,14 @@ also passed 10/10 and 3/3. The helper rejects non-durable storage before candida
 inspection; the NONE-tier regression proves ephemeral storage cannot consume or grant
 an attempt. This preserves the existing three-attempt policy. S06-H5 remains Partial
 pending independent side-channel and later feature-complete device acceptance.
+
+
+## PR #300 documentation merge — current main checkpoint (2026-11-14)
+
+PR #300 merged as `4c4a4a8d0055277eaf1f7b6ba601b507225f1428`. This merge only reconciles the repository handoff;
+it does not change the latest application-code merge (PR #299) or any acceptance
+decision. Exact-head CI [43469709473](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709473)
+passed 10/10 and Security [43469709660](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43469709660)
+passed 3/3. Post-merge main CI [43536557072](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557072)
+and Security [43536557050](https://github.com/kumarclaude4-hash/DuoFatass/actions/runs/43536557050)
+were running at this checkpoint. Keep `FINAL_SIGNOFF.md` PENDING.
