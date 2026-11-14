@@ -87,6 +87,7 @@ public final class PinHashPersistence {
             String deviceStoredHash,
             String deviceLengthKey) {
         if (accountPreferences == null || devicePreferences == null
+                || accountPreferences == devicePreferences
                 || accountTier == null || !accountTier.isDurable()
                 || deviceTier == null || !deviceTier.isDurable()
                 || !isValidAccountHashKey(accountHashKey) || isBlank(deviceHashKey)
@@ -175,6 +176,7 @@ public final class PinHashPersistence {
             String accountLengthKey,
             String deviceLengthKey) {
         if (accountPreferences == null || devicePreferences == null
+                || accountPreferences == devicePreferences
                 || accountTier == null || deviceTier == null || isBlank(deviceHashKey)) {
             return false;
         }
