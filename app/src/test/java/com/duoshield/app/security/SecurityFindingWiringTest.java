@@ -238,7 +238,7 @@ public class SecurityFindingWiringTest {
         assertTrue("duress teardown must report whether it started",
                 manager.contains("public static boolean performLogout(Context context, String enteredPin)"));
         int callerAt = lockScreen.indexOf("boolean teardownStarted = DuressManager.performLogout(this, entered)");
-        int failureAt = lockScreen.indexOf("if (!teardownStarted)", callerAt);
+        int failureAt = lockScreen.indexOf("if (!duressTeardownStarted)", callerAt);
         int nextBranchAt = lockScreen.indexOf("                }", failureAt);
         assertTrue("lock screen must handle a failed duress promotion", callerAt >= 0 && failureAt > callerAt);
         String recovery = lockScreen.substring(failureAt, lockScreen.indexOf("                    return;", failureAt));
