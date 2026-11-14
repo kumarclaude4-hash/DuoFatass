@@ -265,23 +265,28 @@ public final class PinHashPersistence {
             SharedPreferences accountPreferences,
             String accountHashKey,
             SharedPreferences devicePreferences) {
-        // The account stage is removed first. Thus a surviving device journal
-        // always contains enough information to prove both active writes completed.
-        clearAccountStage(accountPreferences, accountHashKey);
-        if (!accountPreferences.contains(accountPendingTxKey(accountHashKey))
-                && !accountPreferences.contains(accountPendingHashKey(accountHashKey))) {
+        // The device journal is the only copy of the paired target hashes. Do not
+        // remove it merely because a failed commit changed the process-local map:
+        // require a successful account-stage commit and exact removal read-back.
+        // A surviving device journal is safe and recovery is idempotent.
+        if (clearAccountStage(accountPreferences, accountHashKey)) {
             clearDeviceStage(devicePreferences);
         }
     }
 
-    private static void clearAccountStage(SharedPreferences preferences, String accountHashKey) {
+    private static boolean clearAccountStage(SharedPreferences preferences, String accountHashKey) {
         try {
-            preferences.edit()
+            if (!preferences.edit()
                     .remove(accountPendingTxKey(accountHashKey))
                     .remove(accountPendingHashKey(accountHashKey))
-                    .commit();
+                    .commit()) {
+                return false;
+            }
+            return !preferences.contains(accountPendingTxKey(accountHashKey))
+                    && !preferences.contains(accountPendingHashKey(accountHashKey));
         } catch (RuntimeException ignored) {
-            // Keeping the stage is safe; recovery is idempotent.
+            // Keeping the stage and device journal is safe; recovery is idempotent.
+            return false;
         }
     }
 
